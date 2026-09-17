@@ -247,3 +247,94 @@ with app.app_context():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
+
+
+# ═══════════════════════════════════════════════
+#  ADMIN — protected seed endpoint
+# ═══════════════════════════════════════════════
+
+SEED_DATA = [
+    {
+        "cust_name": "John Kamau",
+        "acc_name": "Kamau Household",
+        "meter_acc_no": "MTR-0012",
+        "contact": "0712345678",
+        "email": "john.kamau@example.com",
+        "address": "Kikuyu Town, Kiambu County",
+        "readings": [(32.5, 5, 0.0), (28.0, 35, 2520.0), (25.0, 65, 2250.0)],
+    },
+    {
+        "cust_name": "Mary Wanjiku",
+        "acc_name": "Wanjiku Residence",
+        "meter_acc_no": "MTR-0045",
+        "contact": "0723456789",
+        "email": "mary.w@example.com",
+        "address": "Kikuyu, Near PCEA Church",
+        "readings": [(40.0, 45, 3600.0), (38.0, 75, 3420.0)],
+    },
+    {
+        "cust_name": "Peter Mwangi",
+        "acc_name": "Mwangi Family",
+        "meter_acc_no": "MTR-0078",
+        "contact": "0734567890",
+        "email": "peter.m@example.com",
+        "address": "Kikuyu, Gitaru Road",
+        "readings": [(22.0, 50, 1500.0), (20.0, 80, 1800.0)],
+    },
+    {
+        "cust_name": "Grace Njeri",
+        "acc_name": "Njeri Home",
+        "meter_acc_no": "MTR-0102",
+        "contact": "0745678901",
+        "email": "grace.n@example.com",
+        "address": "Kikuyu, Thogoto",
+        "readings": [(18.0, 40, 2000.0), (15.0, 70, 1350.0)],
+    },
+    {
+        "cust_name": "Samuel Ochieng",
+        "acc_name": "Ochieng Apartments",
+        "meter_acc_no": "MTR-0203",
+        "contact": "0756789012",
+        "email": "sam.o@example.com",
+        "address": "Kikuyu, Ondiri",
+        "readings": [(55.0, 45, 4400.0), (50.0, 75, 4500.0)],
+    },
+]
+
+
+@app.route("/api/admin/seed", methods=["POST"])
+def admin_seed():
+    """One-time seed — protected by ADMIN_SEED_SECRET header."""
+    from datetime import timedelta
+    secret = request.headers.get("X-Admin-Secret", "")
+    expected = os.environ.get("ADMIN_SEED_SECRET", "")
+    if not expected or secret != expected:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    created = 0
+    skipped = 0
+    for spec in SEED_DATA:
+        if Consumer.query.filter_by(meter_acc_no=spec["meter_acc_no"]).first():
+            skipped += 1
+            continue
+        c = Consumer(
+            cust_name=spec["cust_name"],
+            acc_name=spec["acc_name"],
+            meter_acc_no=spec["meter_acc_no"],
+            contact=spec["contact"],
+            email=spec["email"],
+            address=spec["address"],
+        )
+        db.session.add(c)
+        db.session.flush()
+        for m3, days_ago, paid in spec["readings"]:
+            db.session.add(MeterReading(
+                consumer_id=c.id,
+                reading_m3=m3,
+                reading_date=date.today() - timedelta(days=days_ago),
+                amount_kes=compute_amount(m3),
+                amount_paid=paid,
+            ))
+        created += 1
+    db.session.commit()
+    return jsonify({"created": created, "skipped": skipped}), 200
