@@ -3,9 +3,32 @@ from datetime import date
 RATE_PER_M3 = 90.0   # KES 90 per M³
 
 
-def compute_amount(reading_m3: float) -> float:
-    """Bill amount = M³ consumed × KES 90. Server-side only."""
-    return round(reading_m3 * RATE_PER_M3, 2)
+def compute_consumption(current_m3: float, previous_m3: float | None) -> float:
+    """
+    Consumption for a billing period =
+        current cumulative meter reading − previous cumulative meter reading.
+
+    A baseline reading (no previous) has zero consumption — no bill until the
+    next reading establishes a delta.
+    """
+    if previous_m3 is None:
+        return 0.0
+    return round(current_m3 - previous_m3, 4)
+
+
+def compute_amount(current_m3: float,
+                   previous_m3: float | None = None) -> float:
+    """
+    Bill amount = consumption × KES 90.
+
+    - Baseline reading (previous_m3 is None) → KES 0.
+    - Otherwise → (current − previous) × RATE_PER_M3.
+
+    Server-side only. Callers must supply the previous cumulative reading
+    (the most recent reading stored for that consumer, ordered by date then id).
+    """
+    consumption = compute_consumption(current_m3, previous_m3)
+    return round(consumption * RATE_PER_M3, 2)
 
 
 def get_consumer_status(readings: list) -> dict:
