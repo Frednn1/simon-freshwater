@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Consumer account details – Simon Fresh Water Kikuyu">
+  <title>Consumer Details – Simon Fresh Water</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="/" class="brand-link">
+        <div class="brand">
+          <div class="logo-drop">💧</div>
+          <div>
+            <h1>Simon Fresh Water</h1>
+            <p class="tagline">Kikuyu, Kenya</p>
+          </div>
+        </div>
+      </a>
+      <a href="/" class="btn-back">← Back to Search</a>
+    </div>
+  </header>
+
+  <main class="consumer-main" id="consumerMain">
+    <div id="pageLoader" class="loader"></div>
+
+    <!-- ─── Account Overview ─── -->
+    <section id="overviewCard" class="card hidden">
+      <div class="card-header">
+        <h2 id="custNameHeading">—</h2>
+        <span id="overallBadge" class="badge">—</span>
+      </div>
+
+      <div class="info-grid">
+        <div class="info-item">
+          <span class="info-label">Account Name</span>
+          <span class="info-value" id="accName">—</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Meter Acc. No.</span>
+          <span class="info-value" id="meterAccNo">—</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Contact</span>
+          <span class="info-value" id="contact">—</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Email</span>
+          <span class="info-value" id="email">—</span>
+        </div>
+        <div class="info-item info-item-full">
+          <span class="info-label">Address</span>
+          <span class="info-value" id="address">—</span>
+        </div>
+      </div>
+
+      <div class="status-summary" id="statusSummary"></div>
+    </section>
+
+    <!-- ─── Submit New Reading ─── -->
+    <section id="readingFormCard" class="card hidden">
+      <h3>Submit New Meter Reading</h3>
+      <p class="form-hint">
+        Enter the current meter reading in <strong>M³</strong>.
+        Billing rate: <strong>KES 90 per M³</strong>.
+      </p>
+
+      <form id="readingForm" class="reading-form">
+        <div class="form-row">
+          <label for="readingInput">Current Reading (M³)</label>
+          <input type="number" id="readingInput" step="0.01" min="0"
+                 placeholder="e.g. 45.50" required>
+        </div>
+        <button type="submit" class="btn-primary" id="readingSubmitBtn">
+          Submit Reading
+        </button>
+      </form>
+
+      <div id="readingFormMsg" class="alert hidden"></div>
+    </section>
+
+    <!-- ─── Previous Readings ─── -->
+    <section id="readingsCard" class="card hidden">
+      <h3>Last 5 Meter Readings</h3>
+      <div class="table-wrap">
+        <table class="readings-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Reading (M³)</th>
+              <th>Amount (KES)</th>
+              <th>Paid (KES)</th>
+              <th>Balance (KES)</th>
+              <th>Bill Status</th>
+            </tr>
+          </thead>
+          <tbody id="readingsBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <p class="footer-note">
+        Thank you for choosing <strong>Simon Fresh Water</strong>.
+        Your water is life — let's keep it flowing. 💧
+      </p>
+      <p class="footer-copy">© 2026 Simon Fresh Water, Kikuyu.</p>
+    </div>
+  </footer>
+
+  <script src="/app.js"></script>
+  <script>
+    const params = new URLSearchParams(location.search);
+    initConsumerPage(params.get('id'));
+  </script>
+</body>
+</html>

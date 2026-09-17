@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: simon-freshwater
+    runtime: python
+    plan: free
+    rootDir: .
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: gunicorn --chdir backend -w 2 -b 0.0.0.0:$PORT app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false          # set manually in Render dashboard
+      - key: GOOGLE_CREDENTIALS_JSON
+        sync: false          # set manually
+      - key: WA_PHONE_NUMBER_ID
+        sync: false          # set manually
+      - key: WA_ACCESS_TOKEN
+        sync: false          # set manually
+      - key: PAYBILL
+        sync: false          # set manually

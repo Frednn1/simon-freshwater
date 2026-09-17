@@ -1,0 +1,23 @@
+# ─── Credentials (NEVER commit) ───
+credentials.json
+*.env
+.env
+
+# ─── Database ───
+*.db
+*.sqlite3
+instance/
+
+# ─── Python ───
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+env/
+
+# ─── OS / Editors ───
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

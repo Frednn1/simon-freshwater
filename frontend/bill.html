@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Water bill – Simon Fresh Water Kikuyu">
+  <title>Water Bill – Simon Fresh Water</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a href="/" class="brand-link">
+        <div class="brand">
+          <div class="logo-drop">💧</div>
+          <div>
+            <h1>Simon Fresh Water</h1>
+            <p class="tagline">Kikuyu, Kenya</p>
+          </div>
+        </div>
+      </a>
+      <button onclick="history.back()" class="btn-back">← Back</button>
+    </div>
+  </header>
+
+  <main class="bill-main" id="billMain">
+    <div id="billLoader" class="loader"></div>
+
+    <div id="billCard" class="bill-document hidden">
+      <div class="bill-header">
+        <div>
+          <h2>💧 WATER BILL</h2>
+          <p class="bill-company">Simon Fresh Water, Kikuyu, Kenya</p>
+        </div>
+        <div class="bill-status-badge" id="billStatusBadge">—</div>
+      </div>
+
+      <div class="bill-section">
+        <h4>Consumer Details</h4>
+        <div class="bill-grid">
+          <div><span>Customer Name</span><strong id="bCustName">—</strong></div>
+          <div><span>Account Name</span><strong id="bAccName">—</strong></div>
+          <div><span>Meter Acc. No.</span><strong id="bMeterAcc">—</strong></div>
+          <div><span>Contact</span><strong id="bContact">—</strong></div>
+          <div class="full"><span>Address</span><strong id="bAddress">—</strong></div>
+        </div>
+      </div>
+
+      <div class="bill-section">
+        <h4>Reading Details</h4>
+        <div class="bill-grid">
+          <div><span>Reading Date</span><strong id="bDate">—</strong></div>
+          <div><span>Consumption</span><strong id="bM3">—</strong></div>
+          <div><span>Rate</span><strong>KES 90 / M³</strong></div>
+          <div><span>Amount</span><strong id="bAmount">—</strong></div>
+          <div><span>Amount Paid</span><strong id="bPaid">—</strong></div>
+          <div><span>Balance</span><strong id="bBalance" class="highlight">—</strong></div>
+        </div>
+      </div>
+
+      <div class="bill-footer">
+        <p>
+          Please settle any outstanding balance to continue enjoying
+          uninterrupted water service.
+        </p>
+        <p class="bill-thanks">
+          Thank you for choosing Simon Fresh Water. 💧
+        </p>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <p class="footer-copy">© 2026 Simon Fresh Water, Kikuyu.</p>
+    </div>
+  </footer>
+
+  <script src="/app.js"></script>
+  <script>
+    const p = new URLSearchParams(location.search);
+    initBillPage(p.get('id'));
+  </script>
+</body>
+</html>
