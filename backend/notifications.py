@@ -1,6 +1,7 @@
 """
-Notification senders — SMS via Africa's Talking, Email via SMTP.
-Both providers are configured through environment variables only.
+Notification senders.
+  SMS   → SMSGate (Android SMS Gateway) via api.sms-gate.app
+  Email → SMTP (optional; gracefully skipped if not configured)
 """
 import os
 import smtplib
@@ -10,21 +11,30 @@ from email.mime.multipart import MIMEMultipart
 import requests
 
 
-# ─── SMS provider: Africa's Talking ───
-AT_USERNAME = os.environ.get("AT_USERNAME", "")
-AT_API_KEY  = os.environ.get("AT_API_KEY", "")
-AT_SENDER   = os.environ.get("AT_SENDER", "")   # optional short code / sender ID
+# ─── SMS: SMSGate (Android SMS Gateway) ───
+SMSGATE_USERNAME  = os.environ.get("SMSGATE_USERNAME", "")
+SMSGATE_PASSWORD  = os.environ.get("SMSGATE_PASSWORD", "")
+SMSGATE_DEVICE_ID = os.environ.get("SMSGATE_DEVICE_ID", "")   # optional
+SMSGATE_URL = "https://api.sms-gate.app/3rdparty/v1/messages"
 
-AT_URL = "https://api.africastalking.com/version1/messaging"
 
-
-# ─── Email provider: SMTP (Gmail / Zoho / Outlook / any SMTP) ───
+# ─── Email: SMTP (optional) ───
 SMTP_HOST      = os.environ.get("SMTP_HOST", "")
 SMTP_PORT      = int(os.environ.get("SMTP_PORT", "587"))
 SMTP_USER      = os.environ.get("SMTP_USER", "")
 SMTP_PASS      = os.environ.get("SMTP_PASSWORD", "")
 SMTP_FROM      = os.environ.get("SMTP_FROM", SMTP_USER)
 SMTP_FROM_NAME = os.environ.get("SMTP_FROM_NAME", "Simon Fresh Water")
+
+
+def get_available_channels() -> list:
+    """Return ['sms'] and/or ['email'] depending on configured providers."""
+    channels = []
+    if SMSGATE_USERNAME and SMSGATE_PASSWORD:
+        channels.append("sms")
+    if SMTP_HOST and SMTP_USER and SMTP_PASS:
+        channels.append("email")
+    return channels
 
 
 def _normalize_phone_ke(phone: str) -> str:
@@ -42,34 +52,29 @@ def _normalize_phone_ke(phone: str) -> str:
 
 
 def send_sms(to_phone: str, message: str) -> dict:
-    """Send SMS via Africa's Talking. Returns {ok, provider_id?, error?}."""
-    if not AT_USERNAME or not AT_API_KEY:
-        return {"ok": False, "error": "SMS provider not configured (set AT_USERNAME & AT_API_KEY)"}
+    """Send SMS via SMSGate. Returns {ok, provider_id?, error?}."""
+    if not SMSGATE_USERNAME or not SMSGATE_PASSWORD:
+        return {"ok": False, "error": "SMS provider not configured (set SMSGATE_USERNAME & SMSGATE_PASSWORD)"}
 
     recipient = _normalize_phone_ke(to_phone)
     if not recipient:
         return {"ok": False, "error": "Invalid phone number"}
 
-    data = {"username": AT_USERNAME, "to": recipient, "message": message}
-    if AT_SENDER:
-        data["from"] = AT_SENDER
-
-    headers = {
-        "apiKey": AT_API_KEY,
-        "Accept": "application/json",
-        "Content-Type": "application/x-www-form-urlencoded",
+    payload = {
+        "textMessage": {"text": message},
+        "phoneNumbers": [recipient],
     }
+    if SMSGATE_DEVICE_ID:
+        payload["deviceId"] = SMSGATE_DEVICE_ID
+
+    auth = (SMSGATE_USERNAME, SMSGATE_PASSWORD)
 
     try:
-        r = requests.post(AT_URL, data=data, headers=headers, timeout=20)
-        if r.status_code not in (200, 201):
+        r = requests.post(SMSGATE_URL, json=payload, auth=auth, timeout=20)
+        if r.status_code not in (200, 201, 202):
             return {"ok": False, "error": f"HTTP {r.status_code}: {r.text[:200]}"}
         body = r.json()
-        recipients = body.get("SMSMessageData", {}).get("Recipients", [])
-        if recipients and recipients[0].get("status") == "Success":
-            return {"ok": True, "provider_id": recipients[0].get("messageId", "")}
-        err = recipients[0].get("status", "unknown") if recipients else "no recipients"
-        return {"ok": False, "error": err}
+        return {"ok": True, "provider_id": body.get("id", "")}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

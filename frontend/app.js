@@ -157,8 +157,14 @@ function initConsumerPage(consumerId) {
       /* Notify card — only when there is an outstanding balance */
       const notifyCard = document.getElementById('notifyCard');
       const outstanding = ['DUE', 'OVERDUE', 'OVERDUE_APPROACHING'].includes(s.status);
-      if (outstanding) {
+      const available = data.available_channels || [];
+      if (outstanding && available.length > 0) {
         notifyCard.classList.remove('hidden');
+        // Hide buttons for unconfigured channels
+        const smsBtn = document.getElementById('sendSmsBtn');
+        const emailBtn = document.getElementById('sendEmailBtn');
+        if (!available.includes('sms'))   smsBtn.style.display = 'none';
+        if (!available.includes('email')) emailBtn.style.display = 'none';
         wireNotifyButtons(consumerId);
       }
 

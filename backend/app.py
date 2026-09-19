@@ -12,7 +12,7 @@ from billing import (
 )
 from sheets import sync_consumer_to_sheet
 from reminders import start_scheduler
-from notifications import send_sms, send_email, build_bill_message
+from notifications import send_sms, send_email, build_bill_message, get_available_channels, get_available_channels
 
 
 # ─── Paths ───
@@ -185,6 +185,7 @@ def get_consumer_details(consumer_id):
             for r in latest5
         ],
         "overall_status": info,
+        "available_channels": get_available_channels(),
         "last_notifications": {
             "sms":   last_sms.sent_at.isoformat()   if last_sms   else None,
             "email": last_email.sent_at.isoformat() if last_email else None,
