@@ -10,14 +10,12 @@ function esc(s) {
   d.textContent = s == null ? '' : String(s);
   return d.innerHTML;
 }
-
 function fmt(n) {
   return Number(n).toLocaleString('en-KE', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
 }
-
 function fmtDate(iso) {
   if (!iso) return '—';
   const d = new Date(iso + 'T00:00:00');
@@ -25,7 +23,6 @@ function fmtDate(iso) {
     day: '2-digit', month: 'short', year: 'numeric',
   });
 }
-
 function badgeClass(status) {
   const map = {
     CLEARED: 'badge-cleared',
@@ -36,7 +33,6 @@ function badgeClass(status) {
   };
   return map[status] || 'badge-none';
 }
-
 function badge(status, label) {
   return `<span class="badge ${badgeClass(status)}">${esc(label)}</span>`;
 }
@@ -79,16 +75,14 @@ function initHomePage() {
           return;
         }
         resultsList.innerHTML = results
-          .map(
-            (c) => `
+          .map((c) => `
           <a class="result-item" href="/consumer?id=${c.id}">
             <div>
               <div class="result-name">${esc(c.cust_name)}</div>
-              <div class="result-acc">Acc: ${esc(c.meter_acc_no)} &middot; ${esc(c.acc_name)}</div>
+              <div class="result-acc">Acc: ${esc(c.meter_acc_no)} · ${esc(c.acc_name)}</div>
             </div>
             <div class="result-right">${badge(c.status, c.status_label)}</div>
-          </a>`
-          )
+          </a>`)
           .join('');
         resultsBox.classList.remove('hidden');
       })
@@ -101,9 +95,7 @@ function initHomePage() {
   }
 
   btn.addEventListener('click', doSearch);
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') doSearch();
-  });
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
   input.addEventListener('input', () => {
     clearTimeout(debounce);
     debounce = setTimeout(doSearch, 450);
@@ -115,10 +107,7 @@ function initHomePage() {
    ═══════════════════════════════════════════════ */
 function initConsumerPage(consumerId) {
   const loader = document.getElementById('pageLoader');
-  if (!consumerId) {
-    loader.textContent = 'No consumer selected.';
-    return;
-  }
+  if (!consumerId) { loader.textContent = 'No consumer selected.'; return; }
 
   fetch(`${API}/api/consumer/${consumerId}`)
     .then((r) => r.json())
@@ -141,7 +130,6 @@ function initConsumerPage(consumerId) {
       badgeEl.className = 'badge ' + badgeClass(s.status);
       badgeEl.textContent = s.label;
 
-      /* Status summary */
       const sum = document.getElementById('statusSummary');
       let html = `<p><strong>Overall Status:</strong> ${esc(s.label)}</p>`;
       if (s.total_due > 0)
@@ -155,19 +143,24 @@ function initConsumerPage(consumerId) {
       /* Readings table */
       document.getElementById('readingsCard').classList.remove('hidden');
       const tbody = document.getElementById('readingsBody');
-      tbody.innerHTML = readings
-        .map(
-          (r) => `
+      tbody.innerHTML = readings.map((r) => `
         <tr>
           <td>${fmtDate(r.reading_date)}</td>
           <td>${Number(r.reading_m3).toFixed(2)}</td>
+          <td>${Number(r.consumption_m3 || 0).toFixed(2)}</td>
           <td>${fmt(r.amount_kes)}</td>
           <td>${fmt(r.amount_paid)}</td>
           <td>${fmt(r.balance)}</td>
           <td><a href="/bill?id=${r.id}">${esc(r.bill_status)} →</a></td>
-        </tr>`
-        )
-        .join('');
+        </tr>`).join('');
+
+      /* Notify card — only when there is an outstanding balance */
+      const notifyCard = document.getElementById('notifyCard');
+      const outstanding = ['DUE', 'OVERDUE', 'OVERDUE_APPROACHING'].includes(s.status);
+      if (outstanding) {
+        notifyCard.classList.remove('hidden');
+        wireNotifyButtons(consumerId);
+      }
 
       /* Reading form */
       document.getElementById('readingFormCard').classList.remove('hidden');
@@ -197,10 +190,12 @@ function initConsumerPage(consumerId) {
             }
             msgEl.className = 'alert alert-success';
             msgEl.textContent =
-              `Reading recorded: ${res.reading.reading_m3} M³ → KES ${fmt(res.reading.amount_kes)}`;
+              `Reading recorded: ${res.reading.reading_m3} M³ → ` +
+              `consumption ${res.reading.consumption_m3} M³ → ` +
+              `KES ${fmt(res.reading.amount_kes)}`;
             msgEl.classList.remove('hidden');
             document.getElementById('readingInput').value = '';
-            setTimeout(() => location.reload(), 1500);
+            setTimeout(() => location.reload(), 1800);
           })
           .catch(() => {
             submitBtn.disabled = false;
@@ -210,9 +205,56 @@ function initConsumerPage(consumerId) {
           });
       });
     })
-    .catch(() => {
-      loader.textContent = 'Failed to load consumer details.';
-    });
+    .catch(() => { loader.textContent = 'Failed to load consumer details.'; });
+}
+
+/* ─── Notify buttons ─── */
+function wireNotifyButtons(consumerId) {
+  const smsBtn = document.getElementById('sendSmsBtn');
+  const emailBtn = document.getElementById('sendEmailBtn');
+  const msgEl = document.getElementById('notifyMsg');
+
+  function send(channel, btn) {
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="btn-icon">⏳</span> Sending…';
+    msgEl.classList.add('hidden');
+
+    fetch(`${API}/api/consumer/${consumerId}/notify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel }),
+    })
+      .then((r) => r.json().then((d) => ({ ok: r.ok, data: d })))
+      .then(({ ok, data }) => {
+        btn.disabled = false;
+        btn.innerHTML = original;
+        if (ok && data.ok) {
+          msgEl.className = 'alert alert-success';
+          msgEl.textContent = `${data.message} → ${data.to}`;
+        } else {
+          msgEl.className = 'alert alert-error';
+          msgEl.textContent = data.error || 'Send failed.';
+        }
+        msgEl.classList.remove('hidden');
+      })
+      .catch(() => {
+        btn.disabled = false;
+        btn.innerHTML = original;
+        msgEl.className = 'alert alert-error';
+        msgEl.textContent = 'Network error — please try again.';
+        msgEl.classList.remove('hidden');
+      });
+  }
+
+  // Remove any old listeners before re-adding (safe if page re-renders)
+  smsBtn.replaceWith(smsBtn.cloneNode(true));
+  emailBtn.replaceWith(emailBtn.cloneNode(true));
+
+  document.getElementById('sendSmsBtn')
+    .addEventListener('click', (e) => send('sms', e.currentTarget));
+  document.getElementById('sendEmailBtn')
+    .addEventListener('click', (e) => send('email', e.currentTarget));
 }
 
 /* ═══════════════════════════════════════════════
@@ -220,10 +262,7 @@ function initConsumerPage(consumerId) {
    ═══════════════════════════════════════════════ */
 function initBillPage(readingId) {
   const loader = document.getElementById('billLoader');
-  if (!readingId) {
-    loader.textContent = 'No reading selected.';
-    return;
-  }
+  if (!readingId) { loader.textContent = 'No reading selected.'; return; }
 
   fetch(`${API}/api/reading/${readingId}`)
     .then((r) => r.json())
@@ -244,10 +283,7 @@ function initBillPage(readingId) {
       document.getElementById('bAmount').textContent = 'KES ' + fmt(r.amount_kes);
       document.getElementById('bPaid').textContent = 'KES ' + fmt(r.amount_paid);
       document.getElementById('bBalance').textContent = 'KES ' + fmt(r.balance);
-
       document.getElementById('billStatusBadge').textContent = r.bill_status;
     })
-    .catch(() => {
-      loader.textContent = 'Failed to load bill.';
-    });
+    .catch(() => { loader.textContent = 'Failed to load bill.'; });
 }

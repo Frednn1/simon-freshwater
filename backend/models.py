@@ -38,3 +38,17 @@ class MeterReading(db.Model):
     @property
     def balance(self):
         return round(self.amount_kes - self.amount_paid, 2)
+
+
+class NotificationLog(db.Model):
+    """Audit trail + rate-limit source for SMS/email reminders."""
+    __tablename__ = 'notification_log'
+    id = db.Column(db.Integer, primary_key=True)
+    consumer_id = db.Column(
+        db.Integer, db.ForeignKey('consumers.id'), nullable=False, index=True
+    )
+    channel = db.Column(db.String(10), nullable=False)   # 'sms' or 'email'
+    status = db.Column(db.String(20), nullable=False)    # 'sent' or 'failed'
+    detail = db.Column(db.String(255))
+    sent_at = db.Column(db.DateTime, default=datetime.utcnow,
+                        nullable=False, index=True)

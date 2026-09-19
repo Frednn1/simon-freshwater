@@ -26,7 +26,6 @@
   <main class="consumer-main" id="consumerMain">
     <div id="pageLoader" class="loader"></div>
 
-    <!-- ─── Account Overview ─── -->
     <section id="overviewCard" class="card hidden">
       <div class="card-header">
         <h2 id="custNameHeading">—</h2>
@@ -59,14 +58,29 @@
       <div class="status-summary" id="statusSummary"></div>
     </section>
 
-    <!-- ─── Submit New Reading ─── -->
+    <section id="notifyCard" class="card hidden">
+      <h3>Send Bill Reminder</h3>
+      <p class="form-hint">
+        Send the current outstanding balance to the consumer's phone or email.
+      </p>
+      <div class="notify-actions">
+        <button id="sendSmsBtn" class="btn-notify btn-sms" type="button">
+          <span class="btn-icon">📱</span> Send SMS
+        </button>
+        <button id="sendEmailBtn" class="btn-notify btn-email" type="button">
+          <span class="btn-icon">✉️</span> Send Email
+        </button>
+      </div>
+      <div id="notifyMsg" class="alert hidden"></div>
+    </section>
+
     <section id="readingFormCard" class="card hidden">
       <h3>Submit New Meter Reading</h3>
       <p class="form-hint">
-        Enter the current meter reading in <strong>M³</strong>.
-        Billing rate: <strong>KES 90 per M³</strong>.
+        Enter the current cumulative meter reading in <strong>M³</strong>.
+        Billing rate: <strong>KES 90 per M³</strong>. New reading must be
+        greater than the previous reading.
       </p>
-
       <form id="readingForm" class="reading-form">
         <div class="form-row">
           <label for="readingInput">Current Reading (M³)</label>
@@ -77,11 +91,9 @@
           Submit Reading
         </button>
       </form>
-
       <div id="readingFormMsg" class="alert hidden"></div>
     </section>
 
-    <!-- ─── Previous Readings ─── -->
     <section id="readingsCard" class="card hidden">
       <h3>Last 5 Meter Readings</h3>
       <div class="table-wrap">
@@ -90,6 +102,7 @@
             <tr>
               <th>Date</th>
               <th>Reading (M³)</th>
+              <th>Consumption (M³)</th>
               <th>Amount (KES)</th>
               <th>Paid (KES)</th>
               <th>Balance (KES)</th>
