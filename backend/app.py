@@ -454,3 +454,43 @@ with app.app_context():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
+
+
+# ═══════════════════════════════════════════════
+#  ADMIN — update consumer fields (protected)
+# ═══════════════════════════════════════════════
+
+@app.route("/api/admin/consumer/<int:consumer_id>/update", methods=["POST"])
+def admin_update_consumer(consumer_id):
+    """Update consumer contact/email/etc. Protected by X-Admin-Secret."""
+    secret = request.headers.get("X-Admin-Secret", "")
+    expected = os.environ.get("ADMIN_SEED_SECRET", "")
+    if not expected or secret != expected:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    consumer = Consumer.query.get(consumer_id)
+    if not consumer:
+        return jsonify({"error": "Consumer not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+    allowed = ("cust_name", "acc_name", "contact", "email", "address")
+    updated = {}
+    for field in allowed:
+        if field in data:
+            setattr(consumer, field, data[field])
+            updated[field] = data[field]
+
+    if not updated:
+        return jsonify({"error": "No valid fields to update"}), 400
+
+    db.session.commit()
+    return jsonify({
+        "ok": True,
+        "updated": updated,
+        "consumer": {
+            "id": consumer.id,
+            "cust_name": consumer.cust_name,
+            "contact": consumer.contact,
+            "email": consumer.email,
+        },
+    })
