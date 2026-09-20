@@ -26,6 +26,15 @@
   <main class="consumer-main" id="consumerMain">
     <div id="pageLoader" class="loader"></div>
 
+    <!-- Terminated banner (shown only when inactive) -->
+    <div id="terminatedBanner" class="terminated-banner hidden">
+      <span class="terminated-icon">⛔</span>
+      <div>
+        <strong>This account is terminated.</strong>
+        <p id="terminatedAtText"></p>
+      </div>
+    </div>
+
     <section id="overviewCard" class="card hidden">
       <div class="card-header">
         <h2 id="custNameHeading">—</h2>
@@ -50,7 +59,7 @@
           <span class="info-value" id="email">—</span>
         </div>
         <div class="info-item info-item-full">
-          <span class="info-label">Address</span>
+          <span class="info-label">Location</span>
           <span class="info-value" id="address">—</span>
         </div>
       </div>
@@ -112,6 +121,16 @@
           <tbody id="readingsBody"></tbody>
         </table>
       </div>
+    </section>
+
+    <!-- Admin actions (only shown for terminated consumers) -->
+    <section id="adminActions" class="admin-actions hidden">
+      <button id="reactivateBtn" class="btn-admin btn-reactivate" type="button">
+        <span class="btn-icon">♻️</span> Reactivate
+      </button>
+      <button id="deleteBtn" class="btn-admin btn-delete" type="button">
+        <span class="btn-icon">🗑️</span> Permanently Delete
+      </button>
     </section>
   </main>
 

@@ -17,6 +17,14 @@
           <p class="tagline">Kikuyu, Kenya &middot; Utility Billing Portal</p>
         </div>
       </div>
+      <nav class="header-actions">
+        <button class="tab-btn tab-new"    id="openNewCustomerBtn" type="button">
+          <span class="tab-icon">＋</span> New Customer
+        </button>
+        <button class="tab-btn tab-terminate" id="openTerminateBtn" type="button">
+          <span class="tab-icon">⛔</span> Terminate
+        </button>
+      </nav>
     </div>
   </header>
 
@@ -47,6 +55,90 @@
       </div>
     </section>
   </main>
+
+  <!-- ═══════════ NEW CUSTOMER MODAL ═══════════ -->
+  <div id="newCustomerModal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>➕ Add New Customer</h3>
+        <button class="modal-close" onclick="closeNewCustomerModal()" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <form id="newCustomerForm" autocomplete="off">
+          <div class="form-row">
+            <label for="ncCustName">Customer Name *</label>
+            <input type="text" id="ncCustName" required placeholder="e.g. Jane Wambui">
+          </div>
+          <div class="form-row">
+            <label for="ncAccName">Account / Household Name *</label>
+            <input type="text" id="ncAccName" required placeholder="e.g. Wambui Household">
+          </div>
+          <div class="form-row">
+            <label for="ncMeterAcc">Meter Account No. *</label>
+            <input type="text" id="ncMeterAcc" required placeholder="e.g. MTR-0300">
+          </div>
+          <div class="form-row">
+            <label for="ncContact">Contact (WhatsApp / SMS) *</label>
+            <input type="text" id="ncContact" required placeholder="e.g. 0712345678">
+          </div>
+          <div class="form-row">
+            <label for="ncEmail">Email</label>
+            <input type="email" id="ncEmail" placeholder="e.g. jane@example.com">
+          </div>
+          <div class="form-row">
+            <label for="ncAddress">Location Address</label>
+            <input type="text" id="ncAddress" placeholder="e.g. Kikuyu Town, Kiambu County">
+          </div>
+          <div class="form-row form-row-double">
+            <div>
+              <label for="ncLatitude">Latitude</label>
+              <input type="text" id="ncLatitude" placeholder="e.g. -1.2578">
+            </div>
+            <div>
+              <label for="ncLongitude">Longitude</label>
+              <input type="text" id="ncLongitude" placeholder="e.g. 36.6787">
+            </div>
+          </div>
+          <p class="form-hint-small">
+            Tip: In Google Maps, long-press a location → tap the coordinates to copy them.
+          </p>
+        </form>
+        <div id="newCustomerMsg" class="alert hidden"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeNewCustomerModal()" type="button">Cancel</button>
+        <button class="btn-primary" id="createCustomerBtn" onclick="submitNewCustomer()" type="button">
+          Create Customer
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ TERMINATE MODAL ═══════════ -->
+  <div id="terminateModal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>⛔ Terminate Customer</h3>
+        <button class="modal-close" onclick="closeTerminateModal()" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="form-hint-small">
+          Search by customer name or meter account number.
+          Termination preserves all data and stops reminders.
+        </p>
+        <div class="form-row">
+          <input type="text" id="termSearchInput" autocomplete="off"
+                 placeholder="Search customer…">
+        </div>
+        <div id="termSearchLoader" class="loader hidden"></div>
+        <div id="termResultsList"></div>
+        <div id="terminateMsg" class="alert hidden"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeTerminateModal()" type="button">Close</button>
+      </div>
+    </div>
+  </div>
 
   <footer class="site-footer">
     <div class="footer-inner">

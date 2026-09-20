@@ -2,6 +2,7 @@ import os
 from datetime import datetime, date, timedelta
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
+from sqlalchemy import text, inspect
 
 from models import db, Consumer, MeterReading, NotificationLog
 from billing import (
@@ -12,7 +13,12 @@ from billing import (
 )
 from sheets import sync_consumer_to_sheet
 from reminders import start_scheduler
-from notifications import send_sms, send_email, build_bill_message, get_available_channels, get_available_channels
+from notifications import (
+    send_sms,
+    send_email,
+    build_bill_message,
+    get_available_channels,
+)
 
 
 # ─── Paths ───
@@ -61,6 +67,35 @@ def _all_readings(consumer_id: int):
         .order_by(MeterReading.reading_date.desc(), MeterReading.id.desc())
         .all()
     )
+
+
+def _require_admin():
+    """Return None if authorized, else a (json, status) tuple."""
+    secret = request.headers.get("X-Admin-Secret", "")
+    expected = os.environ.get("ADMIN_SEED_SECRET", "")
+    if not expected or secret != expected:
+        return jsonify({"error": "Unauthorized"}), 401
+    return None
+
+
+def _ensure_consumer_columns():
+    """Lightweight migration: add new columns to `consumers` if missing."""
+    insp = inspect(db.engine)
+    existing = {c["name"] for c in insp.get_columns("consumers")}
+    alters = []
+    if "latitude" not in existing:
+        alters.append("ADD COLUMN latitude DOUBLE PRECISION NULL")
+    if "longitude" not in existing:
+        alters.append("ADD COLUMN longitude DOUBLE PRECISION NULL")
+    if "is_active" not in existing:
+        alters.append("ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE")
+    if "terminated_at" not in existing:
+        alters.append("ADD COLUMN terminated_at TIMESTAMP NULL")
+    for alt in alters:
+        db.session.execute(text(f"ALTER TABLE consumers {alt}"))
+    if alters:
+        db.session.commit()
+        app.logger.info(f"[Migration] Applied {len(alters)} column(s) to consumers")
 
 
 # ═══════════════════════════════════════════════
@@ -129,6 +164,7 @@ def search_consumer():
             "meter_acc_no": c.meter_acc_no,
             "status": info["status"],
             "status_label": info["label"],
+            "is_active": bool(c.is_active),
         })
     return jsonify({"results": results})
 
@@ -153,7 +189,6 @@ def get_consumer_details(consumer_id):
     latest5 = list(reversed(all_readings))[:5]
     info = get_consumer_status(latest5)
 
-    # Latest notification timestamps (for frontend cooldown display)
     last_sms = (NotificationLog.query
                 .filter_by(consumer_id=consumer.id, channel="sms", status="sent")
                 .order_by(NotificationLog.sent_at.desc()).first())
@@ -170,6 +205,10 @@ def get_consumer_details(consumer_id):
             "contact": consumer.contact,
             "email": consumer.email,
             "address": consumer.address,
+            "latitude": consumer.latitude,
+            "longitude": consumer.longitude,
+            "is_active": bool(consumer.is_active),
+            "terminated_at": consumer.terminated_at.isoformat() if consumer.terminated_at else None,
         },
         "readings": [
             {
@@ -246,6 +285,11 @@ def submit_reading():
     if not consumer:
         return jsonify({"error": "Consumer not found"}), 404
 
+    if not consumer.is_active:
+        return jsonify({
+            "error": "Consumer is terminated. Reactivate to submit readings.",
+        }), 403
+
     prev = _previous_reading(consumer.id)
     prev_m3 = prev.reading_m3 if prev else None
 
@@ -295,10 +339,6 @@ def submit_reading():
     }), 201
 
 
-# ═══════════════════════════════════════════════
-#  NOTIFY — send bill reminder via SMS or Email
-# ═══════════════════════════════════════════════
-
 @app.route("/api/consumer/<int:consumer_id>/notify", methods=["POST"])
 def notify_consumer(consumer_id):
     data = request.get_json(silent=True) or {}
@@ -307,6 +347,11 @@ def notify_consumer(consumer_id):
         return jsonify({"error": "channel must be 'sms' or 'email'"}), 400
 
     consumer = Consumer.query.get_or_404(consumer_id)
+
+    if not consumer.is_active:
+        return jsonify({
+            "error": "Consumer is terminated. No reminders sent.",
+        }), 403
 
     readings = _all_readings(consumer.id)
     info = get_consumer_status(readings)
@@ -317,7 +362,6 @@ def notify_consumer(consumer_id):
             "status": info["status"],
         }), 400
 
-    # ── Rate limit: last successful send for (consumer, channel) ──
     cutoff = datetime.utcnow() - timedelta(seconds=NOTIFY_COOLDOWN_SECONDS)
     recent = (NotificationLog.query
               .filter_by(consumer_id=consumer.id, channel=channel, status="sent")
@@ -372,6 +416,199 @@ def notify_consumer(consumer_id):
 
 
 # ═══════════════════════════════════════════════
+#  ADMIN — CREATE / TERMINATE / REACTIVATE / DELETE
+# ═══════════════════════════════════════════════
+
+@app.route("/api/admin/consumer", methods=["POST"])
+def admin_create_consumer():
+    """Create a new consumer."""
+    unauthorized = _require_admin()
+    if unauthorized:
+        return unauthorized
+
+    data = request.get_json(silent=True) or {}
+
+    cust_name = (data.get("cust_name") or "").strip()
+    acc_name = (data.get("acc_name") or "").strip()
+    meter_acc_no = (data.get("meter_acc_no") or "").strip()
+    contact = (data.get("contact") or "").strip()
+    email = (data.get("email") or "").strip()
+    address = (data.get("address") or "").strip()
+    latitude = data.get("latitude")
+    longitude = data.get("longitude")
+
+    if not (cust_name and acc_name and meter_acc_no and contact):
+        return jsonify({
+            "error": "cust_name, acc_name, meter_acc_no, and contact are required.",
+        }), 400
+
+    if Consumer.query.filter_by(meter_acc_no=meter_acc_no).first():
+        return jsonify({
+            "error": f"Meter account {meter_acc_no} already exists.",
+        }), 409
+
+    try:
+        lat = float(latitude) if latitude not in (None, "", "null") else None
+        lng = float(longitude) if longitude not in (None, "", "null") else None
+    except (ValueError, TypeError):
+        return jsonify({"error": "latitude/longitude must be numbers."}), 400
+
+    if lat is not None and not (-90 <= lat <= 90):
+        return jsonify({"error": "latitude must be between -90 and 90."}), 400
+    if lng is not None and not (-180 <= lng <= 180):
+        return jsonify({"error": "longitude must be between -180 and 180."}), 400
+
+    c = Consumer(
+        cust_name=cust_name,
+        acc_name=acc_name,
+        meter_acc_no=meter_acc_no,
+        contact=contact,
+        email=email or None,
+        address=address or None,
+        latitude=lat,
+        longitude=lng,
+        is_active=True,
+    )
+    db.session.add(c)
+    db.session.commit()
+
+    return jsonify({
+        "ok": True,
+        "consumer": {
+            "id": c.id,
+            "cust_name": c.cust_name,
+            "acc_name": c.acc_name,
+            "meter_acc_no": c.meter_acc_no,
+            "contact": c.contact,
+            "email": c.email,
+            "address": c.address,
+            "latitude": c.latitude,
+            "longitude": c.longitude,
+            "is_active": True,
+        },
+    }), 201
+
+
+@app.route("/api/admin/consumer/<int:consumer_id>/update", methods=["POST"])
+def admin_update_consumer(consumer_id):
+    """Update consumer fields. Protected by X-Admin-Secret."""
+    unauthorized = _require_admin()
+    if unauthorized:
+        return unauthorized
+
+    consumer = Consumer.query.get(consumer_id)
+    if not consumer:
+        return jsonify({"error": "Consumer not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+    allowed = ("cust_name", "acc_name", "contact", "email", "address",
+               "latitude", "longitude")
+    updated = {}
+    for field in allowed:
+        if field in data:
+            val = data[field]
+            if field in ("latitude", "longitude"):
+                if val in (None, "", "null"):
+                    setattr(consumer, field, None)
+                else:
+                    try:
+                        setattr(consumer, field, float(val))
+                    except (ValueError, TypeError):
+                        return jsonify({"error": f"{field} must be a number."}), 400
+            else:
+                setattr(consumer, field, val)
+            updated[field] = val
+
+    if not updated:
+        return jsonify({"error": "No valid fields to update"}), 400
+
+    db.session.commit()
+    return jsonify({
+        "ok": True,
+        "updated": updated,
+        "consumer": {
+            "id": consumer.id,
+            "cust_name": consumer.cust_name,
+            "contact": consumer.contact,
+            "email": consumer.email,
+            "is_active": bool(consumer.is_active),
+        },
+    })
+
+
+@app.route("/api/admin/consumer/<int:consumer_id>/terminate", methods=["POST"])
+def admin_terminate_consumer(consumer_id):
+    """Soft-delete: mark consumer inactive, preserve all data."""
+    unauthorized = _require_admin()
+    if unauthorized:
+        return unauthorized
+
+    consumer = Consumer.query.get(consumer_id)
+    if not consumer:
+        return jsonify({"error": "Consumer not found"}), 404
+
+    if not consumer.is_active:
+        return jsonify({"ok": True, "message": "Already terminated.",
+                        "is_active": False}), 200
+
+    consumer.is_active = False
+    consumer.terminated_at = datetime.utcnow()
+    db.session.commit()
+
+    return jsonify({
+        "ok": True,
+        "message": f"{consumer.cust_name} terminated.",
+        "is_active": False,
+        "terminated_at": consumer.terminated_at.isoformat(),
+    })
+
+
+@app.route("/api/admin/consumer/<int:consumer_id>/reactivate", methods=["POST"])
+def admin_reactivate_consumer(consumer_id):
+    """Undo termination — restore active status."""
+    unauthorized = _require_admin()
+    if unauthorized:
+        return unauthorized
+
+    consumer = Consumer.query.get(consumer_id)
+    if not consumer:
+        return jsonify({"error": "Consumer not found"}), 404
+
+    consumer.is_active = True
+    consumer.terminated_at = None
+    db.session.commit()
+
+    return jsonify({
+        "ok": True,
+        "message": f"{consumer.cust_name} reactivated.",
+        "is_active": True,
+    })
+
+
+@app.route("/api/admin/consumer/<int:consumer_id>", methods=["DELETE"])
+def admin_delete_consumer(consumer_id):
+    """Hard delete: remove consumer + all readings + notification logs."""
+    unauthorized = _require_admin()
+    if unauthorized:
+        return unauthorized
+
+    consumer = Consumer.query.get(consumer_id)
+    if not consumer:
+        return jsonify({"error": "Consumer not found"}), 404
+
+    name = consumer.cust_name
+    NotificationLog.query.filter_by(consumer_id=consumer.id).delete()
+    MeterReading.query.filter_by(consumer_id=consumer.id).delete()
+    db.session.delete(consumer)
+    db.session.commit()
+
+    return jsonify({
+        "ok": True,
+        "message": f"{name} permanently deleted.",
+    })
+
+
+# ═══════════════════════════════════════════════
 #  ADMIN — protected seed endpoint
 # ═══════════════════════════════════════════════
 
@@ -402,10 +639,9 @@ SEED_DATA = [
 
 @app.route("/api/admin/seed", methods=["POST"])
 def admin_seed():
-    secret = request.headers.get("X-Admin-Secret", "")
-    expected = os.environ.get("ADMIN_SEED_SECRET", "")
-    if not expected or secret != expected:
-        return jsonify({"error": "Unauthorized"}), 401
+    unauthorized = _require_admin()
+    if unauthorized:
+        return unauthorized
 
     replace = request.args.get("replace") == "1"
     if replace:
@@ -421,7 +657,8 @@ def admin_seed():
             continue
         c = Consumer(cust_name=spec["cust_name"], acc_name=spec["acc_name"],
                      meter_acc_no=spec["meter_acc_no"], contact=spec["contact"],
-                     email=spec["email"], address=spec["address"])
+                     email=spec["email"], address=spec["address"],
+                     is_active=True)
         db.session.add(c)
         db.session.flush()
         ordered = sorted(spec["readings"], key=lambda x: -x[1])
@@ -440,10 +677,11 @@ def admin_seed():
 
 
 # ═══════════════════════════════════════════════
-#  INIT — DB + Scheduler
+#  INIT — migrate + DB + Scheduler
 # ═══════════════════════════════════════════════
 
 with app.app_context():
+    _ensure_consumer_columns()
     db.create_all()
     try:
         start_scheduler(app, Consumer, MeterReading)
@@ -454,43 +692,3 @@ with app.app_context():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
-
-
-# ═══════════════════════════════════════════════
-#  ADMIN — update consumer fields (protected)
-# ═══════════════════════════════════════════════
-
-@app.route("/api/admin/consumer/<int:consumer_id>/update", methods=["POST"])
-def admin_update_consumer(consumer_id):
-    """Update consumer contact/email/etc. Protected by X-Admin-Secret."""
-    secret = request.headers.get("X-Admin-Secret", "")
-    expected = os.environ.get("ADMIN_SEED_SECRET", "")
-    if not expected or secret != expected:
-        return jsonify({"error": "Unauthorized"}), 401
-
-    consumer = Consumer.query.get(consumer_id)
-    if not consumer:
-        return jsonify({"error": "Consumer not found"}), 404
-
-    data = request.get_json(silent=True) or {}
-    allowed = ("cust_name", "acc_name", "contact", "email", "address")
-    updated = {}
-    for field in allowed:
-        if field in data:
-            setattr(consumer, field, data[field])
-            updated[field] = data[field]
-
-    if not updated:
-        return jsonify({"error": "No valid fields to update"}), 400
-
-    db.session.commit()
-    return jsonify({
-        "ok": True,
-        "updated": updated,
-        "consumer": {
-            "id": consumer.id,
-            "cust_name": consumer.cust_name,
-            "contact": consumer.contact,
-            "email": consumer.email,
-        },
-    })
