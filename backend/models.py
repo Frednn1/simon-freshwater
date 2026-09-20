@@ -20,9 +20,7 @@ class Consumer(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     readings = db.relationship(
-        'MeterReading',
-        backref='consumer',
-        lazy=True,
+        'MeterReading', backref='consumer', lazy=True,
         order_by='MeterReading.reading_date.desc()'
     )
 
@@ -30,9 +28,7 @@ class Consumer(db.Model):
 class MeterReading(db.Model):
     __tablename__ = 'meter_readings'
     id = db.Column(db.Integer, primary_key=True)
-    consumer_id = db.Column(
-        db.Integer, db.ForeignKey('consumers.id'), nullable=False
-    )
+    consumer_id = db.Column(db.Integer, db.ForeignKey('consumers.id'), nullable=False)
     reading_m3 = db.Column(db.Float, nullable=False)
     reading_date = db.Column(db.Date, nullable=False)
     amount_kes = db.Column(db.Float, nullable=False)
@@ -47,11 +43,36 @@ class MeterReading(db.Model):
 class NotificationLog(db.Model):
     __tablename__ = 'notification_log'
     id = db.Column(db.Integer, primary_key=True)
-    consumer_id = db.Column(
-        db.Integer, db.ForeignKey('consumers.id'), nullable=False, index=True
-    )
+    consumer_id = db.Column(db.Integer, db.ForeignKey('consumers.id'),
+                            nullable=False, index=True)
     channel = db.Column(db.String(10), nullable=False)
     status = db.Column(db.String(20), nullable=False)
     detail = db.Column(db.String(255))
     sent_at = db.Column(db.DateTime, default=datetime.utcnow,
                         nullable=False, index=True)
+
+
+class AdminUser(db.Model):
+    __tablename__ = 'admin_users'
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(60), unique=True, nullable=False, index=True)
+    password_hash = db.Column(db.String(255), nullable=False)
+    phone = db.Column(db.String(20), nullable=False)
+    email = db.Column(db.String(120))
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    failed_attempts = db.Column(db.Integer, default=0, nullable=False)
+    locked_until = db.Column(db.DateTime)
+    last_login_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class PasswordResetToken(db.Model):
+    __tablename__ = 'password_reset_tokens'
+    id = db.Column(db.Integer, primary_key=True)
+    admin_id = db.Column(db.Integer, db.ForeignKey('admin_users.id'),
+                         nullable=False, index=True)
+    token_hash = db.Column(db.String(64), nullable=False, index=True)
+    otp_hash = db.Column(db.String(64), nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    used = db.Column(db.Boolean, default=False, nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Login – Simon Fresh Water</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="auth-body">
+  <main class="auth-main">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <div class="logo-drop">💧</div>
+        <h1>Simon Fresh Water</h1>
+        <p>Admin Sign In</p>
+      </div>
+
+      <form id="loginForm" class="auth-form">
+        <div class="form-row">
+          <label for="username">Username</label>
+          <input type="text" id="username" autocomplete="username" required>
+        </div>
+        <div class="form-row">
+          <label for="password">Password</label>
+          <input type="password" id="password" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="btn-primary btn-full" id="loginBtn">Sign In</button>
+      </form>
+
+      <div id="loginMsg" class="alert hidden"></div>
+
+      <div class="auth-footer">
+        <a href="/admin/forgot" class="auth-link">Forgot password?</a>
+        <a href="/" class="auth-link">← Back to site</a>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const NEXT = params.get('next') || '/';
+
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('loginBtn');
+      const msg = document.getElementById('loginMsg');
+      btn.disabled = true;
+      btn.textContent = 'Signing in…';
+      msg.classList.add('hidden');
+
+      try {
+        const r = await fetch('/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: document.getElementById('username').value.trim(),
+            password: document.getElementById('password').value,
+          }),
+        });
+        const data = await r.json();
+        if (r.ok && data.ok) {
+          msg.className = 'alert alert-success';
+          msg.textContent = '✅ Signed in. Redirecting…';
+          msg.classList.remove('hidden');
+          setTimeout(() => { location.href = NEXT; }, 600);
+        } else {
+          msg.className = 'alert alert-error';
+          msg.textContent = data.error || 'Login failed.';
+          msg.classList.remove('hidden');
+          btn.disabled = false;
+          btn.textContent = 'Sign In';
+        }
+      } catch {
+        msg.className = 'alert alert-error';
+        msg.textContent = 'Network error. Please try again.';
+        msg.classList.remove('hidden');
+        btn.disabled = false;
+        btn.textContent = 'Sign In';
+      }
+    });
+  </script>
+</body>
+</html>

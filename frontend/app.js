@@ -12,8 +12,7 @@ function esc(s) {
 }
 function fmt(n) {
   return Number(n).toLocaleString('en-KE', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
   });
 }
 function fmtDate(iso) {
@@ -33,16 +32,27 @@ function fmtDateTime(iso) {
 }
 function badgeClass(status) {
   const map = {
-    CLEARED: 'badge-cleared',
-    PREPAYMENT: 'badge-prepaid',
-    DUE: 'badge-due',
-    OVERDUE: 'badge-overdue',
+    CLEARED: 'badge-cleared', PREPAYMENT: 'badge-prepaid',
+    DUE: 'badge-due', OVERDUE: 'badge-overdue',
     OVERDUE_APPROACHING: 'badge-approaching',
   };
   return map[status] || 'badge-none';
 }
 function badge(status, label) {
   return `<span class="badge ${badgeClass(status)}">${esc(label)}</span>`;
+}
+
+/* ─── Redirect to login on 401 ─── */
+async function adminFetch(url, options = {}) {
+  options.credentials = 'same-origin';
+  options.headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers || {});
+  const r = await fetch(url, options);
+  if (r.status === 401) {
+    const next = encodeURIComponent(location.pathname + location.search);
+    location.href = `/admin/login?next=${next}`;
+    throw new Error('Redirecting to login…');
+  }
+  return r;
 }
 
 /* ═══════════════════════════════════════════════
@@ -77,13 +87,11 @@ function initHomePage() {
         btn.disabled = false;
         const results = data.results || [];
         if (results.length === 0) {
-          errorBox.textContent =
-            'No matching consumer found. Please check your name or account number.';
+          errorBox.textContent = 'No matching consumer found.';
           errorBox.classList.remove('hidden');
           return;
         }
-        resultsList.innerHTML = results
-          .map((c) => `
+        resultsList.innerHTML = results.map((c) => `
           <a class="result-item ${c.is_active ? '' : 'result-item-terminated'}"
              href="/consumer?id=${c.id}">
             <div>
@@ -94,14 +102,13 @@ function initHomePage() {
               <div class="result-acc">Acc: ${esc(c.meter_acc_no)} · ${esc(c.acc_name)}</div>
             </div>
             <div class="result-right">${badge(c.status, c.status_label)}</div>
-          </a>`)
-          .join('');
+          </a>`).join('');
         resultsBox.classList.remove('hidden');
       })
       .catch(() => {
         loader.classList.add('hidden');
         btn.disabled = false;
-        errorBox.textContent = 'Something went wrong. Please try again.';
+        errorBox.textContent = 'Something went wrong.';
         errorBox.classList.remove('hidden');
       });
   }
@@ -113,13 +120,11 @@ function initHomePage() {
     debounce = setTimeout(doSearch, 450);
   });
 
-  /* ─── Modal openers ─── */
   document.getElementById('openNewCustomerBtn')
     .addEventListener('click', openNewCustomerModal);
   document.getElementById('openTerminateBtn')
     .addEventListener('click', openTerminateModal);
 
-  /* ─── Terminate modal search ─── */
   const termInput = document.getElementById('termSearchInput');
   let termDebounce;
   termInput.addEventListener('input', () => {
@@ -139,7 +144,7 @@ function openNewCustomerModal() {
 function closeNewCustomerModal() {
   document.getElementById('newCustomerModal').classList.add('hidden');
 }
-function submitNewCustomer() {
+async function submitNewCustomer() {
   const btn = document.getElementById('createCustomerBtn');
   const msg = document.getElementById('newCustomerMsg');
 
@@ -161,50 +166,36 @@ function submitNewCustomer() {
     return;
   }
 
-  btn.disabled = true;
-  btn.textContent = 'Creating…';
+  btn.disabled = true; btn.textContent = 'Creating…';
   msg.classList.add('hidden');
 
-  const secret = prompt('Enter admin secret to authorize this action:');
-  if (!secret) {
-    btn.disabled = false;
-    btn.textContent = 'Create Customer';
-    return;
-  }
-
-  fetch(`${API}/api/admin/consumer`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Admin-Secret': secret,
-    },
-    body: JSON.stringify(payload),
-  })
-    .then((r) => r.json().then((d) => ({ ok: r.ok, data: d })))
-    .then(({ ok, data }) => {
-      btn.disabled = false;
-      btn.textContent = 'Create Customer';
-      if (ok && data.ok) {
-        msg.className = 'alert alert-success';
-        msg.textContent = `✅ ${data.consumer.cust_name} (${data.consumer.meter_acc_no}) created.`;
-        msg.classList.remove('hidden');
-        setTimeout(() => {
-          closeNewCustomerModal();
-          window.location.href = `/consumer?id=${data.consumer.id}`;
-        }, 1200);
-      } else {
-        msg.className = 'alert alert-error';
-        msg.textContent = data.error || 'Failed to create customer.';
-        msg.classList.remove('hidden');
-      }
-    })
-    .catch(() => {
-      btn.disabled = false;
-      btn.textContent = 'Create Customer';
-      msg.className = 'alert alert-error';
-      msg.textContent = 'Network error — please try again.';
-      msg.classList.remove('hidden');
+  try {
+    const r = await adminFetch(`${API}/api/admin/consumer`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
+    const data = await r.json();
+    if (r.ok && data.ok) {
+      msg.className = 'alert alert-success';
+      msg.textContent = `✅ ${data.consumer.cust_name} (${data.consumer.meter_acc_no}) created.`;
+      msg.classList.remove('hidden');
+      setTimeout(() => {
+        closeNewCustomerModal();
+        location.href = `/consumer?id=${data.consumer.id}`;
+      }, 1200);
+    } else {
+      msg.className = 'alert alert-error';
+      msg.textContent = data.error || 'Failed.';
+      msg.classList.remove('hidden');
+      btn.disabled = false; btn.textContent = 'Create Customer';
+    }
+  } catch (e) {
+    if (e.message && e.message.includes('Redirecting')) return;
+    msg.className = 'alert alert-error';
+    msg.textContent = 'Network error.';
+    msg.classList.remove('hidden');
+    btn.disabled = false; btn.textContent = 'Create Customer';
+  }
 }
 
 /* ═══════════════════════════════════════════════
@@ -227,7 +218,6 @@ function runTerminateSearch() {
   const msg = document.getElementById('terminateMsg');
 
   if (q.length < 2) { list.innerHTML = ''; return; }
-
   loader.classList.remove('hidden');
   msg.classList.add('hidden');
 
@@ -251,12 +241,10 @@ function runTerminateSearch() {
               ? `<button class="btn-admin btn-delete" data-id="${c.id}"
                          data-name="${esc(c.cust_name)}" type="button">Terminate</button>`
               : `<span class="terminated-tag">TERMINATED</span>
-                 <a class="btn-admin btn-reactivate" href="/consumer?id=${c.id}">Open</a>`
-            }
+                 <a class="btn-admin btn-reactivate" href="/consumer?id=${c.id}">Open</a>`}
           </div>
         </div>`).join('');
 
-      // Attach terminate handlers
       list.querySelectorAll('.btn-delete[data-id]').forEach((btn) => {
         btn.addEventListener('click', (e) => {
           const id = e.currentTarget.getAttribute('data-id');
@@ -274,33 +262,27 @@ function runTerminateSearch() {
     });
 }
 
-function terminateCustomer(id, name) {
+async function terminateCustomer(id, name) {
   const msg = document.getElementById('terminateMsg');
-  const secret = prompt(`Enter admin secret to terminate ${name}:`);
-  if (!secret) return;
-
-  fetch(`${API}/api/admin/consumer/${id}/terminate`, {
-    method: 'POST',
-    headers: { 'X-Admin-Secret': secret },
-  })
-    .then((r) => r.json().then((d) => ({ ok: r.ok, data: d })))
-    .then(({ ok, data }) => {
-      if (ok && data.ok) {
-        msg.className = 'alert alert-success';
-        msg.textContent = `✅ ${name} terminated.`;
-        msg.classList.remove('hidden');
-        runTerminateSearch();
-      } else {
-        msg.className = 'alert alert-error';
-        msg.textContent = data.error || 'Termination failed.';
-        msg.classList.remove('hidden');
-      }
-    })
-    .catch(() => {
-      msg.className = 'alert alert-error';
-      msg.textContent = 'Network error.';
+  try {
+    const r = await adminFetch(`${API}/api/admin/consumer/${id}/terminate`, { method: 'POST' });
+    const data = await r.json();
+    if (r.ok && data.ok) {
+      msg.className = 'alert alert-success';
+      msg.textContent = `✅ ${name} terminated.`;
       msg.classList.remove('hidden');
-    });
+      runTerminateSearch();
+    } else {
+      msg.className = 'alert alert-error';
+      msg.textContent = data.error || 'Termination failed.';
+      msg.classList.remove('hidden');
+    }
+  } catch (e) {
+    if (e.message && e.message.includes('Redirecting')) return;
+    msg.className = 'alert alert-error';
+    msg.textContent = 'Network error.';
+    msg.classList.remove('hidden');
+  }
 }
 
 /* ═══════════════════════════════════════════════
@@ -319,14 +301,11 @@ function initConsumerPage(consumerId) {
       const readings = data.readings || [];
       const isActive = c.is_active !== false;
 
-      /* Terminated banner + admin actions */
       if (!isActive) {
         document.getElementById('terminatedBanner').classList.remove('hidden');
         document.getElementById('terminatedAtText').textContent =
           c.terminated_at ? `Terminated on ${fmtDateTime(c.terminated_at)}` : '';
         document.getElementById('adminActions').classList.remove('hidden');
-
-        // Hide reading form + notify card for terminated
         document.getElementById('readingFormCard').classList.add('hidden');
         document.getElementById('notifyCard').classList.add('hidden');
 
@@ -336,7 +315,6 @@ function initConsumerPage(consumerId) {
           .addEventListener('click', () => deleteConsumer(c.id, c.cust_name));
       }
 
-      /* Overview */
       document.getElementById('overviewCard').classList.remove('hidden');
       document.getElementById('custNameHeading').textContent = c.cust_name;
       document.getElementById('accName').textContent = c.acc_name;
@@ -344,7 +322,6 @@ function initConsumerPage(consumerId) {
       document.getElementById('contact').textContent = c.contact;
       document.getElementById('email').textContent = c.email || '—';
 
-      /* Address — clickable Google Maps link masked as household name */
       const addrEl = document.getElementById('address');
       const mapsUrl = buildMapsUrl(c);
       if (mapsUrl) {
@@ -366,18 +343,14 @@ function initConsumerPage(consumerId) {
 
       const sum = document.getElementById('statusSummary');
       let html = `<p><strong>Overall Status:</strong> ${isActive ? esc(s.label) : 'Terminated'}</p>`;
-      if (s.total_due > 0)
-        html += `<p><strong>Outstanding:</strong> KES ${fmt(s.total_due)}</p>`;
-      if (s.total_prepaid > 0)
-        html += `<p><strong>Prepaid Credit:</strong> KES ${fmt(s.total_prepaid)}</p>`;
+      if (s.total_due > 0) html += `<p><strong>Outstanding:</strong> KES ${fmt(s.total_due)}</p>`;
+      if (s.total_prepaid > 0) html += `<p><strong>Prepaid Credit:</strong> KES ${fmt(s.total_prepaid)}</p>`;
       if (s.last_reading_date)
         html += `<p><strong>Last Reading:</strong> ${fmtDate(s.last_reading_date)} (${s.age_days} days ago)</p>`;
       sum.innerHTML = html;
 
-      /* Readings table */
       document.getElementById('readingsCard').classList.remove('hidden');
-      const tbody = document.getElementById('readingsBody');
-      tbody.innerHTML = readings.map((r) => `
+      document.getElementById('readingsBody').innerHTML = readings.map((r) => `
         <tr>
           <td>${fmtDate(r.reading_date)}</td>
           <td>${Number(r.reading_m3).toFixed(2)}</td>
@@ -388,7 +361,6 @@ function initConsumerPage(consumerId) {
           <td><a href="/bill?id=${r.id}">${esc(r.bill_status)} →</a></td>
         </tr>`).join('');
 
-      /* Notify card — only when active + outstanding */
       if (isActive) {
         const notifyCard = document.getElementById('notifyCard');
         const outstanding = ['DUE', 'OVERDUE', 'OVERDUE_APPROACHING'].includes(s.status);
@@ -401,10 +373,7 @@ function initConsumerPage(consumerId) {
           if (!available.includes('email')) emailBtn.style.display = 'none';
           wireNotifyButtons(consumerId);
         }
-      }
 
-      /* Reading form — only when active */
-      if (isActive) {
         document.getElementById('readingFormCard').classList.remove('hidden');
         document.getElementById('readingForm').addEventListener('submit', (e) => {
           e.preventDefault();
@@ -431,10 +400,7 @@ function initConsumerPage(consumerId) {
                 return;
               }
               msgEl.className = 'alert alert-success';
-              msgEl.textContent =
-                `Reading recorded: ${res.reading.reading_m3} M³ → ` +
-                `consumption ${res.reading.consumption_m3} M³ → ` +
-                `KES ${fmt(res.reading.amount_kes)}`;
+              msgEl.textContent = `Reading recorded: ${res.reading.reading_m3} M³ → consumption ${res.reading.consumption_m3} M³ → KES ${fmt(res.reading.amount_kes)}`;
               msgEl.classList.remove('hidden');
               document.getElementById('readingInput').value = '';
               setTimeout(() => location.reload(), 1800);
@@ -442,7 +408,7 @@ function initConsumerPage(consumerId) {
             .catch(() => {
               submitBtn.disabled = false;
               msgEl.className = 'alert alert-error';
-              msgEl.textContent = 'Failed to submit reading. Please try again.';
+              msgEl.textContent = 'Failed to submit reading.';
               msgEl.classList.remove('hidden');
             });
         });
@@ -451,7 +417,6 @@ function initConsumerPage(consumerId) {
     .catch(() => { loader.textContent = 'Failed to load consumer details.'; });
 }
 
-/* ─── Build Google Maps URL from coordinates or address ─── */
 function buildMapsUrl(c) {
   if (c.latitude != null && c.longitude != null) {
     return `https://www.google.com/maps/search/?api=1&query=${c.latitude},${c.longitude}`;
@@ -462,57 +427,34 @@ function buildMapsUrl(c) {
   return null;
 }
 
-/* ─── Reactivate / Delete handlers ─── */
-function reactivateConsumer(id, name) {
+async function reactivateConsumer(id, name) {
   if (!confirm(`Reactivate ${name}? Readings and reminders will resume.`)) return;
-  const secret = prompt(`Enter admin secret to reactivate ${name}:`);
-  if (!secret) return;
-
-  fetch(`${API}/api/admin/consumer/${id}/reactivate`, {
-    method: 'POST',
-    headers: { 'X-Admin-Secret': secret },
-  })
-    .then((r) => r.json().then((d) => ({ ok: r.ok, data: d })))
-    .then(({ ok, data }) => {
-      if (ok && data.ok) {
-        alert(`✅ ${name} reactivated.`);
-        location.reload();
-      } else {
-        alert(`❌ ${data.error || 'Reactivate failed.'}`);
-      }
-    })
-    .catch(() => alert('Network error.'));
+  try {
+    const r = await adminFetch(`${API}/api/admin/consumer/${id}/reactivate`, { method: 'POST' });
+    const data = await r.json();
+    if (r.ok && data.ok) { alert(`✅ ${name} reactivated.`); location.reload(); }
+    else { alert(`❌ ${data.error || 'Reactivate failed.'}`); }
+  } catch (e) {
+    if (e.message && e.message.includes('Redirecting')) return;
+    alert('Network error.');
+  }
 }
 
-function deleteConsumer(id, name) {
-  if (!confirm(
-    `⚠️ PERMANENTLY DELETE ${name}?\n\n` +
-    `This erases the customer, all meter readings, and all logs.\n` +
-    `This CANNOT be undone.`
-  )) return;
-
+async function deleteConsumer(id, name) {
+  if (!confirm(`⚠️ PERMANENTLY DELETE ${name}?\n\nErases customer, all readings, and logs.\nThis CANNOT be undone.`)) return;
   if (!confirm(`Final confirmation — delete ${name} forever?`)) return;
 
-  const secret = prompt(`Enter admin secret to permanently delete ${name}:`);
-  if (!secret) return;
-
-  fetch(`${API}/api/admin/consumer/${id}`, {
-    method: 'DELETE',
-    headers: { 'X-Admin-Secret': secret },
-  })
-    .then((r) => r.json().then((d) => ({ ok: r.ok, data: d })))
-    .then(({ ok, data }) => {
-      if (ok && data.ok) {
-        alert(`🗑️ ${name} permanently deleted.`);
-        window.location.href = '/';
-      } else {
-        alert(`❌ ${data.error || 'Delete failed.'}`);
-      }
-    })
-    .catch(() => alert('Network error.'));
+  try {
+    const r = await adminFetch(`${API}/api/admin/consumer/${id}`, { method: 'DELETE' });
+    const data = await r.json();
+    if (r.ok && data.ok) { alert(`🗑️ ${name} permanently deleted.`); location.href = '/'; }
+    else { alert(`❌ ${data.error || 'Delete failed.'}`); }
+  } catch (e) {
+    if (e.message && e.message.includes('Redirecting')) return;
+    alert('Network error.');
+  }
 }
 
-/* ─── Notify buttons ─── */
 function wireNotifyButtons(consumerId) {
   const smsBtn = document.getElementById('sendSmsBtn');
   const emailBtn = document.getElementById('sendEmailBtn');
@@ -543,10 +485,9 @@ function wireNotifyButtons(consumerId) {
         msgEl.classList.remove('hidden');
       })
       .catch(() => {
-        btn.disabled = false;
-        btn.innerHTML = original;
+        btn.disabled = false; btn.innerHTML = original;
         msgEl.className = 'alert alert-error';
-        msgEl.textContent = 'Network error — please try again.';
+        msgEl.textContent = 'Network error.';
         msgEl.classList.remove('hidden');
       });
   }
@@ -572,15 +513,12 @@ function initBillPage(readingId) {
     .then((data) => {
       loader.classList.add('hidden');
       document.getElementById('billCard').classList.remove('hidden');
-      const c = data.consumer;
-      const r = data.reading;
-
+      const c = data.consumer, r = data.reading;
       document.getElementById('bCustName').textContent = c.cust_name;
       document.getElementById('bAccName').textContent = c.acc_name;
       document.getElementById('bMeterAcc').textContent = c.meter_acc_no;
       document.getElementById('bContact').textContent = c.contact;
       document.getElementById('bAddress').textContent = c.address || '—';
-
       document.getElementById('bDate').textContent = fmtDate(r.reading_date);
       document.getElementById('bM3').textContent = Number(r.reading_m3).toFixed(2) + ' M³';
       document.getElementById('bAmount').textContent = 'KES ' + fmt(r.amount_kes);

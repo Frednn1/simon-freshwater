@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reset Password – Simon Fresh Water</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="auth-body">
+  <main class="auth-main">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <div class="logo-drop">💧</div>
+        <h1>Simon Fresh Water</h1>
+        <p>Password Reset</p>
+      </div>
+
+      <!-- STEP 1: request OTP -->
+      <div id="step1">
+        <p class="form-hint-small">
+          Enter your admin username or recovery phone. We'll send a 6-digit
+          code via SMS.
+        </p>
+        <form id="forgotForm" class="auth-form">
+          <div class="form-row">
+            <label for="identifier">Username or Phone</label>
+            <input type="text" id="identifier" required>
+          </div>
+          <button type="submit" class="btn-primary btn-full" id="forgotBtn">Send Reset Code</button>
+        </form>
+      </div>
+
+      <!-- STEP 2: verify OTP + set new password -->
+      <div id="step2" class="hidden">
+        <p class="form-hint-small">
+          Enter the 6-digit code sent to your phone, then choose a new password.
+        </p>
+        <form id="resetForm" class="auth-form">
+          <div class="form-row">
+            <label for="otp">6-Digit Code</label>
+            <input type="text" id="otp" inputmode="numeric" maxlength="6"
+                   pattern="[0-9]{6}" required placeholder="123456">
+          </div>
+          <div class="form-row">
+            <label for="newPassword">New Password (min 8 chars)</label>
+            <input type="password" id="newPassword" minlength="8"
+                   autocomplete="new-password" required>
+          </div>
+          <button type="submit" class="btn-primary btn-full" id="resetBtn">Reset Password</button>
+        </form>
+      </div>
+
+      <div id="forgotMsg" class="alert hidden"></div>
+
+      <div class="auth-footer">
+        <a href="/admin/login" class="auth-link">← Back to sign in</a>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let RESET_TOKEN = null;
+
+    document.getElementById('forgotForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('forgotBtn');
+      const msg = document.getElementById('forgotMsg');
+      btn.disabled = true; btn.textContent = 'Sending…';
+      msg.classList.add('hidden');
+
+      try {
+        const r = await fetch('/api/admin/forgot', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: document.getElementById('identifier').value.trim() }),
+        });
+        const data = await r.json();
+        if (r.ok && data.ok) {
+          msg.className = data.sms_ok ? 'alert alert-success' : 'alert alert-error';
+          msg.textContent = data.message;
+          msg.classList.remove('hidden');
+          if (data.token) {
+            RESET_TOKEN = data.token;
+            document.getElementById('step1').classList.add('hidden');
+            document.getElementById('step2').classList.remove('hidden');
+          }
+          btn.disabled = false; btn.textContent = 'Send Reset Code';
+        } else {
+          msg.className = 'alert alert-error';
+          msg.textContent = data.error || 'Request failed.';
+          msg.classList.remove('hidden');
+          btn.disabled = false; btn.textContent = 'Send Reset Code';
+        }
+      } catch {
+        msg.className = 'alert alert-error';
+        msg.textContent = 'Network error.';
+        msg.classList.remove('hidden');
+        btn.disabled = false; btn.textContent = 'Send Reset Code';
+      }
+    });
+
+    document.getElementById('resetForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!RESET_TOKEN) return;
+      const btn = document.getElementById('resetBtn');
+      const msg = document.getElementById('forgotMsg');
+      btn.disabled = true; btn.textContent = 'Resetting…';
+      msg.classList.add('hidden');
+
+      try {
+        const r = await fetch('/api/admin/reset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token: RESET_TOKEN,
+            otp: document.getElementById('otp').value.trim(),
+            new_password: document.getElementById('newPassword').value,
+          }),
+        });
+        const data = await r.json();
+        if (r.ok && data.ok) {
+          msg.className = 'alert alert-success';
+          msg.textContent = '✅ ' + data.message;
+          msg.classList.remove('hidden');
+          setTimeout(() => { location.href = '/admin/login'; }, 1200);
+        } else {
+          msg.className = 'alert alert-error';
+          msg.textContent = data.error || 'Reset failed.';
+          msg.classList.remove('hidden');
+          btn.disabled = false; btn.textContent = 'Reset Password';
+        }
+      } catch {
+        msg.className = 'alert alert-error';
+        msg.textContent = 'Network error.';
+        msg.classList.remove('hidden');
+        btn.disabled = false; btn.textContent = 'Reset Password';
+      }
+    });
+  </script>
+</body>
+</html>
