@@ -152,6 +152,7 @@ async function submitNewCustomer() {
     cust_name:    document.getElementById('ncCustName').value.trim(),
     acc_name:     document.getElementById('ncAccName').value.trim(),
     meter_acc_no: document.getElementById('ncMeterAcc').value.trim(),
+    meter_initial_reading_m3: parseFloat(document.getElementById('ncInitialReading').value || '0'),
     contact:      document.getElementById('ncContact').value.trim(),
     email:        document.getElementById('ncEmail').value.trim(),
     address:      document.getElementById('ncAddress').value.trim(),

@@ -37,12 +37,10 @@ if DATABASE_URL.startswith("postgres://"):
 app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-change-me")
-
-# Session cookie hardening
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_SECURE"] = bool(os.environ.get("RENDER"))  # https only on Render
+app.config["SESSION_COOKIE_SECURE"] = bool(os.environ.get("RENDER"))
 
 db.init_app(app)
 
@@ -75,7 +73,6 @@ def _current_admin():
 
 
 def _require_admin():
-    """Session first; fallback to X-Admin-Secret header (script/curl)."""
     if _current_admin():
         return None
     secret = request.headers.get("X-Admin-Secret", "")
@@ -97,6 +94,8 @@ def _ensure_consumer_columns():
         alters.append("ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE")
     if "terminated_at" not in existing:
         alters.append("ADD COLUMN terminated_at TIMESTAMP NULL")
+    if "meter_initial_reading_m3" not in existing:
+        alters.append("ADD COLUMN meter_initial_reading_m3 DOUBLE PRECISION NOT NULL DEFAULT 0")
     for alt in alters:
         db.session.execute(text(f"ALTER TABLE consumers {alt}"))
     if alters:
@@ -181,9 +180,10 @@ def get_consumer_details(consumer_id):
              .order_by(MeterReading.reading_date.asc(),
                        MeterReading.id.asc()).all())
 
+    initial = float(consumer.meter_initial_reading_m3 or 0.0)
     cons_by_id, prev_m3 = {}, None
     for r in all_r:
-        cons_by_id[r.id] = compute_consumption(r.reading_m3, prev_m3)
+        cons_by_id[r.id] = compute_consumption(r.reading_m3, prev_m3, initial)
         prev_m3 = r.reading_m3
 
     latest5 = list(reversed(all_r))[:5]
@@ -203,6 +203,7 @@ def get_consumer_details(consumer_id):
             "contact": consumer.contact, "email": consumer.email,
             "address": consumer.address,
             "latitude": consumer.latitude, "longitude": consumer.longitude,
+            "meter_initial_reading_m3": initial,
             "is_active": bool(consumer.is_active),
             "terminated_at": consumer.terminated_at.isoformat() if consumer.terminated_at else None,
         },
@@ -232,7 +233,10 @@ def get_reading_bill(reading_id):
                  or (prev.reading_date == reading.reading_date
                      and prev.id < reading.id)):
         prev_m3 = prev.reading_m3
-    consumption = compute_consumption(reading.reading_m3, prev_m3)
+    consumption = compute_consumption(
+        reading.reading_m3, prev_m3,
+        float(consumer.meter_initial_reading_m3 or 0.0),
+    )
 
     return jsonify({
         "consumer": {
@@ -271,14 +275,23 @@ def submit_reading():
     if not consumer.is_active:
         return jsonify({"error": "Consumer is terminated. Reactivate to submit readings."}), 403
 
+    initial = float(consumer.meter_initial_reading_m3 or 0.0)
     prev = _previous_reading(consumer.id)
     prev_m3 = prev.reading_m3 if prev else None
-    if prev_m3 is not None and reading_m3 <= prev_m3:
-        return jsonify({"error": (f"New reading must be greater than the previous reading "
-                                 f"({prev_m3} M³). You entered {reading_m3} M³.")}), 400
+    baseline = prev_m3 if prev_m3 is not None else initial
 
-    consumption = compute_consumption(reading_m3, prev_m3)
-    amount = compute_amount(reading_m3, prev_m3)
+    if reading_m3 <= baseline:
+        if prev_m3 is not None:
+            err = (f"New reading must be greater than the previous reading "
+                   f"({prev_m3} M³). You entered {reading_m3} M³.")
+        else:
+            err = (f"New reading must be greater than the initial meter reading "
+                   f"({initial} M³). You entered {reading_m3} M³.")
+        return jsonify({"error": err}), 400
+
+    consumption = compute_consumption(reading_m3, prev_m3, initial)
+    amount = compute_amount(reading_m3, prev_m3, initial)
+
     new_reading = MeterReading(
         consumer_id=consumer.id, reading_m3=reading_m3,
         reading_date=date.today(), amount_kes=amount, amount_paid=0.0,
@@ -441,6 +454,7 @@ def admin_create_consumer():
     address = (data.get("address") or "").strip()
     latitude = data.get("latitude")
     longitude = data.get("longitude")
+    initial_raw = data.get("meter_initial_reading_m3")
 
     if not (cust_name and acc_name and meter_acc_no and contact):
         return jsonify({"error": "cust_name, acc_name, meter_acc_no, and contact are required."}), 400
@@ -457,10 +471,18 @@ def admin_create_consumer():
     if lng is not None and not (-180 <= lng <= 180):
         return jsonify({"error": "longitude must be between -180 and 180."}), 400
 
+    try:
+        initial = float(initial_raw) if initial_raw not in (None, "", "null") else 0.0
+    except (ValueError, TypeError):
+        return jsonify({"error": "meter_initial_reading_m3 must be a number."}), 400
+    if initial < 0 or initial > 1_000_000:
+        return jsonify({"error": "meter_initial_reading_m3 out of range."}), 400
+
     c = Consumer(cust_name=cust_name, acc_name=acc_name,
                  meter_acc_no=meter_acc_no, contact=contact,
                  email=email or None, address=address or None,
-                 latitude=lat, longitude=lng, is_active=True)
+                 latitude=lat, longitude=lng,
+                 meter_initial_reading_m3=initial, is_active=True)
     db.session.add(c)
     db.session.commit()
 
@@ -468,7 +490,9 @@ def admin_create_consumer():
         "id": c.id, "cust_name": c.cust_name, "acc_name": c.acc_name,
         "meter_acc_no": c.meter_acc_no, "contact": c.contact,
         "email": c.email, "address": c.address,
-        "latitude": c.latitude, "longitude": c.longitude, "is_active": True,
+        "latitude": c.latitude, "longitude": c.longitude,
+        "meter_initial_reading_m3": float(c.meter_initial_reading_m3 or 0.0),
+        "is_active": True,
     }}), 201
 
 
@@ -483,7 +507,7 @@ def admin_update_consumer(consumer_id):
 
     data = request.get_json(silent=True) or {}
     allowed = ("cust_name", "acc_name", "contact", "email", "address",
-               "latitude", "longitude")
+               "latitude", "longitude", "meter_initial_reading_m3")
     updated = {}
     for f in allowed:
         if f in data:
@@ -495,6 +519,11 @@ def admin_update_consumer(consumer_id):
                     try: setattr(consumer, f, float(v))
                     except (ValueError, TypeError):
                         return jsonify({"error": f"{f} must be a number."}), 400
+            elif f == "meter_initial_reading_m3":
+                try:
+                    setattr(consumer, f, float(v) if v not in (None, "", "null") else 0.0)
+                except (ValueError, TypeError):
+                    return jsonify({"error": "meter_initial_reading_m3 must be a number."}), 400
             else:
                 setattr(consumer, f, v)
             updated[f] = v
@@ -505,6 +534,7 @@ def admin_update_consumer(consumer_id):
     return jsonify({"ok": True, "updated": updated, "consumer": {
         "id": consumer.id, "cust_name": consumer.cust_name,
         "contact": consumer.contact, "email": consumer.email,
+        "meter_initial_reading_m3": float(consumer.meter_initial_reading_m3 or 0.0),
         "is_active": bool(consumer.is_active),
     }})
 
@@ -562,36 +592,15 @@ def admin_delete_consumer(consumer_id):
 
 
 # ═══════════════════════════════════════════════
-#  ADMIN — seed
+#  ADMIN — SEED (empty; retained for wipe functionality)
 # ═══════════════════════════════════════════════
 
-SEED_DATA = [
-    {"cust_name": "John Kamau", "acc_name": "Kamau Household",
-     "meter_acc_no": "MTR-0012", "contact": "0712345678",
-     "email": "john.kamau@example.com", "address": "Kikuyu Town, Kiambu County",
-     "readings": [(21.0, 140, 0.0), (25.0, 110, 360.0), (28.0, 80, 270.0),
-                  (32.0, 50, 360.0), (35.0, 20, 0.0), (36.0, 2, 0.0)]},
-    {"cust_name": "Mary Wanjiku", "acc_name": "Wanjiku Residence",
-     "meter_acc_no": "MTR-0045", "contact": "0723456789",
-     "email": "mary.w@example.com", "address": "Kikuyu, Near PCEA Church",
-     "readings": [(38.0, 75, 0.0), (40.0, 45, 180.0)]},
-    {"cust_name": "Peter Mwangi", "acc_name": "Mwangi Family",
-     "meter_acc_no": "MTR-0078", "contact": "0734567890",
-     "email": "peter.m@example.com", "address": "Kikuyu, Gitaru Road",
-     "readings": [(20.0, 80, 0.0), (22.0, 50, 100.0)]},
-    {"cust_name": "Grace Njeri", "acc_name": "Njeri Home",
-     "meter_acc_no": "MTR-0102", "contact": "0745678901",
-     "email": "grace.n@example.com", "address": "Kikuyu, Thogoto",
-     "readings": [(15.0, 70, 0.0), (18.0, 40, 2000.0)]},
-    {"cust_name": "Samuel Ochieng", "acc_name": "Ochieng Apartments",
-     "meter_acc_no": "MTR-0203", "contact": "0756789012",
-     "email": "sam.o@example.com", "address": "Kikuyu, Ondiri",
-     "readings": [(50.0, 75, 0.0), (55.0, 45, 400.0)]},
-]
+SEED_DATA = []  # No test consumers — use the New Customer form to add real ones.
 
 
 @app.route("/api/admin/seed", methods=["POST"])
 def admin_seed():
+    """Retained for ?replace=1 wipe. Without replace, seeds nothing (empty SEED_DATA)."""
     u = _require_admin()
     if u: return u
 
@@ -601,19 +610,23 @@ def admin_seed():
         MeterReading.query.delete()
         Consumer.query.delete()
         db.session.commit()
+        return jsonify({"ok": True, "wiped": True, "created": 0}), 200
 
-    created = skipped = 0
+    created = 0
     for spec in SEED_DATA:
         if Consumer.query.filter_by(meter_acc_no=spec["meter_acc_no"]).first():
-            skipped += 1; continue
+            continue
         c = Consumer(cust_name=spec["cust_name"], acc_name=spec["acc_name"],
                      meter_acc_no=spec["meter_acc_no"], contact=spec["contact"],
-                     email=spec["email"], address=spec["address"], is_active=True)
+                     email=spec["email"], address=spec["address"],
+                     meter_initial_reading_m3=spec.get("meter_initial_reading_m3", 0.0),
+                     is_active=True)
         db.session.add(c)
         db.session.flush()
         prev_m3 = None
+        initial = float(spec.get("meter_initial_reading_m3", 0.0))
         for m3, days_ago, paid in sorted(spec["readings"], key=lambda x: -x[1]):
-            amt = compute_amount(m3, prev_m3)
+            amt = compute_amount(m3, prev_m3, initial)
             db.session.add(MeterReading(
                 consumer_id=c.id, reading_m3=m3,
                 reading_date=date.today() - timedelta(days=days_ago),
@@ -621,7 +634,44 @@ def admin_seed():
             prev_m3 = m3
         created += 1
     db.session.commit()
-    return jsonify({"created": created, "skipped": skipped, "replaced": replace}), 200
+    return jsonify({"created": created, "skipped": 0, "replaced": False}), 200
+
+
+# ═══════════════════════════════════════════════
+#  ADMIN — RECOMPUTE AMOUNTS (one-time after billing rule change)
+# ═══════════════════════════════════════════════
+
+@app.route("/api/admin/recompute-amounts", methods=["POST"])
+def admin_recompute_amounts():
+    """
+    Walk every consumer's readings oldest → newest and recompute amount_kes
+    using the current billing rule (with meter_initial_reading_m3 support).
+    Idempotent — safe to run multiple times.
+    """
+    u = _require_admin()
+    if u: return u
+
+    updated = 0
+    scanned = 0
+    for c in Consumer.query.all():
+        initial = float(c.meter_initial_reading_m3 or 0.0)
+        readings = (MeterReading.query
+                    .filter_by(consumer_id=c.id)
+                    .order_by(MeterReading.reading_date.asc(),
+                              MeterReading.id.asc())
+                    .all())
+        prev_m3 = None
+        for r in readings:
+            scanned += 1
+            new_amt = compute_amount(r.reading_m3, prev_m3, initial)
+            if abs(new_amt - (r.amount_kes or 0.0)) > 0.001:
+                r.amount_kes = new_amt
+                updated += 1
+            prev_m3 = r.reading_m3
+
+    db.session.commit()
+    return jsonify({"ok": True, "readings_scanned": scanned,
+                    "readings_updated": updated}), 200
 
 
 # ═══════════════════════════════════════════════

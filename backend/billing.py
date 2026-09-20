@@ -3,39 +3,35 @@ from datetime import date
 RATE_PER_M3 = 90.0   # KES 90 per M³
 
 
-def compute_consumption(current_m3: float, previous_m3: float | None) -> float:
+def compute_consumption(current_m3: float,
+                        previous_m3: float | None = None,
+                        initial_m3: float = 0.0) -> float:
     """
-    Consumption for a billing period =
-        current cumulative meter reading − previous cumulative meter reading.
+    Consumption for a billing period.
 
-    A baseline reading (no previous) has zero consumption — no bill until the
-    next reading establishes a delta.
+    - If previous_m3 is provided:
+          consumption = current - previous   (subsequent readings)
+    - If previous_m3 is None (first reading of a consumer):
+          consumption = current - initial_m3
+      where initial_m3 is the meter's starting value at install time
+      (0 for new meters, nonzero for pre-existing meters).
     """
-    if previous_m3 is None:
-        return 0.0
-    return round(current_m3 - previous_m3, 4)
+    baseline = previous_m3 if previous_m3 is not None else float(initial_m3 or 0.0)
+    return round(current_m3 - baseline, 4)
 
 
 def compute_amount(current_m3: float,
-                   previous_m3: float | None = None) -> float:
-    """
-    Bill amount = consumption × KES 90.
-
-    - Baseline reading (previous_m3 is None) → KES 0.
-    - Otherwise → (current − previous) × RATE_PER_M3.
-
-    Server-side only. Callers must supply the previous cumulative reading
-    (the most recent reading stored for that consumer, ordered by date then id).
-    """
-    consumption = compute_consumption(current_m3, previous_m3)
+                   previous_m3: float | None = None,
+                   initial_m3: float = 0.0) -> float:
+    """Bill amount = consumption × KES 90. Server-side only."""
+    consumption = compute_consumption(current_m3, previous_m3, initial_m3)
     return round(consumption * RATE_PER_M3, 2)
 
 
 def get_consumer_status(readings: list) -> dict:
     """
-    Determine overall water bill status.
+    Overall water bill status.
 
-    Rules (consumption-based billing — bill incurred AFTER utility consumed):
       - CLEARED             : last reading fully paid, no credit.
       - PREPAYMENT          : last reading cleared AND extra credit exists.
       - DUE                 : last reading has unpaid balance, age <= 1 month.
@@ -44,13 +40,9 @@ def get_consumer_status(readings: list) -> dict:
     """
     if not readings:
         return {
-            "status": "NO_READINGS",
-            "label": "No Readings",
-            "total_due": 0.0,
-            "total_prepaid": 0.0,
-            "last_reading_date": None,
-            "age_days": 0,
-            "latest_balance": 0.0,
+            "status": "NO_READINGS", "label": "No Readings",
+            "total_due": 0.0, "total_prepaid": 0.0,
+            "last_reading_date": None, "age_days": 0, "latest_balance": 0.0,
         }
 
     latest = readings[0]
@@ -75,8 +67,7 @@ def get_consumer_status(readings: list) -> dict:
             status, label = "OVERDUE_APPROACHING", "Overdue (Approaching)"
 
     return {
-        "status": status,
-        "label": label,
+        "status": status, "label": label,
         "total_due": round(total_outstanding, 2),
         "total_prepaid": round(total_credit, 2),
         "last_reading_date": latest.reading_date.isoformat(),

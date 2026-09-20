@@ -78,6 +78,16 @@
             <input type="text" id="ncMeterAcc" required placeholder="e.g. MTR-0300">
           </div>
           <div class="form-row">
+            <label for="ncInitialReading">Initial Meter Reading (M³) *</label>
+            <input type="number" id="ncInitialReading" step="0.01" min="0"
+                   value="0" required>
+          </div>
+          <p class="form-hint-small" style="margin:-.4rem 0 .8rem;">
+            Leave as <strong>0</strong> if the meter starts from zero at install.
+            If it already showed a value (e.g. 20 M³), enter that here — the first
+            bill will be (first reading − this value) × KES 90.
+          </p>
+          <div class="form-row">
             <label for="ncContact">Contact (WhatsApp / SMS) *</label>
             <input type="text" id="ncContact" required placeholder="e.g. 0712345678">
           </div>
