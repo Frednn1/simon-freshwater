@@ -203,6 +203,10 @@ def styles():
 def appjs():
     return send_from_directory(FRONTEND_DIR, "app.js")
 
+@app.route("/receipt_template.html")
+def receipt_template_page():
+    return send_from_directory(FRONTEND_DIR, "receipt_template.html")
+
 
 # ═══════════════════════════════════════════════
 #  API — HEALTH
