@@ -121,9 +121,9 @@ def request_password_reset(identifier):
     db.session.commit()
 
     sms_body = (
-        f"SIMON FRESH WATER — Admin\n"
-        f"Your password reset code is: {otp}\n"
-        f"Valid {RESET_TOKEN_TTL} min. If you didn't request this, ignore."
+        f"SIMON FRESH WATER - Admin\n"
+        f"Password reset code: {otp}\n"
+        f"Valid {RESET_TOKEN_TTL} min. If you didn't request it, ignore."
     )
     sms_result = send_sms(admin.phone, sms_body)
 
