@@ -4,192 +4,122 @@
 <meta charset="UTF-8">
 <title>Simon Fresh Water — Payment Receipt (Template)</title>
 <style>
-  @page {
-    size: A4;
-    margin: 12mm;
-  }
+  @page { size: A4; margin: 8mm 10mm; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
     color: #1c2b36;
     background: #fff;
-    font-size: 11pt;
-    line-height: 1.5;
+    font-size: 9.5pt;
+    line-height: 1.35;
   }
+  .receipt { max-width: 190mm; margin: 0 auto; }
 
   /* ─── HEADER ─── */
   .receipt-header {
     background: linear-gradient(135deg, #0a2540 0%, #0d47a1 55%, #1976d2 100%);
     color: #fff;
-    border-radius: 14px 14px 0 0;
-    padding: 22px 28px;
+    border-radius: 10px 10px 0 0;
+    padding: 12px 20px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 16px;
+    gap: 12px;
   }
-  .receipt-brand { display: flex; align-items: center; gap: 14px; }
+  .receipt-brand { display: flex; align-items: center; gap: 10px; }
   .drop {
-    width: 46px; height: 46px;
+    width: 36px; height: 36px;
     background: rgba(255,255,255,.15);
     border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    font-size: 22pt; line-height: 1;
+    font-size: 16pt; line-height: 1;
   }
-  .brand-text h1 { font-size: 16pt; letter-spacing: .5px; margin-bottom: 2px; }
-  .brand-text p  { font-size: 8.5pt; opacity: .88; letter-spacing: .3px; }
+  .brand-text h1 { font-size: 13pt; letter-spacing: .4px; margin-bottom: 1px; }
+  .brand-text p  { font-size: 7.5pt; opacity: .88; letter-spacing: .2px; }
+  .receipt-tag { text-align: right; font-size: 7.5pt; letter-spacing: 1.5px; text-transform: uppercase; opacity: .95; }
+  .receipt-tag strong { display: block; font-size: 11pt; letter-spacing: 2px; font-weight: 700; margin-top: 2px; }
 
-  .receipt-tag {
-    text-align: right;
-    font-size: 9pt;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    opacity: .95;
-  }
-  .receipt-tag strong {
-    display: block;
-    font-size: 13pt;
-    letter-spacing: 3px;
-    font-weight: 700;
-    margin-top: 4px;
-  }
-
-  /* ─── RECEIPT META BAND ─── */
+  /* ─── META BAND ─── */
   .meta-band {
     background: #e3f2fd;
-    border-left: 5px solid #1976d2;
-    border-right: 5px solid #1976d2;
-    padding: 12px 28px;
+    border-left: 4px solid #1976d2;
+    border-right: 4px solid #1976d2;
+    padding: 7px 20px;
     display: flex;
     justify-content: space-between;
-    gap: 20px;
-    font-size: 10pt;
+    gap: 14px;
+    font-size: 9pt;
   }
   .meta-band .cell { flex: 1; }
-  .meta-band .label {
-    font-size: 7.5pt;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    color: #455a64;
-    font-weight: 700;
-    margin-bottom: 2px;
-  }
-  .meta-band .value {
-    font-size: 11pt;
-    font-weight: 700;
-    color: #0d47a1;
-    font-family: 'Courier New', monospace;
-  }
+  .meta-band .label { font-size: 6.5pt; text-transform: uppercase; letter-spacing: .8px; color: #455a64; font-weight: 700; margin-bottom: 1px; }
+  .meta-band .value { font-size: 10pt; font-weight: 700; color: #0d47a1; font-family: 'Courier New', monospace; }
 
   /* ─── BODY ─── */
-  .receipt-body {
-    border: 2px solid #90caf9;
-    border-top: none;
-    padding: 22px 28px;
-  }
+  .receipt-body { border: 2px solid #90caf9; border-top: none; padding: 12px 20px; }
 
-  .section { margin-bottom: 20px; page-break-inside: avoid; }
+  .section { margin-bottom: 10px; page-break-inside: avoid; }
   .section-title {
-    font-size: 8pt;
+    font-size: 7pt;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 1.5px;
+    letter-spacing: 1.2px;
     color: #0d47a1;
-    padding-bottom: 6px;
-    margin-bottom: 12px;
+    padding-bottom: 3px;
+    margin-bottom: 7px;
     border-bottom: 2px solid #e3f2fd;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
   }
   .section-title::before {
     content: '';
     display: inline-block;
-    width: 8px;
-    height: 8px;
+    width: 7px; height: 7px;
     background: #1976d2;
     border-radius: 2px;
   }
 
-  .field-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px 24px;
-  }
+  .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 18px; }
   .field-grid.one-col { grid-template-columns: 1fr; }
   .field { display: flex; flex-direction: column; }
   .field.full { grid-column: 1 / -1; }
-  .field .label {
-    font-size: 7.5pt;
-    text-transform: uppercase;
-    letter-spacing: .8px;
-    color: #455a64;
-    font-weight: 700;
-    margin-bottom: 2px;
-  }
-  .field .value {
-    font-size: 10.5pt;
-    color: #1c2b36;
-    font-weight: 500;
-    padding: 4px 0;
-    min-height: 20px;
-    word-break: break-word;
-  }
+  .field .label { font-size: 6.5pt; text-transform: uppercase; letter-spacing: .6px; color: #455a64; font-weight: 700; margin-bottom: 1px; }
+  .field .value { font-size: 9pt; color: #1c2b36; font-weight: 500; padding: 2px 0; min-height: 15px; word-break: break-word; }
   .placeholder {
     color: #1976d2;
     font-family: 'Courier New', monospace;
     font-weight: 700;
     background: #e3f2fd;
-    padding: 1px 5px;
+    padding: 1px 4px;
     border-radius: 3px;
-    font-size: 9.5pt;
-    letter-spacing: .3px;
+    font-size: 8.5pt;
+    letter-spacing: .2px;
   }
 
-  /* ─── PAYMENT HIGHLIGHT ─── */
+  /* ─── AMOUNT HIGHLIGHT ─── */
   .amount-highlight {
     background: linear-gradient(135deg, #0d47a1, #1976d2);
     color: #fff;
-    border-radius: 12px;
-    padding: 16px 24px;
+    border-radius: 8px;
+    padding: 9px 18px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin: 8px 0 20px;
+    margin: 4px 0 10px;
   }
-  .amount-highlight .label {
-    font-size: 9pt;
-    letter-spacing: 1.5px;
-    text-transform: uppercase;
-    opacity: .9;
-  }
-  .amount-highlight .value {
-    font-size: 22pt;
-    font-weight: 800;
-    letter-spacing: .5px;
-    font-family: 'Courier New', monospace;
-  }
+  .amount-highlight .label { font-size: 7.5pt; letter-spacing: 1.2px; text-transform: uppercase; opacity: .9; }
+  .amount-highlight .value { font-size: 16pt; font-weight: 800; letter-spacing: .5px; font-family: 'Courier New', monospace; }
 
   /* ─── ALLOCATION TABLE ─── */
-  table.alloc {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 9.5pt;
-    margin-top: 4px;
-  }
+  table.alloc { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
   table.alloc thead th {
-    background: #0d47a1;
-    color: #fff;
-    font-size: 8pt;
-    text-transform: uppercase;
-    letter-spacing: .8px;
-    padding: 8px 10px;
-    text-align: left;
-    font-weight: 700;
+    background: #0d47a1; color: #fff;
+    font-size: 7pt; text-transform: uppercase; letter-spacing: .6px;
+    padding: 5px 8px; text-align: left; font-weight: 700;
   }
   table.alloc thead th.right { text-align: right; }
   table.alloc tbody td {
-    padding: 9px 10px;
+    padding: 5px 8px;
     border-bottom: 1px solid #e3f2fd;
     font-family: 'Courier New', monospace;
     color: #1c2b36;
@@ -198,146 +128,73 @@
   table.alloc tbody td.right { text-align: right; }
   table.alloc tbody td .note {
     display: inline-block;
-    background: #fff3e0;
-    color: #e65100;
-    font-size: 7.5pt;
-    font-weight: 700;
-    padding: 2px 6px;
-    border-radius: 4px;
-    margin-left: 6px;
-    letter-spacing: .4px;
+    background: #fff3e0; color: #e65100;
+    font-size: 6.5pt; font-weight: 700;
+    padding: 1px 5px; border-radius: 3px;
+    margin-left: 4px; letter-spacing: .3px;
   }
   .alloc-label {
-    font-size: 7.5pt;
-    color: #1976d2;
-    font-style: italic;
-    padding: 4px 10px 8px;
-    background: #e3f2fd;
+    font-size: 6.5pt; color: #1976d2; font-style: italic;
+    padding: 3px 8px 6px; background: #e3f2fd;
     border-bottom: 1px solid #90caf9;
   }
 
   /* ─── SUMMARY BOX ─── */
-  .summary {
-    background: #f5faff;
-    border: 1px solid #bbdefb;
-    border-left: 5px solid #1976d2;
-    border-radius: 8px;
-    padding: 14px 20px;
-    margin-top: 6px;
-  }
-  .summary .row {
-    display: flex;
-    justify-content: space-between;
-    padding: 5px 0;
-    font-size: 10pt;
-    border-bottom: 1px dashed #cfd8dc;
-  }
-  .summary .row:last-child { border-bottom: none; padding-top: 9px; margin-top: 4px; border-top: 2px solid #1976d2; }
+  .summary { background: #f5faff; border: 1px solid #bbdefb; border-left: 4px solid #1976d2; border-radius: 6px; padding: 8px 14px; margin-top: 3px; }
+  .summary .row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 8.5pt; border-bottom: 1px dashed #cfd8dc; }
+  .summary .row:last-child { border-bottom: none; padding-top: 5px; margin-top: 2px; border-top: 2px solid #1976d2; }
   .summary .row.total .label { font-weight: 700; color: #0d47a1; }
-  .summary .row.total .value {
-    font-size: 12pt;
-    font-weight: 800;
-    color: #0d47a1;
-    font-family: 'Courier New', monospace;
-  }
+  .summary .row.total .value { font-size: 10.5pt; font-weight: 800; color: #0d47a1; font-family: 'Courier New', monospace; }
   .summary .row .value { font-family: 'Courier New', monospace; font-weight: 600; }
 
   /* ─── STATUS PILL ─── */
   .status-pill {
     display: inline-block;
-    padding: 4px 14px;
+    padding: 3px 12px;
     border-radius: 50px;
-    background: #e3f2fd;
-    color: #0d47a1;
-    font-weight: 700;
-    font-size: 9.5pt;
-    letter-spacing: .6px;
-    text-transform: uppercase;
+    background: #e3f2fd; color: #0d47a1;
+    font-weight: 700; font-size: 8.5pt;
+    letter-spacing: .5px; text-transform: uppercase;
     border: 2px solid #1976d2;
   }
+
+  /* ─── SIGNATURE ─── */
+  .signature-row { display: flex; justify-content: space-between; gap: 30px; margin-top: 12px; padding-top: 4px; }
+  .signature-row .sig { flex: 1; text-align: center; font-size: 8pt; color: #455a64; }
+  .signature-row .sig .line { border-top: 1px solid #90caf9; margin-bottom: 3px; padding-top: 20px; }
 
   /* ─── FOOTER ─── */
   .receipt-footer {
     background: linear-gradient(135deg, #0a2540, #0d47a1);
     color: #fff;
-    border-radius: 0 0 14px 14px;
-    padding: 18px 28px;
+    border-radius: 0 0 10px 10px;
+    padding: 10px 20px;
     text-align: center;
-    margin-top: 22px;
+    margin-top: 12px;
   }
-  .receipt-footer .thanks {
-    font-size: 11pt;
-    font-weight: 600;
-    letter-spacing: .4px;
-    margin-bottom: 4px;
-  }
-  .receipt-footer .slogan {
-    font-size: 9pt;
-    opacity: .85;
-    font-style: italic;
-    margin-bottom: 12px;
-  }
-  .receipt-footer .contact {
-    font-size: 8.5pt;
-    opacity: .75;
-    letter-spacing: .6px;
-    border-top: 1px solid rgba(255,255,255,.2);
-    padding-top: 10px;
-  }
+  .receipt-footer .thanks { font-size: 9.5pt; font-weight: 600; letter-spacing: .3px; margin-bottom: 2px; }
+  .receipt-footer .slogan { font-size: 8pt; opacity: .85; font-style: italic; margin-bottom: 6px; }
+  .receipt-footer .contact { font-size: 7pt; opacity: .75; letter-spacing: .4px; border-top: 1px solid rgba(255,255,255,.2); padding-top: 6px; }
 
-  /* ─── SIGNATURE ─── */
-  .signature-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 40px;
-    margin-top: 22px;
-    padding-top: 8px;
-  }
-  .signature-row .sig {
-    flex: 1;
-    text-align: center;
-    font-size: 9pt;
-    color: #455a64;
-  }
-  .signature-row .sig .line {
-    border-top: 1px solid #90caf9;
-    margin-bottom: 4px;
-    padding-top: 32px;
-  }
-
-  /* ─── SCREEN-ONLY HINT (hidden when printing) ─── */
+  /* ─── SCREEN-ONLY HINT ─── */
   .print-hint {
-    max-width: 210mm;
-    margin: 12px auto;
-    padding: 12px 18px;
-    background: #e8f5e9;
-    border: 1px solid #a5d6a7;
-    border-radius: 8px;
-    font-family: 'Segoe UI', sans-serif;
-    font-size: 9.5pt;
-    color: #1b5e20;
-    text-align: center;
+    max-width: 190mm; margin: 10px auto; padding: 9px 14px;
+    background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 6px;
+    font-size: 9pt; color: #1b5e20; text-align: center;
   }
   .print-hint strong { color: #2e7d32; }
-
-  @media print {
-    body { background: #fff; }
-    .print-hint { display: none !important; }
-  }
+  @media print { body { background: #fff; } .print-hint { display: none !important; } }
 </style>
 </head>
 <body>
 
-  <!-- Screen-only hint (removed when printing) -->
   <div class="print-hint">
-    <strong>How to save as PDF:</strong> Chrome menu ⋮ → <strong>Share</strong> → <strong>Print</strong>
-    → Destination: <strong>Save as PDF</strong> → Paper size: <strong>A4</strong>
-    → Margins: <strong>Default</strong> → <strong>Save</strong>
+    <strong>Print to PDF:</strong> Chrome ⋮ → Share → Print → Destination <strong>Save as PDF</strong>
+    → A4 → Default margins → Background graphics <strong>ON</strong> → Save
   </div>
 
   <div class="receipt">
 
-    <!-- ══════ HEADER ══════ -->
     <div class="receipt-header">
       <div class="receipt-brand">
         <div class="drop">💧</div>
@@ -352,7 +209,6 @@
       </div>
     </div>
 
-    <!-- ══════ META BAND ══════ -->
     <div class="meta-band">
       <div class="cell">
         <div class="label">Receipt No.</div>
@@ -368,10 +224,8 @@
       </div>
     </div>
 
-    <!-- ══════ BODY ══════ -->
     <div class="receipt-body">
 
-      <!-- CUSTOMER -->
       <div class="section">
         <div class="section-title">Customer Details</div>
         <div class="field-grid">
@@ -402,18 +256,16 @@
         </div>
       </div>
 
-      <!-- AMOUNT HIGHLIGHT -->
       <div class="amount-highlight">
         <div>
           <div class="label">Amount Received</div>
-          <div class="value" style="color:#fff; font-size:9pt; margin-top:4px; opacity:.85;">
+          <div style="font-size:8pt; margin-top:2px; opacity:.85;">
             Method: {{method}} &nbsp;&middot;&nbsp; Ref: {{reference}}
           </div>
         </div>
         <div class="value">KES {{amount_kes}}</div>
       </div>
 
-      <!-- PAYMENT DETAILS -->
       <div class="section">
         <div class="section-title">Payment Details</div>
         <div class="field-grid">
@@ -436,7 +288,6 @@
         </div>
       </div>
 
-      <!-- ALLOCATION TABLE -->
       <div class="section">
         <div class="section-title">Bill Allocation (Oldest First)</div>
         <table class="alloc">
@@ -450,7 +301,7 @@
             </tr>
           </thead>
           <tbody>
-            <!-- ══ REPEAT THIS ROW FOR EACH ALLOCATION ══ -->
+            <!-- ══ REPEAT THIS ROW PER ALLOCATION ══ -->
             <tr>
               <td>{{alloc_reading_date}}</td>
               <td>{{alloc_reading_m3}}</td>
@@ -462,12 +313,10 @@
           </tbody>
         </table>
         <div class="alloc-label">
-          ↑ Repeat this row for each reading that received part of the payment.
-          The row with a negative balance carries <strong>{{alloc_note}} = (Prepayment credit)</strong>.
+          ↑ Repeat per bill. Negative balance rows carry <strong>{{alloc_note}} = (Prepayment credit)</strong>.
         </div>
       </div>
 
-      <!-- BALANCE SUMMARY -->
       <div class="section">
         <div class="section-title">Balance Summary</div>
         <div class="summary">
@@ -490,7 +339,6 @@
         </div>
       </div>
 
-      <!-- ACCOUNT STATUS -->
       <div class="section">
         <div class="section-title">Account Status</div>
         <div class="field-grid">
@@ -509,7 +357,6 @@
         </div>
       </div>
 
-      <!-- SIGNATURES -->
       <div class="signature-row">
         <div class="sig">
           <div class="line"></div>
@@ -523,7 +370,6 @@
 
     </div>
 
-    <!-- ══════ FOOTER ══════ -->
     <div class="receipt-footer">
       <div class="thanks">Thank you for choosing Simon Fresh Water.</div>
       <div class="slogan">Your water is life — let's keep it flowing. 💧</div>
