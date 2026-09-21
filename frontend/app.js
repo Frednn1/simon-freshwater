@@ -483,6 +483,14 @@ async function initConsumerPage(consumerId) {
           submitPayment(consumerId);
         });
         renderPaymentHistory();
+
+        /* Show download button if a payment was just recorded in this session */
+        const lastPid = sessionStorage.getItem('lastPaymentId');
+        const lastNo  = sessionStorage.getItem('lastPaymentReceiptNo');
+        const lastCid = sessionStorage.getItem('lastPaymentConsumer');
+        if (lastPid && String(lastCid) === String(consumerId)) {
+          showDownloadReceiptButton(lastPid, lastNo);
+        }
       }
 
       /* Notify + reading form */
@@ -536,6 +544,16 @@ async function initConsumerPage(consumerId) {
               msgEl.textContent = 'Failed to submit reading.';
               msgEl.classList.remove('hidden');
             });
+        });
+      }
+      /* Coordinates toggle */
+      const coordToggle = document.getElementById('coordToggle');
+      if (coordToggle) {
+        coordToggle.addEventListener('click', () => {
+          const body = document.getElementById('coordBody');
+          const chev = document.getElementById('coordChev');
+          body.classList.toggle('hidden');
+          chev.textContent = body.classList.contains('hidden') ? '▾' : '▴';
         });
       }
     })
@@ -708,14 +726,20 @@ async function submitPayment(consumerId) {
 
     if (r.ok && data.ok) {
       const lines = data.allocations.map(a =>
-        `• ${fmtDate(a.reading_date)} — applied KES ${fmt(a.applied)} ` +
-        `(new balance KES ${fmt(a.new_balance)})${a.prepayment ? ' [prepayment]' : ''}`
+        `• ${a.reading_date} — applied KES ${a.applied} ` +
+        `(new balance KES ${a.new_balance})${a.note ? ' ' + a.note : ''}`
       ).join('\n');
       msgEl.className = 'alert alert-success';
       msgEl.textContent = `✅ Payment of KES ${fmt(data.amount_kes)} recorded.\n${lines}`;
       msgEl.style.whiteSpace = 'pre-line';
       msgEl.classList.remove('hidden');
       document.getElementById('paymentForm').reset();
+
+      /* Persist for the download button after reload */
+      sessionStorage.setItem('lastPaymentId', data.payment_id);
+      sessionStorage.setItem('lastPaymentReceiptNo', data.receipt_no);
+      sessionStorage.setItem('lastPaymentConsumer', consumerId);
+
       setTimeout(() => location.reload(), 2200);
     } else {
       msgEl.className = 'alert alert-error';
@@ -864,4 +888,55 @@ function initBillPage(readingId) {
       document.getElementById('billStatusBadge').textContent = r.bill_status;
     })
     .catch(() => { loader.textContent = 'Failed to load bill.'; });
+}
+
+/* ═══════════════════════════════════════════════
+   RECEIPT DOWNLOAD
+   ═══════════════════════════════════════════════ */
+function showDownloadReceiptButton(paymentId, receiptNo) {
+  const row = document.getElementById('receiptDownloadRow');
+  const btn = document.getElementById('downloadReceiptBtn');
+  if (!row || !btn) return;
+
+  row.classList.remove('hidden');
+  btn.disabled = false;
+  btn.dataset.paymentId = paymentId;
+  btn.innerHTML = `<span class="btn-icon">📄</span> Download Receipt (PDF)`;
+
+  btn.onclick = async () => {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="btn-icon">⏳</span> Generating…';
+
+    try {
+      const r = await fetch(
+        `${API}/api/admin/payment/${paymentId}/receipt.pdf`,
+        { credentials: 'same-origin' }
+      );
+
+      if (r.status === 401) { requireLoginRedirect(); return; }
+      if (!r.ok) {
+        let msg = 'Receipt generation failed.';
+        try { const j = await r.json(); msg = j.error || msg; } catch {}
+        throw new Error(msg);
+      }
+
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `SimonWater_Receipt_${receiptNo || paymentId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      btn.innerHTML = '<span class="btn-icon">✓</span> Receipt Already Downloaded';
+      btn.classList.add('btn-download-done');
+      btn.disabled = true;
+    } catch (e) {
+      btn.disabled = false;
+      btn.innerHTML = `<span class="btn-icon">📄</span> Retry Download Receipt`;
+      alert('❌ ' + (e.message || 'Receipt generation failed.'));
+    }
+  };
 }

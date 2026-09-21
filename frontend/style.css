@@ -724,3 +724,77 @@ body {
   .edit-actions button { width: 100%; }
   .payment-form .form-row-double { grid-template-columns: 1fr; }
 }
+
+/* ═══════════════════════════════════════════════
+   COORDINATES COLLAPSIBLE DROPDOWN
+   ═══════════════════════════════════════════════ */
+.coord-toggle {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  background: linear-gradient(135deg, #e3f2fd, #f5faff);
+  border: 1px solid #bbdefb;
+  color: var(--blue-700);
+  padding: .6rem .9rem;
+  border-radius: var(--radius-sm);
+  font-size: .85rem;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+  width: 100%;
+  justify-content: flex-start;
+  transition: background .2s;
+}
+.coord-toggle:hover { background: linear-gradient(135deg, #d4e8fb, #e8f3ff); }
+.coord-icon { font-size: 1rem; line-height: 1; }
+.coord-toggle .chev {
+  margin-left: auto;
+  font-size: .95rem;
+  transition: transform .2s;
+}
+.coord-body {
+  margin-top: .5rem;
+  padding: .8rem .9rem;
+  background: var(--grey-50);
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--grey-300);
+}
+.coord-body .info-grid { gap: .55rem 1rem; }
+
+/* ═══════════════════════════════════════════════
+   DOWNLOAD RECEIPT BUTTON
+   ═══════════════════════════════════════════════ */
+.receipt-download-row {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--grey-100);
+}
+.btn-download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  width: 100%;
+  background: linear-gradient(135deg, #6a1b9a, #8e24aa);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: .95rem 1.4rem;
+  font-size: .95rem;
+  font-weight: 700;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: transform .15s, opacity .2s, box-shadow .2s, background .3s;
+  box-shadow: 0 4px 14px rgba(106,27,154,.25);
+}
+.btn-download:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(106,27,154,.35);
+}
+.btn-download:disabled { cursor: not-allowed; }
+.btn-download-done {
+  background: linear-gradient(135deg, #2e7d32, #43a047) !important;
+  opacity: .85;
+  box-shadow: none !important;
+}
+.btn-download-done:hover { transform: none; }

@@ -66,14 +66,28 @@
           <span class="info-label">Location</span>
           <span class="info-value" id="address" data-field="address">—</span>
         </div>
-        <div class="info-item">
-          <span class="info-label">Latitude</span>
-          <span class="info-value" id="latitude" data-field="latitude">—</span>
+
+        <!-- Coordinates — collapsible dropdown -->
+        <div class="info-item info-item-full">
+          <button type="button" class="coord-toggle" id="coordToggle">
+            <span class="coord-icon">📍</span>
+            <span>Coordinates</span>
+            <span class="chev" id="coordChev">▾</span>
+          </button>
+          <div class="coord-body hidden" id="coordBody">
+            <div class="info-grid">
+              <div class="info-item">
+                <span class="info-label">Latitude</span>
+                <span class="info-value" id="latitude" data-field="latitude">—</span>
+              </div>
+              <div class="info-item">
+                <span class="info-label">Longitude</span>
+                <span class="info-value" id="longitude" data-field="longitude">—</span>
+              </div>
+            </div>
+          </div>
         </div>
-        <div class="info-item">
-          <span class="info-label">Longitude</span>
-          <span class="info-value" id="longitude" data-field="longitude">—</span>
-        </div>
+
         <div class="info-item info-item-full">
           <span class="info-label">Initial Meter Reading (M³)</span>
           <span class="info-value" id="initialReading" data-field="meter_initial_reading_m3">—</span>
@@ -127,6 +141,13 @@
       </form>
 
       <div id="paymentMsg" class="alert hidden"></div>
+
+      <!-- Download Receipt button — appears after payment -->
+      <div id="receiptDownloadRow" class="receipt-download-row hidden">
+        <button id="downloadReceiptBtn" class="btn-download" type="button">
+          <span class="btn-icon">📄</span> Download Receipt (PDF)
+        </button>
+      </div>
 
       <div id="paymentHistory" class="payment-history hidden">
         <h4>Recent Payments</h4>

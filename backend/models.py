@@ -50,6 +50,8 @@ class PaymentLog(db.Model):
     method = db.Column(db.String(30), nullable=False, default="cash")
     reference = db.Column(db.String(80))
     recorded_by = db.Column(db.String(60))
+    # JSON snapshot for receipt generation (allocations, balances, status, etc.)
+    receipt_json = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow,
                            nullable=False, index=True)
 

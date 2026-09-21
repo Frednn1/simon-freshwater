@@ -1,10 +1,13 @@
 import os
+import json
 from datetime import datetime, date, timedelta
 from collections import deque
 from threading import Lock
 from time import time as _time_now
 
-from flask import Flask, request, jsonify, send_from_directory, session
+from flask import (
+    Flask, request, jsonify, send_from_directory, session, send_file,
+)
 from flask_cors import CORS
 from sqlalchemy import text, inspect
 
@@ -25,6 +28,7 @@ from admin_auth import (
     create_first_admin, login as admin_login_fn,
     request_password_reset, confirm_password_reset,
 )
+from receipts import generate_receipt_pdf
 
 
 BACKEND_DIR  = os.path.dirname(os.path.abspath(__file__))
@@ -146,25 +150,49 @@ def _require_admin():
     return jsonify({"error": "Unauthorized. Please log in."}), 401
 
 
-def _ensure_consumer_columns():
+def _fmt_money(n):
+    try:
+        return f"{float(n or 0):,.2f}"
+    except (ValueError, TypeError):
+        return "0.00"
+
+
+def _fmt_date(d):
+    if isinstance(d, str):
+        return d
+    return d.strftime("%d %b %Y") if d else "—"
+
+
+def _ensure_all_columns():
+    """Idempotent migration for consumers + payment_log."""
     insp = inspect(db.engine)
-    existing = {c["name"] for c in insp.get_columns("consumers")}
-    alters = []
-    if "latitude" not in existing:
-        alters.append("ADD COLUMN latitude DOUBLE PRECISION NULL")
-    if "longitude" not in existing:
-        alters.append("ADD COLUMN longitude DOUBLE PRECISION NULL")
-    if "is_active" not in existing:
-        alters.append("ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE")
-    if "terminated_at" not in existing:
-        alters.append("ADD COLUMN terminated_at TIMESTAMP NULL")
-    if "meter_initial_reading_m3" not in existing:
-        alters.append("ADD COLUMN meter_initial_reading_m3 DOUBLE PRECISION NOT NULL DEFAULT 0")
-    for alt in alters:
-        db.session.execute(text(f"ALTER TABLE consumers {alt}"))
-    if alters:
-        db.session.commit()
-        app.logger.info(f"[Migration] Applied {len(alters)} column(s) to consumers")
+    tables = set(insp.get_table_names())
+
+    if "consumers" in tables:
+        existing = {c["name"] for c in insp.get_columns("consumers")}
+        alters = []
+        if "latitude" not in existing:
+            alters.append("ADD COLUMN latitude DOUBLE PRECISION NULL")
+        if "longitude" not in existing:
+            alters.append("ADD COLUMN longitude DOUBLE PRECISION NULL")
+        if "is_active" not in existing:
+            alters.append("ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE")
+        if "terminated_at" not in existing:
+            alters.append("ADD COLUMN terminated_at TIMESTAMP NULL")
+        if "meter_initial_reading_m3" not in existing:
+            alters.append("ADD COLUMN meter_initial_reading_m3 DOUBLE PRECISION NOT NULL DEFAULT 0")
+        for alt in alters:
+            db.session.execute(text(f"ALTER TABLE consumers {alt}"))
+        if alters:
+            db.session.commit()
+            app.logger.info(f"[Migration] Applied {len(alters)} column(s) to consumers")
+
+    if "payment_log" in tables:
+        existing = {c["name"] for c in insp.get_columns("payment_log")}
+        if "receipt_json" not in existing:
+            db.session.execute(text("ALTER TABLE payment_log ADD COLUMN receipt_json TEXT NULL"))
+            db.session.commit()
+            app.logger.info("[Migration] Added receipt_json to payment_log")
 
 
 # ═══════════════════════════════════════════════
@@ -202,10 +230,6 @@ def styles():
 @app.route("/app.js")
 def appjs():
     return send_from_directory(FRONTEND_DIR, "app.js")
-
-@app.route("/receipt_template.html")
-def receipt_template_page():
-    return send_from_directory(FRONTEND_DIR, "receipt_template.html")
 
 
 # ═══════════════════════════════════════════════
@@ -279,7 +303,6 @@ def get_consumer_details(consumer_id):
                   .filter_by(consumer_id=consumer.id, channel="email", status="sent")
                   .order_by(NotificationLog.sent_at.desc()).first())
 
-    # Payment history is exposed ONLY to authenticated admins
     payments_out = []
     if _current_admin():
         payments = (PaymentLog.query
@@ -294,6 +317,7 @@ def get_consumer_details(consumer_id):
             "reference": p.reference,
             "recorded_by": p.recorded_by,
             "created_at": p.created_at.isoformat(),
+            "has_receipt": bool(p.receipt_json),
         } for p in payments]
 
     return jsonify({
@@ -557,7 +581,7 @@ def admin_reset_route():
 
 
 # ═══════════════════════════════════════════════
-#  ADMIN — consumers (protected)
+#  ADMIN — consumers
 # ═══════════════════════════════════════════════
 
 @app.route("/api/admin/consumer", methods=["POST"])
@@ -644,7 +668,6 @@ def admin_update_consumer(consumer_id):
                 if dup and dup.id != consumer.id:
                     return jsonify({"error": f"Meter account {new_no} already exists."}), 409
             setattr(consumer, f, new_no)
-
         elif f in ("latitude", "longitude"):
             if v in (None, "", "null"):
                 setattr(consumer, f, None)
@@ -652,13 +675,11 @@ def admin_update_consumer(consumer_id):
                 try: setattr(consumer, f, float(v))
                 except (ValueError, TypeError):
                     return jsonify({"error": f"{f} must be a number."}), 400
-
         elif f == "meter_initial_reading_m3":
             try:
                 setattr(consumer, f, float(v) if v not in (None, "", "null") else 0.0)
             except (ValueError, TypeError):
                 return jsonify({"error": "meter_initial_reading_m3 must be a number."}), 400
-
         else:
             setattr(consumer, f, v)
         updated[f] = v
@@ -677,10 +698,14 @@ def admin_update_consumer(consumer_id):
     }})
 
 
+# ═══════════════════════════════════════════════
+#  ADMIN — PAYMENTS
+# ═══════════════════════════════════════════════
+
 @app.route("/api/admin/consumer/<int:consumer_id>/payment", methods=["POST"])
 def admin_record_payment(consumer_id):
-    """Record a payment. Allocates FIFO (oldest unpaid reading first).
-    Any excess becomes prepayment credit on the newest reading."""
+    """FIFO: oldest unpaid bill first. Excess becomes prepayment credit.
+    Stores a full JSON snapshot for later receipt generation."""
     u = _require_admin()
     if u: return u
 
@@ -713,6 +738,9 @@ def admin_record_payment(consumer_id):
                      "Add the first reading before accepting payment."
         }), 400
 
+    # Snapshot of outstanding BEFORE applying
+    previous_balance = round(sum(max(r.balance, 0.0) for r in readings), 2)
+
     remaining = amount
     allocations = []
     for r in readings:
@@ -725,10 +753,12 @@ def admin_record_payment(consumer_id):
         r.amount_paid = round((r.amount_paid or 0.0) + apply, 2)
         allocations.append({
             "reading_id": r.id,
-            "reading_date": r.reading_date.isoformat(),
-            "amount_kes": r.amount_kes,
-            "applied": apply,
-            "new_balance": round(r.amount_kes - r.amount_paid, 2),
+            "reading_date": _fmt_date(r.reading_date),
+            "reading_m3": f"{r.reading_m3:.2f}",
+            "amount_kes": _fmt_money(r.amount_kes),
+            "applied": _fmt_money(apply),
+            "new_balance": _fmt_money(r.amount_kes - r.amount_paid),
+            "note": "",
         })
         remaining = round(remaining - apply, 2)
         if remaining <= 0:
@@ -739,33 +769,118 @@ def admin_record_payment(consumer_id):
         newest.amount_paid = round((newest.amount_paid or 0.0) + remaining, 2)
         allocations.append({
             "reading_id": newest.id,
-            "reading_date": newest.reading_date.isoformat(),
-            "amount_kes": newest.amount_kes,
-            "applied": remaining,
-            "new_balance": round(newest.amount_kes - newest.amount_paid, 2),
-            "prepayment": True,
+            "reading_date": _fmt_date(newest.reading_date),
+            "reading_m3": f"{newest.reading_m3:.2f}",
+            "amount_kes": _fmt_money(newest.amount_kes),
+            "applied": _fmt_money(remaining),
+            "new_balance": _fmt_money(newest.amount_kes - newest.amount_paid),
+            "note": "(Prepayment credit)",
         })
         remaining = 0
 
+    # State AFTER applying
+    remaining_balance = round(sum(max(r.balance, 0.0) for r in readings), 2)
+    prepaid_credit = round(sum(max(-r.balance, 0.0) for r in readings), 2)
+
+    # Status AFTER applying
+    info = get_consumer_status(list(reversed(readings)))  # newest first
+    newest = readings[-1]
+
     admin = _current_admin()
+    recorded_by = (admin.username if admin else "legacy-secret")[:60]
+
     log = PaymentLog(
         consumer_id=consumer.id,
         amount_kes=amount,
         method=method,
         reference=reference or None,
-        recorded_by=((admin.username if admin else "legacy-secret")[:60]),
+        recorded_by=recorded_by,
     )
     db.session.add(log)
+    db.session.flush()   # get log.id
+
+    receipt_no = f"{log.id:06d}"
+    created = log.created_at or datetime.utcnow()
+
+    snapshot = {
+        "receipt_no": receipt_no,
+        "receipt_date": created.strftime("%d %b %Y"),
+        "receipt_time": created.strftime("%H:%M"),
+        "cust_name": consumer.cust_name,
+        "acc_name": consumer.acc_name,
+        "meter_acc_no": consumer.meter_acc_no,
+        "contact": consumer.contact or "—",
+        "email": consumer.email or "—",
+        "address": consumer.address or "—",
+        "amount_kes": _fmt_money(amount),
+        "method": method.capitalize(),
+        "reference": reference or "—",
+        "recorded_by": recorded_by,
+        "previous_balance": _fmt_money(previous_balance),
+        "remaining_balance": _fmt_money(remaining_balance),
+        "prepaid_credit": _fmt_money(prepaid_credit),
+        "status_label": info["label"],
+        "last_reading_date": _fmt_date(newest.reading_date),
+        "last_reading_m3": f"{newest.reading_m3:.2f}",
+        "allocations": allocations,
+    }
+    log.receipt_json = json.dumps(snapshot)
+
     db.session.commit()
 
     return jsonify({
         "ok": True,
+        "payment_id": log.id,
+        "receipt_no": receipt_no,
         "amount_kes": amount,
         "method": method,
         "reference": reference or None,
         "allocations": allocations,
     }), 201
 
+
+@app.route("/api/admin/payment/<int:payment_id>/receipt.pdf")
+def download_receipt(payment_id):
+    """Generate and stream the receipt PDF for a specific payment."""
+    if not _rate_limit("receipt", 20, 60):
+        return _too_many(60)
+
+    u = _require_admin()
+    if u: return u
+
+    log = PaymentLog.query.get(payment_id)
+    if not log:
+        return jsonify({"error": "Payment not found"}), 404
+
+    if not log.receipt_json:
+        return jsonify({
+            "error": "Receipt not available for this payment. "
+                     "Only payments recorded after the receipt feature was enabled have receipts."
+        }), 400
+
+    try:
+        snapshot = json.loads(log.receipt_json)
+    except Exception:
+        return jsonify({"error": "Receipt data corrupted."}), 500
+
+    try:
+        pdf_buf = generate_receipt_pdf(snapshot)
+    except Exception as e:
+        app.logger.exception("[Receipt] PDF generation failed")
+        return jsonify({"error": f"PDF generation failed: {e}"}), 500
+
+    filename = f"SimonWater_Receipt_{snapshot.get('receipt_no','payment')}.pdf"
+    return send_file(
+        pdf_buf,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+# ═══════════════════════════════════════════════
+#  ADMIN — terminate / reactivate / delete
+# ═══════════════════════════════════════════════
 
 @app.route("/api/admin/consumer/<int:consumer_id>/terminate", methods=["POST"])
 def admin_terminate_consumer(consumer_id):
@@ -821,7 +936,7 @@ def admin_delete_consumer(consumer_id):
 
 
 # ═══════════════════════════════════════════════
-#  ADMIN — SEED (empty) + RECOMPUTE
+#  ADMIN — seed + recompute
 # ═══════════════════════════════════════════════
 
 SEED_DATA = []
@@ -876,7 +991,7 @@ def admin_recompute_amounts():
 
 with app.app_context():
     db.create_all()
-    _ensure_consumer_columns()
+    _ensure_all_columns()
     try:
         start_scheduler(app, Consumer, MeterReading)
     except Exception as e:
