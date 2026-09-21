@@ -184,6 +184,45 @@
   }
   .print-hint strong { color: #2e7d32; }
   @media print { body { background: #fff; } .print-hint { display: none !important; } }
+
+  /* ═══════════════════════════════════════════════
+     FIX: Bill Allocation table — prevent overflow
+     ═══════════════════════════════════════════════ */
+  table.alloc {
+    table-layout: fixed;
+    width: 100%;
+    table-layout: fixed;
+  }
+  table.alloc th,
+  table.alloc td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    word-break: break-word;
+    box-sizing: border-box;
+  }
+  table.alloc th:nth-child(1), table.alloc td:nth-child(1) { width: 22%; }
+  table.alloc th:nth-child(2), table.alloc td:nth-child(2) { width: 15%; }
+  table.alloc th:nth-child(3), table.alloc td:nth-child(3) { width: 20%; }
+  table.alloc th:nth-child(4), table.alloc td:nth-child(4) { width: 20%; }
+  table.alloc th:nth-child(5), table.alloc td:nth-child(5) { width: 23%; }
+
+  /* Placeholder chips inside the allocation table shrink to plain text */
+  table.alloc .placeholder {
+    padding: 0;
+    background: transparent;
+    font-size: 7.5pt;
+    font-weight: 600;
+    color: #0d47a1;
+    border-radius: 0;
+  }
+
+  /* Prepayment note drops to its own line so column 5 stays narrow */
+  table.alloc td .note {
+    display: block;
+    margin: 3px 0 0;
+    white-space: normal;
+  }
+
 </style>
 </head>
 <body>
@@ -291,6 +330,13 @@
       <div class="section">
         <div class="section-title">Bill Allocation (Oldest First)</div>
         <table class="alloc">
+          <colgroup>
+            <col style="width:22%">
+            <col style="width:15%">
+            <col style="width:20%">
+            <col style="width:20%">
+            <col style="width:23%">
+          </colgroup>
           <thead>
             <tr>
               <th>Bill Date</th>
