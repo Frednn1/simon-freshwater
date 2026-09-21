@@ -7,6 +7,7 @@ from time import time as _time_now
 
 from flask import (
     Flask, request, jsonify, send_from_directory, session, send_file,
+    redirect,
 )
 from flask_cors import CORS
 from sqlalchemy import text, inspect
@@ -31,8 +32,10 @@ from admin_auth import (
 from receipts import generate_receipt_pdf
 
 
-BACKEND_DIR  = os.path.dirname(os.path.abspath(__file__))
-FRONTEND_DIR = os.path.join(os.path.dirname(BACKEND_DIR), "frontend")
+BACKEND_DIR   = os.path.dirname(os.path.abspath(__file__))
+REPO_DIR      = os.path.dirname(BACKEND_DIR)
+FRONTEND_DIR  = os.path.join(REPO_DIR, "frontend")
+TEMPLATES_DIR = os.path.join(REPO_DIR, "templates")
 
 NOTIFY_COOLDOWN_SECONDS = int(os.environ.get("NOTIFY_COOLDOWN_SECONDS", "300"))
 
@@ -230,6 +233,21 @@ def styles():
 @app.route("/app.js")
 def appjs():
     return send_from_directory(FRONTEND_DIR, "app.js")
+
+
+@app.route("/template/receipt")
+def receipt_template_view():
+    """
+    Serve the receipt template HTML for manual Chrome -> Save as PDF.
+    Admin-only; unauthenticated visitors are redirected to the login page.
+    """
+    if not _current_admin():
+        return redirect("/admin/login?next=/template/receipt")
+    return send_from_directory(
+        TEMPLATES_DIR,
+        "SimonWater_ReceiptTemplate.html",
+        mimetype="text/html",
+    )
 
 
 # ═══════════════════════════════════════════════
