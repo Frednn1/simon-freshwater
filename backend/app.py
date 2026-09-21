@@ -8,7 +8,10 @@ from flask import Flask, request, jsonify, send_from_directory, session
 from flask_cors import CORS
 from sqlalchemy import text, inspect
 
-from models import db, Consumer, MeterReading, NotificationLog, AdminUser
+from models import (
+    db, Consumer, MeterReading, NotificationLog,
+    AdminUser, PaymentLog,
+)
 from billing import (
     compute_amount, compute_consumption,
     get_consumer_status, get_reading_bill_status,
@@ -40,14 +43,12 @@ if DATABASE_URL.startswith("postgres://"):
 
 app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-change-me")
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = bool(os.environ.get("RENDER"))
 
-# ─── Connection pool hardening ───
-# pool_pre_ping: SQLAlchemy sends a lightweight SELECT 1 before handing the
-#   connection to the request. If it's dead, it's discarded and a new one is
-#   opened. Prevents "SSL error: decryption failed" from stale connections.
-# pool_recycle:  any connection older than 3 minutes is proactively replaced,
-#   staying well under Render's proxy idle timeout.
-# Skipped for SQLite (local dev) — SQLite has no network so none of this applies.
 if not DATABASE_URL.startswith("sqlite"):
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
         "pool_pre_ping": True,
@@ -56,11 +57,6 @@ if not DATABASE_URL.startswith("sqlite"):
         "max_overflow": 5,
         "pool_timeout": 30,
     }
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-change-me")
-app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
-app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_SECURE"] = bool(os.environ.get("RENDER"))
 
 db.init_app(app)
 
@@ -79,7 +75,7 @@ def _security_headers(resp):
 
 
 # ═══════════════════════════════════════════════
-#  RATE LIMITER (in-memory, per IP + per scope)
+#  RATE LIMITER
 # ═══════════════════════════════════════════════
 
 _rate_buckets = {}
@@ -94,7 +90,6 @@ def _client_ip():
 
 
 def _rate_limit(scope: str, limit: int, window: int) -> bool:
-    """Return True if allowed, False if the caller has exceeded the limit."""
     key = f"{scope}:{_client_ip()}"
     now = _time_now()
     with _rate_lock:
@@ -254,7 +249,7 @@ def search_consumer():
 
 
 # ═══════════════════════════════════════════════
-#  API — CONSUMER (public for direct links)
+#  API — CONSUMER
 # ═══════════════════════════════════════════════
 
 @app.route("/api/consumer/<int:consumer_id>")
@@ -280,6 +275,23 @@ def get_consumer_details(consumer_id):
                   .filter_by(consumer_id=consumer.id, channel="email", status="sent")
                   .order_by(NotificationLog.sent_at.desc()).first())
 
+    # Payment history is exposed ONLY to authenticated admins
+    payments_out = []
+    if _current_admin():
+        payments = (PaymentLog.query
+                    .filter_by(consumer_id=consumer.id)
+                    .order_by(PaymentLog.created_at.desc())
+                    .limit(10)
+                    .all())
+        payments_out = [{
+            "id": p.id,
+            "amount_kes": p.amount_kes,
+            "method": p.method,
+            "reference": p.reference,
+            "recorded_by": p.recorded_by,
+            "created_at": p.created_at.isoformat(),
+        } for p in payments]
+
     return jsonify({
         "consumer": {
             "id": consumer.id, "cust_name": consumer.cust_name,
@@ -298,6 +310,7 @@ def get_consumer_details(consumer_id):
             "amount_kes": r.amount_kes, "amount_paid": r.amount_paid,
             "balance": r.balance, "bill_status": get_reading_bill_status(r),
         } for r in latest5],
+        "payments": payments_out,
         "overall_status": info,
         "available_channels": get_available_channels(),
         "last_notifications": {
@@ -609,37 +622,145 @@ def admin_update_consumer(consumer_id):
         return jsonify({"error": "Consumer not found"}), 404
 
     data = request.get_json(silent=True) or {}
-    allowed = ("cust_name", "acc_name", "contact", "email", "address",
-               "latitude", "longitude", "meter_initial_reading_m3")
+    allowed = ("cust_name", "acc_name", "meter_acc_no", "contact",
+               "email", "address", "latitude", "longitude",
+               "meter_initial_reading_m3")
     updated = {}
     for f in allowed:
-        if f in data:
-            v = data[f]
-            if f in ("latitude", "longitude"):
-                if v in (None, "", "null"):
-                    setattr(consumer, f, None)
-                else:
-                    try: setattr(consumer, f, float(v))
-                    except (ValueError, TypeError):
-                        return jsonify({"error": f"{f} must be a number."}), 400
-            elif f == "meter_initial_reading_m3":
-                try:
-                    setattr(consumer, f, float(v) if v not in (None, "", "null") else 0.0)
-                except (ValueError, TypeError):
-                    return jsonify({"error": "meter_initial_reading_m3 must be a number."}), 400
+        if f not in data:
+            continue
+        v = data[f]
+
+        if f == "meter_acc_no":
+            new_no = (str(v) or "").strip()
+            if not new_no:
+                return jsonify({"error": "meter_acc_no cannot be empty."}), 400
+            if new_no != consumer.meter_acc_no:
+                dup = Consumer.query.filter_by(meter_acc_no=new_no).first()
+                if dup and dup.id != consumer.id:
+                    return jsonify({"error": f"Meter account {new_no} already exists."}), 409
+            setattr(consumer, f, new_no)
+
+        elif f in ("latitude", "longitude"):
+            if v in (None, "", "null"):
+                setattr(consumer, f, None)
             else:
-                setattr(consumer, f, v)
-            updated[f] = v
+                try: setattr(consumer, f, float(v))
+                except (ValueError, TypeError):
+                    return jsonify({"error": f"{f} must be a number."}), 400
+
+        elif f == "meter_initial_reading_m3":
+            try:
+                setattr(consumer, f, float(v) if v not in (None, "", "null") else 0.0)
+            except (ValueError, TypeError):
+                return jsonify({"error": "meter_initial_reading_m3 must be a number."}), 400
+
+        else:
+            setattr(consumer, f, v)
+        updated[f] = v
 
     if not updated:
         return jsonify({"error": "No valid fields to update"}), 400
     db.session.commit()
     return jsonify({"ok": True, "updated": updated, "consumer": {
         "id": consumer.id, "cust_name": consumer.cust_name,
+        "acc_name": consumer.acc_name, "meter_acc_no": consumer.meter_acc_no,
         "contact": consumer.contact, "email": consumer.email,
+        "address": consumer.address,
+        "latitude": consumer.latitude, "longitude": consumer.longitude,
         "meter_initial_reading_m3": float(consumer.meter_initial_reading_m3 or 0.0),
         "is_active": bool(consumer.is_active),
     }})
+
+
+@app.route("/api/admin/consumer/<int:consumer_id>/payment", methods=["POST"])
+def admin_record_payment(consumer_id):
+    """Record a payment. Allocates FIFO (oldest unpaid reading first).
+    Any excess becomes prepayment credit on the newest reading."""
+    u = _require_admin()
+    if u: return u
+
+    consumer = Consumer.query.get(consumer_id)
+    if not consumer:
+        return jsonify({"error": "Consumer not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+    try:
+        amount = float(data.get("amount_kes", 0))
+    except (ValueError, TypeError):
+        return jsonify({"error": "amount_kes must be a number"}), 400
+    if amount <= 0:
+        return jsonify({"error": "Payment amount must be positive"}), 400
+    if amount > 10_000_000:
+        return jsonify({"error": "Payment amount out of range"}), 400
+    amount = round(amount, 2)
+
+    method = (str(data.get("method") or "cash")).strip().lower()[:30] or "cash"
+    reference = (str(data.get("reference") or "")).strip()[:80]
+
+    readings = (MeterReading.query
+                .filter_by(consumer_id=consumer.id)
+                .order_by(MeterReading.reading_date.asc(),
+                          MeterReading.id.asc())
+                .all())
+    if not readings:
+        return jsonify({
+            "error": "Cannot record payment: no meter readings on file yet. "
+                     "Add the first reading before accepting payment."
+        }), 400
+
+    remaining = amount
+    allocations = []
+    for r in readings:
+        owed = round((r.amount_kes or 0.0) - (r.amount_paid or 0.0), 2)
+        if owed <= 0:
+            continue
+        apply = round(min(remaining, owed), 2)
+        if apply <= 0:
+            break
+        r.amount_paid = round((r.amount_paid or 0.0) + apply, 2)
+        allocations.append({
+            "reading_id": r.id,
+            "reading_date": r.reading_date.isoformat(),
+            "amount_kes": r.amount_kes,
+            "applied": apply,
+            "new_balance": round(r.amount_kes - r.amount_paid, 2),
+        })
+        remaining = round(remaining - apply, 2)
+        if remaining <= 0:
+            break
+
+    if remaining > 0:
+        newest = readings[-1]
+        newest.amount_paid = round((newest.amount_paid or 0.0) + remaining, 2)
+        allocations.append({
+            "reading_id": newest.id,
+            "reading_date": newest.reading_date.isoformat(),
+            "amount_kes": newest.amount_kes,
+            "applied": remaining,
+            "new_balance": round(newest.amount_kes - newest.amount_paid, 2),
+            "prepayment": True,
+        })
+        remaining = 0
+
+    admin = _current_admin()
+    log = PaymentLog(
+        consumer_id=consumer.id,
+        amount_kes=amount,
+        method=method,
+        reference=reference or None,
+        recorded_by=((admin.username if admin else "legacy-secret")[:60]),
+    )
+    db.session.add(log)
+    db.session.commit()
+
+    return jsonify({
+        "ok": True,
+        "amount_kes": amount,
+        "method": method,
+        "reference": reference or None,
+        "allocations": allocations,
+    }), 201
 
 
 @app.route("/api/admin/consumer/<int:consumer_id>/terminate", methods=["POST"])
@@ -687,6 +808,7 @@ def admin_delete_consumer(consumer_id):
         return jsonify({"error": "Consumer not found"}), 404
 
     name = consumer.cust_name
+    PaymentLog.query.filter_by(consumer_id=consumer.id).delete()
     NotificationLog.query.filter_by(consumer_id=consumer.id).delete()
     MeterReading.query.filter_by(consumer_id=consumer.id).delete()
     db.session.delete(consumer)
@@ -708,6 +830,7 @@ def admin_seed():
 
     replace = request.args.get("replace") == "1"
     if replace:
+        PaymentLog.query.delete()
         NotificationLog.query.delete()
         MeterReading.query.delete()
         Consumer.query.delete()

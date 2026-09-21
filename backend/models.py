@@ -41,6 +41,19 @@ class MeterReading(db.Model):
         return round(self.amount_kes - self.amount_paid, 2)
 
 
+class PaymentLog(db.Model):
+    __tablename__ = 'payment_log'
+    id = db.Column(db.Integer, primary_key=True)
+    consumer_id = db.Column(db.Integer, db.ForeignKey('consumers.id'),
+                            nullable=False, index=True)
+    amount_kes = db.Column(db.Float, nullable=False)
+    method = db.Column(db.String(30), nullable=False, default="cash")
+    reference = db.Column(db.String(80))
+    recorded_by = db.Column(db.String(60))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           nullable=False, index=True)
+
+
 class NotificationLog(db.Model):
     __tablename__ = 'notification_log'
     id = db.Column(db.Integer, primary_key=True)

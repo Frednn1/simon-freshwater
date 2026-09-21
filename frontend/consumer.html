@@ -26,7 +26,6 @@
   <main class="consumer-main" id="consumerMain">
     <div id="pageLoader" class="loader"></div>
 
-    <!-- Terminated banner (shown only when inactive) -->
     <div id="terminatedBanner" class="terminated-banner hidden">
       <span class="terminated-icon">⛔</span>
       <div>
@@ -38,33 +37,101 @@
     <section id="overviewCard" class="card hidden">
       <div class="card-header">
         <h2 id="custNameHeading">—</h2>
-        <span id="overallBadge" class="badge">—</span>
+        <div class="card-header-right">
+          <span id="overallBadge" class="badge">—</span>
+          <button id="editToggleBtn" class="btn-edit" type="button" title="Edit consumer details">
+            <span>✏️</span> Edit
+          </button>
+        </div>
       </div>
 
-      <div class="info-grid">
+      <div class="info-grid" id="infoGrid">
         <div class="info-item">
           <span class="info-label">Account Name</span>
-          <span class="info-value" id="accName">—</span>
+          <span class="info-value" id="accName" data-field="acc_name">—</span>
         </div>
         <div class="info-item">
           <span class="info-label">Meter Acc. No.</span>
-          <span class="info-value" id="meterAccNo">—</span>
+          <span class="info-value" id="meterAccNo" data-field="meter_acc_no">—</span>
         </div>
         <div class="info-item">
           <span class="info-label">Contact</span>
-          <span class="info-value" id="contact">—</span>
+          <span class="info-value" id="contact" data-field="contact">—</span>
         </div>
         <div class="info-item">
           <span class="info-label">Email</span>
-          <span class="info-value" id="email">—</span>
+          <span class="info-value" id="email" data-field="email">—</span>
         </div>
         <div class="info-item info-item-full">
           <span class="info-label">Location</span>
-          <span class="info-value" id="address">—</span>
+          <span class="info-value" id="address" data-field="address">—</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Latitude</span>
+          <span class="info-value" id="latitude" data-field="latitude">—</span>
+        </div>
+        <div class="info-item">
+          <span class="info-label">Longitude</span>
+          <span class="info-value" id="longitude" data-field="longitude">—</span>
+        </div>
+        <div class="info-item info-item-full">
+          <span class="info-label">Initial Meter Reading (M³)</span>
+          <span class="info-value" id="initialReading" data-field="meter_initial_reading_m3">—</span>
+        </div>
+        <div class="info-item info-item-full">
+          <span class="info-label">Customer Name</span>
+          <span class="info-value" id="custNameValue" data-field="cust_name">—</span>
         </div>
       </div>
 
+      <div id="editActions" class="edit-actions hidden">
+        <button id="cancelEditBtn" class="btn-secondary" type="button">Cancel</button>
+        <button id="saveEditBtn" class="btn-primary" type="button">💾 Save Changes</button>
+      </div>
+      <div id="editMsg" class="alert hidden"></div>
+
       <div class="status-summary" id="statusSummary"></div>
+    </section>
+
+    <section id="paymentCard" class="card hidden">
+      <h3>💰 Record Payment</h3>
+      <p class="form-hint">
+        Payments are applied oldest unpaid bill first, then progressively newer.
+        Any excess becomes prepayment credit.
+      </p>
+
+      <form id="paymentForm" class="payment-form">
+        <div class="form-row">
+          <label for="payAmount">Amount (KES) *</label>
+          <input type="number" id="payAmount" step="0.01" min="0.01"
+                 placeholder="e.g. 500" required>
+        </div>
+        <div class="form-row-double">
+          <div class="form-row">
+            <label for="payMethod">Method</label>
+            <select id="payMethod">
+              <option value="cash">Cash</option>
+              <option value="mpesa" selected>M-Pesa</option>
+              <option value="bank">Bank Transfer</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label for="payReference">Reference (optional)</label>
+            <input type="text" id="payReference" placeholder="e.g. QK7XYZ123">
+          </div>
+        </div>
+        <button type="submit" class="btn-primary btn-full" id="paymentSubmitBtn">
+          Record Payment
+        </button>
+      </form>
+
+      <div id="paymentMsg" class="alert hidden"></div>
+
+      <div id="paymentHistory" class="payment-history hidden">
+        <h4>Recent Payments</h4>
+        <div id="paymentHistoryList"></div>
+      </div>
     </section>
 
     <section id="notifyCard" class="card hidden">
@@ -123,7 +190,6 @@
       </div>
     </section>
 
-    <!-- Admin actions (only shown for terminated consumers) -->
     <section id="adminActions" class="admin-actions hidden">
       <button id="reactivateBtn" class="btn-admin btn-reactivate" type="button">
         <span class="btn-icon">♻️</span> Reactivate

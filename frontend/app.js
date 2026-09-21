@@ -42,8 +42,10 @@ function badge(status, label) {
   return `<span class="badge ${badgeClass(status)}">${esc(label)}</span>`;
 }
 
-/* ─── Global auth state ─── */
+/* ─── Global state ─── */
 let AUTH_STATE = { authenticated: false, username: null, setup_required: false };
+let CURRENT_CONSUMER = null;
+let CURRENT_PAYMENTS = [];
 
 async function refreshAuth() {
   try {
@@ -72,7 +74,7 @@ async function adminFetch(url, options = {}) {
 }
 
 /* ═══════════════════════════════════════════════
-   AUTH TAB (Login / Logout)
+   AUTH TAB
    ═══════════════════════════════════════════════ */
 function renderAuthTab() {
   const btn = document.getElementById('authTab');
@@ -87,9 +89,7 @@ function renderAuthTab() {
     icon.textContent = '🚪';
     btn.onclick = async () => {
       if (!confirm('Log out of the admin panel?')) return;
-      try {
-        await fetch('/api/admin/logout', { method: 'POST', credentials: 'same-origin' });
-      } catch {}
+      try { await fetch('/api/admin/logout', { method: 'POST', credentials: 'same-origin' }); } catch {}
       location.href = '/';
     };
   } else {
@@ -380,18 +380,24 @@ async function terminateCustomer(id, name) {
 /* ═══════════════════════════════════════════════
    CONSUMER PAGE
    ═══════════════════════════════════════════════ */
-function initConsumerPage(consumerId) {
+async function initConsumerPage(consumerId) {
   const loader = document.getElementById('pageLoader');
   if (!consumerId) { loader.textContent = 'No consumer selected.'; return; }
 
-  fetch(`${API}/api/consumer/${consumerId}`)
+  await refreshAuth();
+
+  fetch(`${API}/api/consumer/${consumerId}`, { credentials: 'same-origin' })
     .then((r) => r.json())
     .then((data) => {
       loader.classList.add('hidden');
+      CURRENT_CONSUMER = data.consumer;
+      CURRENT_PAYMENTS = data.payments || [];
+
       const c = data.consumer;
       const s = data.overall_status;
       const readings = data.readings || [];
       const isActive = c.is_active !== false;
+      const isAdmin = AUTH_STATE.authenticated;
 
       if (!isActive) {
         document.getElementById('terminatedBanner').classList.remove('hidden');
@@ -400,6 +406,7 @@ function initConsumerPage(consumerId) {
         document.getElementById('adminActions').classList.remove('hidden');
         document.getElementById('readingFormCard').classList.add('hidden');
         document.getElementById('notifyCard').classList.add('hidden');
+        document.getElementById('paymentCard').classList.add('hidden');
 
         document.getElementById('reactivateBtn')
           .addEventListener('click', () => reactivateConsumer(c.id, c.cust_name));
@@ -407,12 +414,18 @@ function initConsumerPage(consumerId) {
           .addEventListener('click', () => deleteConsumer(c.id, c.cust_name));
       }
 
+      /* Overview */
       document.getElementById('overviewCard').classList.remove('hidden');
       document.getElementById('custNameHeading').textContent = c.cust_name;
       document.getElementById('accName').textContent = c.acc_name;
       document.getElementById('meterAccNo').textContent = c.meter_acc_no;
       document.getElementById('contact').textContent = c.contact;
       document.getElementById('email').textContent = c.email || '—';
+      document.getElementById('custNameValue').textContent = c.cust_name;
+      document.getElementById('latitude').textContent = c.latitude != null ? c.latitude : '—';
+      document.getElementById('longitude').textContent = c.longitude != null ? c.longitude : '—';
+      document.getElementById('initialReading').textContent =
+        Number(c.meter_initial_reading_m3 || 0).toFixed(2) + ' M³';
 
       const addrEl = document.getElementById('address');
       const mapsUrl = buildMapsUrl(c);
@@ -441,6 +454,15 @@ function initConsumerPage(consumerId) {
         html += `<p><strong>Last Reading:</strong> ${fmtDate(s.last_reading_date)} (${s.age_days} days ago)</p>`;
       sum.innerHTML = html;
 
+      /* Edit toggle — only for logged-in admins */
+      const editBtn = document.getElementById('editToggleBtn');
+      if (!isAdmin) {
+        editBtn.style.display = 'none';
+      } else {
+        editBtn.addEventListener('click', toggleEditMode);
+      }
+
+      /* Readings */
       document.getElementById('readingsCard').classList.remove('hidden');
       document.getElementById('readingsBody').innerHTML = readings.map((r) => `
         <tr>
@@ -453,11 +475,22 @@ function initConsumerPage(consumerId) {
           <td><a href="/bill?id=${r.id}">${esc(r.bill_status)} →</a></td>
         </tr>`).join('');
 
+      /* Payment card (admins only, active consumers) */
+      if (isActive && isAdmin) {
+        document.getElementById('paymentCard').classList.remove('hidden');
+        document.getElementById('paymentForm').addEventListener('submit', (e) => {
+          e.preventDefault();
+          submitPayment(consumerId);
+        });
+        renderPaymentHistory();
+      }
+
+      /* Notify + reading form */
       if (isActive) {
         const notifyCard = document.getElementById('notifyCard');
         const outstanding = ['DUE', 'OVERDUE', 'OVERDUE_APPROACHING'].includes(s.status);
         const available = data.available_channels || [];
-        if (outstanding && available.length > 0) {
+        if (outstanding && available.length > 0 && isAdmin) {
           notifyCard.classList.remove('hidden');
           const smsBtn = document.getElementById('sendSmsBtn');
           const emailBtn = document.getElementById('sendEmailBtn');
@@ -519,6 +552,215 @@ function buildMapsUrl(c) {
   return null;
 }
 
+/* ═══════════════════════════════════════════════
+   EDIT MODE
+   ═══════════════════════════════════════════════ */
+
+const EDITABLE_FIELDS = [
+  { field: 'cust_name',                id: 'custNameValue', type: 'text',   required: true },
+  { field: 'acc_name',                 id: 'accName',       type: 'text',   required: true },
+  { field: 'meter_acc_no',             id: 'meterAccNo',    type: 'text',   required: true },
+  { field: 'contact',                  id: 'contact',       type: 'text',   required: true },
+  { field: 'email',                    id: 'email',         type: 'email',  required: false },
+  { field: 'address',                  id: 'address',       type: 'text',   required: false },
+  { field: 'latitude',                 id: 'latitude',      type: 'number', required: false, step: 'any' },
+  { field: 'longitude',                id: 'longitude',     type: 'number', required: false, step: 'any' },
+  { field: 'meter_initial_reading_m3', id: 'initialReading',type: 'number', required: true,  step: '0.01', min: 0 },
+];
+
+let EDIT_BACKUP = null;
+
+function toggleEditMode() {
+  const actions = document.getElementById('editActions');
+  const btn = document.getElementById('editToggleBtn');
+  const editMsg = document.getElementById('editMsg');
+
+  if (actions.classList.contains('hidden')) {
+    // Enter edit
+    EDIT_BACKUP = {};
+    EDITABLE_FIELDS.forEach(({ field, id }) => {
+      const el = document.getElementById(id);
+      EDIT_BACKUP[id] = el.innerHTML;
+    });
+
+    EDITABLE_FIELDS.forEach(({ field, id, type, required, step, min }) => {
+      const el = document.getElementById(id);
+      const current = CURRENT_CONSUMER[field];
+      const value = current == null ? '' : current;
+      el.innerHTML = `<input type="${type}" data-field="${field}"` +
+        (required ? ' required' : '') +
+        (step ? ` step="${step}"` : '') +
+        (min != null ? ` min="${min}"` : '') +
+        ` value="${esc(value)}">`;
+    });
+
+    actions.classList.remove('hidden');
+    btn.innerHTML = '<span>✏️</span> Editing…';
+    btn.disabled = true;
+    editMsg.classList.add('hidden');
+    document.getElementById('editActions').classList.remove('hidden');
+  }
+}
+
+function exitEditMode(restore = true) {
+  const actions = document.getElementById('editActions');
+  const btn = document.getElementById('editToggleBtn');
+  if (restore && EDIT_BACKUP) {
+    Object.entries(EDIT_BACKUP).forEach(([id, html]) => {
+      document.getElementById(id).innerHTML = html;
+    });
+  }
+  actions.classList.add('hidden');
+  btn.disabled = false;
+  btn.innerHTML = '<span>✏️</span> Edit';
+  EDIT_BACKUP = null;
+  const editMsg = document.getElementById('editMsg');
+  editMsg.classList.add('hidden');
+}
+
+async function saveConsumerEdits() {
+  const msgEl = document.getElementById('editMsg');
+  const saveBtn = document.getElementById('saveEditBtn');
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Saving…';
+
+  const payload = {};
+  EDITABLE_FIELDS.forEach(({ field, id }) => {
+    const el = document.getElementById(id);
+    const input = el.querySelector('input');
+    if (!input) return;
+    let v = input.value.trim();
+    if (field === 'meter_initial_reading_m3') {
+      v = v === '' ? 0 : parseFloat(v);
+    } else if (field === 'latitude' || field === 'longitude') {
+      v = v === '' ? null : parseFloat(v);
+    } else if (field === 'email') {
+      v = v || null;
+    } else if (field === 'address') {
+      v = v || null;
+    }
+    payload[field] = v;
+  });
+
+  try {
+    const r = await adminFetch(`${API}/api/admin/consumer/${CURRENT_CONSUMER.id}/update`, {
+      method: 'POST', body: JSON.stringify(payload),
+    });
+    const data = await r.json();
+    if (r.ok && data.ok) {
+      msgEl.className = 'alert alert-success';
+      msgEl.textContent = '✅ Saved. Reloading…';
+      msgEl.classList.remove('hidden');
+      setTimeout(() => location.reload(), 700);
+    } else {
+      msgEl.className = 'alert alert-error';
+      msgEl.textContent = data.error || 'Save failed.';
+      msgEl.classList.remove('hidden');
+      saveBtn.disabled = false;
+      saveBtn.textContent = '💾 Save Changes';
+    }
+  } catch (e) {
+    if (e.message && e.message.includes('Redirecting')) return;
+    msgEl.className = 'alert alert-error';
+    msgEl.textContent = 'Network error.';
+    msgEl.classList.remove('hidden');
+    saveBtn.disabled = false;
+    saveBtn.textContent = '💾 Save Changes';
+  }
+}
+
+/* Wire edit buttons once the page is ready */
+window.addEventListener('DOMContentLoaded', () => {
+  const saveBtn = document.getElementById('saveEditBtn');
+  const cancelBtn = document.getElementById('cancelEditBtn');
+  if (saveBtn) saveBtn.addEventListener('click', saveConsumerEdits);
+  if (cancelBtn) cancelBtn.addEventListener('click', () => exitEditMode(true));
+});
+
+/* ═══════════════════════════════════════════════
+   PAYMENT
+   ═══════════════════════════════════════════════ */
+async function submitPayment(consumerId) {
+  const msgEl = document.getElementById('paymentMsg');
+  const btn = document.getElementById('paymentSubmitBtn');
+
+  const amount = parseFloat(document.getElementById('payAmount').value);
+  const method = document.getElementById('payMethod').value;
+  const reference = document.getElementById('payReference').value.trim();
+
+  if (!amount || amount <= 0) {
+    msgEl.className = 'alert alert-error';
+    msgEl.textContent = 'Enter a valid payment amount greater than zero.';
+    msgEl.classList.remove('hidden');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Recording…';
+  msgEl.classList.add('hidden');
+
+  try {
+    const r = await adminFetch(`${API}/api/admin/consumer/${consumerId}/payment`, {
+      method: 'POST',
+      body: JSON.stringify({ amount_kes: amount, method, reference }),
+    });
+    const data = await r.json();
+
+    if (r.ok && data.ok) {
+      const lines = data.allocations.map(a =>
+        `• ${fmtDate(a.reading_date)} — applied KES ${fmt(a.applied)} ` +
+        `(new balance KES ${fmt(a.new_balance)})${a.prepayment ? ' [prepayment]' : ''}`
+      ).join('\n');
+      msgEl.className = 'alert alert-success';
+      msgEl.textContent = `✅ Payment of KES ${fmt(data.amount_kes)} recorded.\n${lines}`;
+      msgEl.style.whiteSpace = 'pre-line';
+      msgEl.classList.remove('hidden');
+      document.getElementById('paymentForm').reset();
+      setTimeout(() => location.reload(), 2200);
+    } else {
+      msgEl.className = 'alert alert-error';
+      msgEl.textContent = data.error || 'Payment failed.';
+      msgEl.classList.remove('hidden');
+      btn.disabled = false;
+      btn.textContent = 'Record Payment';
+    }
+  } catch (e) {
+    if (e.message && e.message.includes('Redirecting')) return;
+    msgEl.className = 'alert alert-error';
+    msgEl.textContent = 'Network error.';
+    msgEl.classList.remove('hidden');
+    btn.disabled = false;
+    btn.textContent = 'Record Payment';
+  }
+}
+
+function renderPaymentHistory() {
+  const wrap = document.getElementById('paymentHistory');
+  const list = document.getElementById('paymentHistoryList');
+  if (!wrap || !list) return;
+
+  if (!CURRENT_PAYMENTS.length) {
+    wrap.classList.add('hidden');
+    return;
+  }
+
+  list.innerHTML = CURRENT_PAYMENTS.map((p) => `
+    <div class="payment-item">
+      <div>
+        <div class="amount">KES ${fmt(p.amount_kes)}</div>
+        <div class="meta">
+          ${esc(p.method || '—')}${p.reference ? ' · ' + esc(p.reference) : ''}
+          ${p.recorded_by ? ' · by ' + esc(p.recorded_by) : ''}
+        </div>
+      </div>
+      <div class="meta">${fmtDateTime(p.created_at)}</div>
+    </div>`).join('');
+  wrap.classList.remove('hidden');
+}
+
+/* ═══════════════════════════════════════════════
+   REACTIVATE / DELETE
+   ═══════════════════════════════════════════════ */
 async function reactivateConsumer(id, name) {
   if (!confirm(`Reactivate ${name}? Readings and reminders will resume.`)) return;
   try {
@@ -533,7 +775,7 @@ async function reactivateConsumer(id, name) {
 }
 
 async function deleteConsumer(id, name) {
-  if (!confirm(`⚠️ PERMANENTLY DELETE ${name}?\n\nErases customer, all readings, and logs.\nThis CANNOT be undone.`)) return;
+  if (!confirm(`⚠️ PERMANENTLY DELETE ${name}?\n\nErases customer, all readings, payments, and logs.\nThis CANNOT be undone.`)) return;
   if (!confirm(`Final confirmation — delete ${name} forever?`)) return;
 
   try {
@@ -547,6 +789,9 @@ async function deleteConsumer(id, name) {
   }
 }
 
+/* ═══════════════════════════════════════════════
+   NOTIFY BUTTONS
+   ═══════════════════════════════════════════════ */
 function wireNotifyButtons(consumerId) {
   const smsBtn = document.getElementById('sendSmsBtn');
   const emailBtn = document.getElementById('sendEmailBtn');
