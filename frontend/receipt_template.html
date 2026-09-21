@@ -12,6 +12,26 @@
     background: #fff;
     font-size: 9.5pt;
     line-height: 1.35;
+    /* Force colors and gradients to print regardless of browser setting */
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  /* Same force applied to the elements that use backgrounds */
+  .receipt-header,
+  .meta-band,
+  .amount-highlight,
+  table.alloc thead th,
+  .summary,
+  .status-pill,
+  .receipt-footer,
+  .placeholder,
+  table.alloc tbody tr:nth-child(even) td,
+  .alloc-label {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
   }
   .receipt { max-width: 190mm; margin: 0 auto; }
 
