@@ -42,29 +42,81 @@ function badge(status, label) {
   return `<span class="badge ${badgeClass(status)}">${esc(label)}</span>`;
 }
 
-/* ─── Redirect to login on 401 ─── */
+/* ─── Global auth state ─── */
+let AUTH_STATE = { authenticated: false, username: null, setup_required: false };
+
+async function refreshAuth() {
+  try {
+    const r = await fetch('/api/admin/whoami', { credentials: 'same-origin' });
+    AUTH_STATE = await r.json();
+  } catch {
+    AUTH_STATE = { authenticated: false, username: null, setup_required: false };
+  }
+  return AUTH_STATE;
+}
+
+function requireLoginRedirect() {
+  const next = encodeURIComponent(location.pathname + location.search);
+  location.href = `/admin/login?next=${next}`;
+}
+
 async function adminFetch(url, options = {}) {
   options.credentials = 'same-origin';
   options.headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers || {});
   const r = await fetch(url, options);
   if (r.status === 401) {
-    const next = encodeURIComponent(location.pathname + location.search);
-    location.href = `/admin/login?next=${next}`;
+    requireLoginRedirect();
     throw new Error('Redirecting to login…');
   }
   return r;
 }
 
 /* ═══════════════════════════════════════════════
+   AUTH TAB (Login / Logout)
+   ═══════════════════════════════════════════════ */
+function renderAuthTab() {
+  const btn = document.getElementById('authTab');
+  const label = document.getElementById('authTabLabel');
+  const icon = document.getElementById('authTabIcon');
+  if (!btn) return;
+
+  if (AUTH_STATE.authenticated) {
+    btn.classList.remove('tab-login');
+    btn.classList.add('tab-logout');
+    label.textContent = 'Logout';
+    icon.textContent = '🚪';
+    btn.onclick = async () => {
+      if (!confirm('Log out of the admin panel?')) return;
+      try {
+        await fetch('/api/admin/logout', { method: 'POST', credentials: 'same-origin' });
+      } catch {}
+      location.href = '/';
+    };
+  } else {
+    btn.classList.remove('tab-logout');
+    btn.classList.add('tab-login');
+    label.textContent = 'Login';
+    icon.textContent = '🔐';
+    btn.onclick = () => {
+      const next = encodeURIComponent(location.pathname + location.search);
+      location.href = `/admin/login?next=${next}`;
+    };
+  }
+}
+
+/* ═══════════════════════════════════════════════
    HOME PAGE
    ═══════════════════════════════════════════════ */
-function initHomePage() {
+async function initHomePage() {
   const input = document.getElementById('searchInput');
   const btn = document.getElementById('searchBtn');
   const loader = document.getElementById('searchLoader');
   const errorBox = document.getElementById('searchError');
   const resultsBox = document.getElementById('resultsContainer');
   const resultsList = document.getElementById('resultsList');
+
+  await refreshAuth();
+  renderAuthTab();
 
   let debounce;
 
@@ -75,16 +127,39 @@ function initHomePage() {
       errorBox.classList.remove('hidden');
       return;
     }
+
     errorBox.classList.add('hidden');
     resultsBox.classList.add('hidden');
     loader.classList.remove('hidden');
     btn.disabled = true;
 
-    fetch(`${API}/api/search?q=${encodeURIComponent(q)}`)
-      .then((r) => r.json())
+    fetch(`${API}/api/search?q=${encodeURIComponent(q)}`, { credentials: 'same-origin' })
+      .then(async (r) => {
+        if (r.status === 401) return { __unauthenticated: true };
+        if (r.status === 429) {
+          const d = await r.json().catch(() => ({}));
+          return { __ratelimited: true, message: d.error || 'Too many requests. Slow down.' };
+        }
+        return r.json();
+      })
       .then((data) => {
         loader.classList.add('hidden');
         btn.disabled = false;
+
+        if (data.__unauthenticated) {
+          errorBox.innerHTML =
+            '🔐 Please <a href="/admin/login?next=' +
+            encodeURIComponent(location.pathname) +
+            '" style="color:#fff;text-decoration:underline;font-weight:700;">log in</a> to access consumer records.';
+          errorBox.classList.remove('hidden');
+          return;
+        }
+        if (data.__ratelimited) {
+          errorBox.textContent = '⏳ ' + data.message;
+          errorBox.classList.remove('hidden');
+          return;
+        }
+
         const results = data.results || [];
         if (results.length === 0) {
           errorBox.textContent = 'No matching consumer found.';
@@ -108,7 +183,7 @@ function initHomePage() {
       .catch(() => {
         loader.classList.add('hidden');
         btn.disabled = false;
-        errorBox.textContent = 'Something went wrong.';
+        errorBox.textContent = 'Something went wrong. Please try again.';
         errorBox.classList.remove('hidden');
       });
   }
@@ -121,9 +196,9 @@ function initHomePage() {
   });
 
   document.getElementById('openNewCustomerBtn')
-    .addEventListener('click', openNewCustomerModal);
+    .addEventListener('click', guardAndOpen(openNewCustomerModal));
   document.getElementById('openTerminateBtn')
-    .addEventListener('click', openTerminateModal);
+    .addEventListener('click', guardAndOpen(openTerminateModal));
 
   const termInput = document.getElementById('termSearchInput');
   let termDebounce;
@@ -133,6 +208,17 @@ function initHomePage() {
   });
 }
 
+function guardAndOpen(fn) {
+  return async () => {
+    if (!AUTH_STATE.authenticated) {
+      const s = await refreshAuth();
+      if (!s.authenticated) { requireLoginRedirect(); return; }
+      renderAuthTab();
+    }
+    fn();
+  };
+}
+
 /* ═══════════════════════════════════════════════
    NEW CUSTOMER MODAL
    ═══════════════════════════════════════════════ */
@@ -140,6 +226,7 @@ function openNewCustomerModal() {
   document.getElementById('newCustomerModal').classList.remove('hidden');
   document.getElementById('newCustomerMsg').classList.add('hidden');
   document.getElementById('newCustomerForm').reset();
+  document.getElementById('ncInitialReading').value = '0';
 }
 function closeNewCustomerModal() {
   document.getElementById('newCustomerModal').classList.add('hidden');
@@ -172,8 +259,7 @@ async function submitNewCustomer() {
 
   try {
     const r = await adminFetch(`${API}/api/admin/consumer`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
+      method: 'POST', body: JSON.stringify(payload),
     });
     const data = await r.json();
     if (r.ok && data.ok) {
@@ -222,10 +308,15 @@ function runTerminateSearch() {
   loader.classList.remove('hidden');
   msg.classList.add('hidden');
 
-  fetch(`${API}/api/search?q=${encodeURIComponent(q)}`)
-    .then((r) => r.json())
+  fetch(`${API}/api/search?q=${encodeURIComponent(q)}`, { credentials: 'same-origin' })
+    .then(async (r) => {
+      if (r.status === 401) return { __unauthenticated: true };
+      return r.json();
+    })
     .then((data) => {
       loader.classList.add('hidden');
+      if (data.__unauthenticated) { requireLoginRedirect(); return; }
+
       const results = data.results || [];
       if (!results.length) {
         list.innerHTML = '<p class="form-hint-small">No matches.</p>';

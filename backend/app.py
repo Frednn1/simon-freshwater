@@ -1,5 +1,9 @@
 import os
 from datetime import datetime, date, timedelta
+from collections import deque
+from threading import Lock
+from time import time as _time_now
+
 from flask import Flask, request, jsonify, send_from_directory, session
 from flask_cors import CORS
 from sqlalchemy import text, inspect
@@ -43,6 +47,55 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = bool(os.environ.get("RENDER"))
 
 db.init_app(app)
+
+
+# ═══════════════════════════════════════════════
+#  SECURITY HEADERS
+# ═══════════════════════════════════════════════
+
+@app.after_request
+def _security_headers(resp):
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    resp.headers.setdefault("Permissions-Policy", "geolocation=(self)")
+    return resp
+
+
+# ═══════════════════════════════════════════════
+#  RATE LIMITER (in-memory, per IP + per scope)
+# ═══════════════════════════════════════════════
+
+_rate_buckets = {}
+_rate_lock = Lock()
+
+
+def _client_ip():
+    xff = request.headers.get("X-Forwarded-For", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.remote_addr or "unknown"
+
+
+def _rate_limit(scope: str, limit: int, window: int) -> bool:
+    """Return True if allowed, False if the caller has exceeded the limit."""
+    key = f"{scope}:{_client_ip()}"
+    now = _time_now()
+    with _rate_lock:
+        dq = _rate_buckets.setdefault(key, deque())
+        while dq and now - dq[0] > window:
+            dq.popleft()
+        if len(dq) >= limit:
+            return False
+        dq.append(now)
+    return True
+
+
+def _too_many(retry_after: int = 60):
+    r = jsonify({"error": "Too many requests. Please slow down and try again shortly."})
+    r.status_code = 429
+    r.headers["Retry-After"] = str(retry_after)
+    return r
 
 
 # ═══════════════════════════════════════════════
@@ -141,7 +194,7 @@ def appjs():
 
 
 # ═══════════════════════════════════════════════
-#  API — HEALTH & PUBLIC
+#  API — HEALTH
 # ═══════════════════════════════════════════════
 
 @app.route("/api/health")
@@ -149,8 +202,19 @@ def health():
     return jsonify({"status": "ok", "time": datetime.utcnow().isoformat()})
 
 
+# ═══════════════════════════════════════════════
+#  API — SEARCH (admin-only)
+# ═══════════════════════════════════════════════
+
 @app.route("/api/search")
 def search_consumer():
+    if not _rate_limit("search", 30, 60):
+        return _too_many(60)
+
+    u = _require_admin()
+    if u:
+        return u
+
     q = (request.args.get("q") or "").strip()
     if len(q) < 2:
         return jsonify({"results": []}), 400
@@ -172,6 +236,10 @@ def search_consumer():
         })
     return jsonify({"results": out})
 
+
+# ═══════════════════════════════════════════════
+#  API — CONSUMER (public for direct links)
+# ═══════════════════════════════════════════════
 
 @app.route("/api/consumer/<int:consumer_id>")
 def get_consumer_details(consumer_id):
@@ -257,6 +325,9 @@ def get_reading_bill(reading_id):
 
 @app.route("/api/reading", methods=["POST"])
 def submit_reading():
+    if not _rate_limit("reading_post", 60, 60):
+        return _too_many(60)
+
     data = request.get_json(silent=True) or {}
     consumer_id = data.get("consumer_id")
     reading_m3 = data.get("reading_m3")
@@ -317,6 +388,9 @@ def submit_reading():
 
 @app.route("/api/consumer/<int:consumer_id>/notify", methods=["POST"])
 def notify_consumer(consumer_id):
+    if not _rate_limit("notify", 20, 60):
+        return _too_many(60)
+
     data = request.get_json(silent=True) or {}
     channel = (data.get("channel") or "").lower().strip()
     if channel not in ("sms", "email"):
@@ -385,6 +459,9 @@ def admin_whoami():
 
 @app.route("/api/admin/setup", methods=["POST"])
 def admin_setup_route():
+    if not _rate_limit("setup", 10, 60):
+        return _too_many(60)
+
     data = request.get_json(silent=True) or {}
     result = create_first_admin(
         username=data.get("username", ""),
@@ -394,6 +471,7 @@ def admin_setup_route():
         setup_code=data.get("setup_code", ""),
     )
     if result.get("ok"):
+        session.clear()
         session.permanent = True
         session["admin_id"] = result["admin_id"]
         session["admin_username"] = result["username"]
@@ -403,9 +481,13 @@ def admin_setup_route():
 
 @app.route("/api/admin/login", methods=["POST"])
 def admin_login_route():
+    if not _rate_limit("login", 20, 60):
+        return _too_many(60)
+
     data = request.get_json(silent=True) or {}
     result = admin_login_fn(data.get("username", ""), data.get("password", ""))
     if result.get("ok"):
+        session.clear()
         session.permanent = True
         session["admin_id"] = result["admin_id"]
         session["admin_username"] = result["username"]
@@ -415,13 +497,15 @@ def admin_login_route():
 
 @app.route("/api/admin/logout", methods=["POST"])
 def admin_logout_route():
-    session.pop("admin_id", None)
-    session.pop("admin_username", None)
+    session.clear()
     return jsonify({"ok": True}), 200
 
 
 @app.route("/api/admin/forgot", methods=["POST"])
 def admin_forgot_route():
+    if not _rate_limit("forgot", 10, 60):
+        return _too_many(60)
+
     data = request.get_json(silent=True) or {}
     result = request_password_reset(data.get("identifier", ""))
     return jsonify(result), (200 if result.get("ok") else 400)
@@ -429,6 +513,9 @@ def admin_forgot_route():
 
 @app.route("/api/admin/reset", methods=["POST"])
 def admin_reset_route():
+    if not _rate_limit("reset", 10, 60):
+        return _too_many(60)
+
     data = request.get_json(silent=True) or {}
     result = confirm_password_reset(
         data.get("token", ""), data.get("otp", ""), data.get("new_password", ""),
@@ -592,15 +679,14 @@ def admin_delete_consumer(consumer_id):
 
 
 # ═══════════════════════════════════════════════
-#  ADMIN — SEED (empty; retained for wipe functionality)
+#  ADMIN — SEED (empty) + RECOMPUTE
 # ═══════════════════════════════════════════════
 
-SEED_DATA = []  # No test consumers — use the New Customer form to add real ones.
+SEED_DATA = []
 
 
 @app.route("/api/admin/seed", methods=["POST"])
 def admin_seed():
-    """Retained for ?replace=1 wipe. Without replace, seeds nothing (empty SEED_DATA)."""
     u = _require_admin()
     if u: return u
 
@@ -612,54 +698,21 @@ def admin_seed():
         db.session.commit()
         return jsonify({"ok": True, "wiped": True, "created": 0}), 200
 
-    created = 0
-    for spec in SEED_DATA:
-        if Consumer.query.filter_by(meter_acc_no=spec["meter_acc_no"]).first():
-            continue
-        c = Consumer(cust_name=spec["cust_name"], acc_name=spec["acc_name"],
-                     meter_acc_no=spec["meter_acc_no"], contact=spec["contact"],
-                     email=spec["email"], address=spec["address"],
-                     meter_initial_reading_m3=spec.get("meter_initial_reading_m3", 0.0),
-                     is_active=True)
-        db.session.add(c)
-        db.session.flush()
-        prev_m3 = None
-        initial = float(spec.get("meter_initial_reading_m3", 0.0))
-        for m3, days_ago, paid in sorted(spec["readings"], key=lambda x: -x[1]):
-            amt = compute_amount(m3, prev_m3, initial)
-            db.session.add(MeterReading(
-                consumer_id=c.id, reading_m3=m3,
-                reading_date=date.today() - timedelta(days=days_ago),
-                amount_kes=amt, amount_paid=paid))
-            prev_m3 = m3
-        created += 1
-    db.session.commit()
-    return jsonify({"created": created, "skipped": 0, "replaced": False}), 200
+    return jsonify({"created": 0, "skipped": 0, "replaced": False}), 200
 
-
-# ═══════════════════════════════════════════════
-#  ADMIN — RECOMPUTE AMOUNTS (one-time after billing rule change)
-# ═══════════════════════════════════════════════
 
 @app.route("/api/admin/recompute-amounts", methods=["POST"])
 def admin_recompute_amounts():
-    """
-    Walk every consumer's readings oldest → newest and recompute amount_kes
-    using the current billing rule (with meter_initial_reading_m3 support).
-    Idempotent — safe to run multiple times.
-    """
     u = _require_admin()
     if u: return u
 
-    updated = 0
-    scanned = 0
+    updated = scanned = 0
     for c in Consumer.query.all():
         initial = float(c.meter_initial_reading_m3 or 0.0)
         readings = (MeterReading.query
                     .filter_by(consumer_id=c.id)
                     .order_by(MeterReading.reading_date.asc(),
-                              MeterReading.id.asc())
-                    .all())
+                              MeterReading.id.asc()).all())
         prev_m3 = None
         for r in readings:
             scanned += 1

@@ -18,11 +18,15 @@
         </div>
       </div>
       <nav class="header-actions">
-        <button class="tab-btn tab-new"    id="openNewCustomerBtn" type="button">
+        <button class="tab-btn tab-new" id="openNewCustomerBtn" type="button">
           <span class="tab-icon">＋</span> New Customer
         </button>
         <button class="tab-btn tab-terminate" id="openTerminateBtn" type="button">
           <span class="tab-icon">⛔</span> Terminate
+        </button>
+        <button class="tab-btn tab-auth" id="authTab" type="button">
+          <span class="tab-icon" id="authTabIcon">🔐</span>
+          <span id="authTabLabel">Login</span>
         </button>
       </nav>
     </div>
@@ -32,8 +36,8 @@
     <section class="hero">
       <h2>Check Your Water Bill</h2>
       <p class="hero-sub">
-        Enter your <strong>Customer Name</strong> or
-        <strong>Meter Account No.</strong> to view your account.
+        Search by <strong>Customer Name</strong> or
+        <strong>Meter Account No.</strong> — admin login required.
       </p>
 
       <div class="search-wrap">
@@ -56,7 +60,7 @@
     </section>
   </main>
 
-  <!-- ═══════════ NEW CUSTOMER MODAL ═══════════ -->
+  <!-- NEW CUSTOMER MODAL -->
   <div id="newCustomerModal" class="modal-overlay hidden">
     <div class="modal">
       <div class="modal-header">
@@ -79,8 +83,7 @@
           </div>
           <div class="form-row">
             <label for="ncInitialReading">Initial Meter Reading (M³) *</label>
-            <input type="number" id="ncInitialReading" step="0.01" min="0"
-                   value="0" required>
+            <input type="number" id="ncInitialReading" step="0.01" min="0" value="0" required>
           </div>
           <p class="form-hint-small" style="margin:-.4rem 0 .8rem;">
             Leave as <strong>0</strong> if the meter starts from zero at install.
@@ -124,7 +127,7 @@
     </div>
   </div>
 
-  <!-- ═══════════ TERMINATE MODAL ═══════════ -->
+  <!-- TERMINATE MODAL -->
   <div id="terminateModal" class="modal-overlay hidden">
     <div class="modal">
       <div class="modal-header">
@@ -137,8 +140,7 @@
           Termination preserves all data and stops reminders.
         </p>
         <div class="form-row">
-          <input type="text" id="termSearchInput" autocomplete="off"
-                 placeholder="Search customer…">
+          <input type="text" id="termSearchInput" autocomplete="off" placeholder="Search customer…">
         </div>
         <div id="termSearchLoader" class="loader hidden"></div>
         <div id="termResultsList"></div>
