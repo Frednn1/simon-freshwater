@@ -40,6 +40,22 @@ if DATABASE_URL.startswith("postgres://"):
 
 app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+# ─── Connection pool hardening ───
+# pool_pre_ping: SQLAlchemy sends a lightweight SELECT 1 before handing the
+#   connection to the request. If it's dead, it's discarded and a new one is
+#   opened. Prevents "SSL error: decryption failed" from stale connections.
+# pool_recycle:  any connection older than 3 minutes is proactively replaced,
+#   staying well under Render's proxy idle timeout.
+# Skipped for SQLite (local dev) — SQLite has no network so none of this applies.
+if not DATABASE_URL.startswith("sqlite"):
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "pool_pre_ping": True,
+        "pool_recycle": 180,
+        "pool_size": 5,
+        "max_overflow": 5,
+        "pool_timeout": 30,
+    }
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-change-me")
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
