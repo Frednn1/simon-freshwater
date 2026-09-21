@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Simon Fresh Water — Payment Receipt (Template)</title>
+<style>
+  @page { size: A4; margin: 8mm 10mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    color: #1c2b36;
+    background: #fff;
+    font-size: 9.5pt;
+    line-height: 1.35;
+    /* Force colors and gradients to print regardless of browser setting */
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  /* Same force applied to the elements that use backgrounds */
+  .receipt-header,
+  .meta-band,
+  .amount-highlight,
+  table.alloc thead th,
+  .summary,
+  .status-pill,
+  .receipt-footer,
+  .placeholder,
+  table.alloc tbody tr:nth-child(even) td,
+  .alloc-label {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+  .receipt { max-width: 190mm; margin: 0 auto; }
+
+  /* ─── HEADER ─── */
+  .receipt-header {
+    background: linear-gradient(135deg, #0a2540 0%, #0d47a1 55%, #1976d2 100%);
+    color: #fff;
+    border-radius: 10px 10px 0 0;
+    padding: 12px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+  .receipt-brand { display: flex; align-items: center; gap: 10px; }
+  .drop {
+    width: 36px; height: 36px;
+    background: rgba(255,255,255,.15);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16pt; line-height: 1;
+  }
+  .brand-text h1 { font-size: 13pt; letter-spacing: .4px; margin-bottom: 1px; }
+  .brand-text p  { font-size: 7.5pt; opacity: .88; letter-spacing: .2px; }
+  .receipt-tag { text-align: right; font-size: 7.5pt; letter-spacing: 1.5px; text-transform: uppercase; opacity: .95; }
+  .receipt-tag strong { display: block; font-size: 11pt; letter-spacing: 2px; font-weight: 700; margin-top: 2px; }
+
+  /* ─── META BAND ─── */
+  .meta-band {
+    background: #e3f2fd;
+    border-left: 4px solid #1976d2;
+    border-right: 4px solid #1976d2;
+    padding: 7px 20px;
+    display: flex;
+    justify-content: space-between;
+    gap: 14px;
+    font-size: 9pt;
+  }
+  .meta-band .cell { flex: 1; }
+  .meta-band .label { font-size: 6.5pt; text-transform: uppercase; letter-spacing: .8px; color: #455a64; font-weight: 700; margin-bottom: 1px; }
+  .meta-band .value { font-size: 10pt; font-weight: 700; color: #0d47a1; font-family: 'Courier New', monospace; }
+
+  /* ─── BODY ─── */
+  .receipt-body { border: 2px solid #90caf9; border-top: none; padding: 12px 20px; }
+
+  .section { margin-bottom: 10px; page-break-inside: avoid; }
+  .section-title {
+    font-size: 7pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: #0d47a1;
+    padding-bottom: 3px;
+    margin-bottom: 7px;
+    border-bottom: 2px solid #e3f2fd;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .section-title::before {
+    content: '';
+    display: inline-block;
+    width: 7px; height: 7px;
+    background: #1976d2;
+    border-radius: 2px;
+  }
+
+  .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 18px; }
+  .field-grid.one-col { grid-template-columns: 1fr; }
+  .field { display: flex; flex-direction: column; }
+  .field.full { grid-column: 1 / -1; }
+  .field .label { font-size: 6.5pt; text-transform: uppercase; letter-spacing: .6px; color: #455a64; font-weight: 700; margin-bottom: 1px; }
+  .field .value { font-size: 9pt; color: #1c2b36; font-weight: 500; padding: 2px 0; min-height: 15px; word-break: break-word; }
+  .placeholder {
+    color: #1976d2;
+    font-family: 'Courier New', monospace;
+    font-weight: 700;
+    background: #e3f2fd;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 8.5pt;
+    letter-spacing: .2px;
+  }
+
+  /* ─── AMOUNT HIGHLIGHT ─── */
+  .amount-highlight {
+    background: linear-gradient(135deg, #0d47a1, #1976d2);
+    color: #fff;
+    border-radius: 8px;
+    padding: 9px 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 4px 0 10px;
+  }
+  .amount-highlight .label { font-size: 7.5pt; letter-spacing: 1.2px; text-transform: uppercase; opacity: .9; }
+  .amount-highlight .value { font-size: 16pt; font-weight: 800; letter-spacing: .5px; font-family: 'Courier New', monospace; }
+
+  /* ─── ALLOCATION TABLE ─── */
+  table.alloc { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
+  table.alloc thead th {
+    background: #0d47a1; color: #fff;
+    font-size: 7pt; text-transform: uppercase; letter-spacing: .6px;
+    padding: 5px 8px; text-align: left; font-weight: 700;
+  }
+  table.alloc thead th.right { text-align: right; }
+  table.alloc tbody td {
+    padding: 5px 8px;
+    border-bottom: 1px solid #e3f2fd;
+    font-family: 'Courier New', monospace;
+    color: #1c2b36;
+  }
+  table.alloc tbody tr:nth-child(even) td { background: #f8fbff; }
+  table.alloc tbody td.right { text-align: right; }
+  table.alloc tbody td .note {
+    display: inline-block;
+    background: #fff3e0; color: #e65100;
+    font-size: 6.5pt; font-weight: 700;
+    padding: 1px 5px; border-radius: 3px;
+    margin-left: 4px; letter-spacing: .3px;
+  }
+  .alloc-label {
+    font-size: 6.5pt; color: #1976d2; font-style: italic;
+    padding: 3px 8px 6px; background: #e3f2fd;
+    border-bottom: 1px solid #90caf9;
+  }
+
+  /* ─── SUMMARY BOX ─── */
+  .summary { background: #f5faff; border: 1px solid #bbdefb; border-left: 4px solid #1976d2; border-radius: 6px; padding: 8px 14px; margin-top: 3px; }
+  .summary .row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 8.5pt; border-bottom: 1px dashed #cfd8dc; }
+  .summary .row:last-child { border-bottom: none; padding-top: 5px; margin-top: 2px; border-top: 2px solid #1976d2; }
+  .summary .row.total .label { font-weight: 700; color: #0d47a1; }
+  .summary .row.total .value { font-size: 10.5pt; font-weight: 800; color: #0d47a1; font-family: 'Courier New', monospace; }
+  .summary .row .value { font-family: 'Courier New', monospace; font-weight: 600; }
+
+  /* ─── STATUS PILL ─── */
+  .status-pill {
+    display: inline-block;
+    padding: 3px 12px;
+    border-radius: 50px;
+    background: #e3f2fd; color: #0d47a1;
+    font-weight: 700; font-size: 8.5pt;
+    letter-spacing: .5px; text-transform: uppercase;
+    border: 2px solid #1976d2;
+  }
+
+  /* ─── SIGNATURE ─── */
+  .signature-row { display: flex; justify-content: space-between; gap: 30px; margin-top: 12px; padding-top: 4px; }
+  .signature-row .sig { flex: 1; text-align: center; font-size: 8pt; color: #455a64; }
+  .signature-row .sig .line { border-top: 1px solid #90caf9; margin-bottom: 3px; padding-top: 20px; }
+
+  /* ─── FOOTER ─── */
+  .receipt-footer {
+    background: linear-gradient(135deg, #0a2540, #0d47a1);
+    color: #fff;
+    border-radius: 0 0 10px 10px;
+    padding: 10px 20px;
+    text-align: center;
+    margin-top: 12px;
+  }
+  .receipt-footer .thanks { font-size: 9.5pt; font-weight: 600; letter-spacing: .3px; margin-bottom: 2px; }
+  .receipt-footer .slogan { font-size: 8pt; opacity: .85; font-style: italic; margin-bottom: 6px; }
+  .receipt-footer .contact { font-size: 7pt; opacity: .75; letter-spacing: .4px; border-top: 1px solid rgba(255,255,255,.2); padding-top: 6px; }
+
+  /* ─── SCREEN-ONLY HINT ─── */
+  .print-hint {
+    max-width: 190mm; margin: 10px auto; padding: 9px 14px;
+    background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 6px;
+    font-size: 9pt; color: #1b5e20; text-align: center;
+  }
+  .print-hint strong { color: #2e7d32; }
+  @media print { body { background: #fff; } .print-hint { display: none !important; } }
+
+  /* ═══════════════════════════════════════════════
+     FIX: Bill Allocation table — prevent overflow
+     ═══════════════════════════════════════════════ */
+  table.alloc {
+    table-layout: fixed;
+    width: 100%;
+    table-layout: fixed;
+  }
+  table.alloc th,
+  table.alloc td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    word-break: break-word;
+    box-sizing: border-box;
+  }
+  table.alloc th:nth-child(1), table.alloc td:nth-child(1) { width: 22%; }
+  table.alloc th:nth-child(2), table.alloc td:nth-child(2) { width: 15%; }
+  table.alloc th:nth-child(3), table.alloc td:nth-child(3) { width: 20%; }
+  table.alloc th:nth-child(4), table.alloc td:nth-child(4) { width: 20%; }
+  table.alloc th:nth-child(5), table.alloc td:nth-child(5) { width: 23%; }
+
+  /* Placeholder chips inside the allocation table shrink to plain text */
+  table.alloc .placeholder {
+    padding: 0;
+    background: transparent;
+    font-size: 7.5pt;
+    font-weight: 600;
+    color: #0d47a1;
+    border-radius: 0;
+  }
+
+  /* Prepayment note drops to its own line so column 5 stays narrow */
+  table.alloc td .note {
+    display: block;
+    margin: 3px 0 0;
+    white-space: normal;
+  }
+
+</style>
+</head>
+<body>
+
+  <div class="print-hint">
+    <strong>Print to PDF:</strong> Chrome ⋮ → Share → Print → Destination <strong>Save as PDF</strong>
+    → A4 → Default margins → Background graphics <strong>ON</strong> → Save
+  </div>
+
+  <div class="receipt">
+
+    <div class="receipt-header">
+      <div class="receipt-brand">
+        <div class="drop">💧</div>
+        <div class="brand-text">
+          <h1>SIMON FRESH WATER</h1>
+          <p>Kikuyu, Kenya &middot; Water Utility Services</p>
+        </div>
+      </div>
+      <div class="receipt-tag">
+        Official Receipt
+        <strong>{{receipt_no}}</strong>
+      </div>
+    </div>
+
+    <div class="meta-band">
+      <div class="cell">
+        <div class="label">Receipt No.</div>
+        <div class="value">{{receipt_no}}</div>
+      </div>
+      <div class="cell">
+        <div class="label">Date</div>
+        <div class="value">{{receipt_date}}</div>
+      </div>
+      <div class="cell">
+        <div class="label">Time</div>
+        <div class="value">{{receipt_time}}</div>
+      </div>
+    </div>
+
+    <div class="receipt-body">
+
+      <div class="section">
+        <div class="section-title">Customer Details</div>
+        <div class="field-grid">
+          <div class="field">
+            <span class="label">Customer Name</span>
+            <span class="value"><span class="placeholder">{{cust_name}}</span></span>
+          </div>
+          <div class="field">
+            <span class="label">Account Name</span>
+            <span class="value"><span class="placeholder">{{acc_name}}</span></span>
+          </div>
+          <div class="field">
+            <span class="label">Meter Acc. No.</span>
+            <span class="value"><span class="placeholder">{{meter_acc_no}}</span></span>
+          </div>
+          <div class="field">
+            <span class="label">Contact</span>
+            <span class="value"><span class="placeholder">{{contact}}</span></span>
+          </div>
+          <div class="field">
+            <span class="label">Email</span>
+            <span class="value"><span class="placeholder">{{email}}</span></span>
+          </div>
+          <div class="field">
+            <span class="label">Address</span>
+            <span class="value"><span class="placeholder">{{address}}</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="amount-highlight">
+        <div>
+          <div class="label">Amount Received</div>
+          <div style="font-size:8pt; margin-top:2px; opacity:.85;">
+            Method: {{method}} &nbsp;&middot;&nbsp; Ref: {{reference}}
+          </div>
+        </div>
+        <div class="value">KES {{amount_kes}}</div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Payment Details</div>
+        <div class="field-grid">
+          <div class="field">
+            <span class="label">Method</span>
+            <span class="value"><span class="placeholder">{{method}}</span></span>
+          </div>
+          <div class="field">
+            <span class="label">Reference</span>
+            <span class="value"><span class="placeholder">{{reference}}</span></span>
+          </div>
+          <div class="field">
+            <span class="label">Received By</span>
+            <span class="value"><span class="placeholder">{{recorded_by}}</span></span>
+          </div>
+          <div class="field">
+            <span class="label">Date &amp; Time</span>
+            <span class="value"><span class="placeholder">{{receipt_date}}</span> &middot; <span class="placeholder">{{receipt_time}}</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Bill Allocation (Oldest First)</div>
+        <table class="alloc">
+          <colgroup>
+            <col style="width:22%">
+            <col style="width:15%">
+            <col style="width:20%">
+            <col style="width:20%">
+            <col style="width:23%">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Bill Date</th>
+              <th>Reading (M³)</th>
+              <th class="right">Bill Amt</th>
+              <th class="right">Applied</th>
+              <th class="right">Balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- ══ REPEAT THIS ROW PER ALLOCATION ══ -->
+            <tr>
+              <td>{{alloc_reading_date}}</td>
+              <td>{{alloc_reading_m3}}</td>
+              <td class="right">KES {{alloc_amount_kes}}</td>
+              <td class="right">KES {{alloc_applied}}</td>
+              <td class="right">KES {{alloc_new_balance}} <span class="note">{{alloc_note}}</span></td>
+            </tr>
+            <!-- ══ END REPEAT ══ -->
+          </tbody>
+        </table>
+        <div class="alloc-label">
+          ↑ Repeat per bill. Negative balance rows carry <strong>{{alloc_note}} = (Prepayment credit)</strong>.
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Balance Summary</div>
+        <div class="summary">
+          <div class="row">
+            <span class="label">Previous Outstanding Balance</span>
+            <span class="value">KES {{previous_balance}}</span>
+          </div>
+          <div class="row">
+            <span class="label">Payment Applied</span>
+            <span class="value">− KES {{amount_kes}}</span>
+          </div>
+          <div class="row">
+            <span class="label">Prepaid Credit</span>
+            <span class="value">KES {{prepaid_credit}}</span>
+          </div>
+          <div class="row total">
+            <span class="label">Remaining Balance</span>
+            <span class="value">KES {{remaining_balance}}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Account Status</div>
+        <div class="field-grid">
+          <div class="field">
+            <span class="label">Status</span>
+            <span class="value"><span class="status-pill">{{status_label}}</span></span>
+          </div>
+          <div class="field">
+            <span class="label">Last Meter Reading</span>
+            <span class="value"><span class="placeholder">{{last_reading_date}}</span></span>
+          </div>
+          <div class="field">
+            <span class="label">Last Reading Value</span>
+            <span class="value"><span class="placeholder">{{last_reading_m3}}</span> M³</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="signature-row">
+        <div class="sig">
+          <div class="line"></div>
+          Customer Signature
+        </div>
+        <div class="sig">
+          <div class="line"></div>
+          Received By: <span class="placeholder">{{recorded_by}}</span>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="receipt-footer">
+      <div class="thanks">Thank you for choosing Simon Fresh Water.</div>
+      <div class="slogan">Your water is life — let's keep it flowing. 💧</div>
+      <div class="contact">
+        SIMON FRESH WATER &middot; KIKUYU &middot; +254 700 000 000 &middot; info@simonfreshwater.co.ke
+      </div>
+    </div>
+
+  </div>
+
+</body>
+</html>
