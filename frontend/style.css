@@ -913,3 +913,27 @@ body {
   padding-top: 1rem;
   border-top: 1px solid var(--grey-100);
 }
+
+/* ═══════════════════════════════════════════════
+   CONSUMER PAGE — Statement button sizing
+   (compact, right-aligned — overrides .btn-download full-width)
+   ═══════════════════════════════════════════════ */
+.statement-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.statement-actions .btn-download {
+  width: auto;
+  padding: .6rem 1rem;
+  font-size: .85rem;
+  box-shadow: 0 3px 10px rgba(106,27,154,.20);
+}
+.statement-actions .btn-download .btn-icon {
+  font-size: .95rem;
+}
+@media (max-width: 600px) {
+  .statement-actions .btn-download {
+    padding: .55rem .9rem;
+    font-size: .82rem;
+  }
+}
