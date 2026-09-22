@@ -85,15 +85,15 @@ def _find_placeholders(page):
 
 def _scalar_value(snapshot, name):
     """
-    Case-insensitive lookup:
-      • Key present, value non-None → str(value) (empty string stays empty)
-      • Key missing                 → em-dash
+    Case-insensitive lookup. Returns "" when the key is missing or the
+    value is None/empty — so placeholder cells render completely blank,
+    never a visible token.
     """
     key = name.lower()
     for k, v in snapshot.items():
         if k.lower() == key:
             return "" if v is None else str(v)
-    return "—"
+    return ""
 
 
 def _apply_replacements(page, pairs):
@@ -131,11 +131,13 @@ def generate_statement_pdf(snapshot: dict) -> BytesIO:
         raise RuntimeError(f"Statement template not found: {TEMPLATE_PATH}")
 
     doc = fitz.open(TEMPLATE_PATH)
-    page = doc[0]
 
-    placeholders = _find_placeholders(page)
-    pairs = [(ph, _scalar_value(snapshot, ph["name"])) for ph in placeholders]
-    _apply_replacements(page, pairs)
+    # Process EVERY page — placeholders may span page boundaries.
+    # On a 2-page statement, page 2 holds the overflow rows + totals.
+    for page in doc.pages():
+        placeholders = _find_placeholders(page)
+        pairs = [(ph, _scalar_value(snapshot, ph["name"])) for ph in placeholders]
+        _apply_replacements(page, pairs)
 
     out = BytesIO()
     doc.save(out, garbage=4, deflate=True, clean=True)
