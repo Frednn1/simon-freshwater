@@ -483,6 +483,12 @@ async function initConsumerPage(consumerId) {
         editBtn.addEventListener('click', toggleEditMode);
       }
 
+      /* Download Statement — visible to any signed-in admin. */
+      if (isAdmin) {
+        document.getElementById('statementActions').classList.remove('hidden');
+        wireStatementDownloadButton(c.id);
+      }
+
       /* Readings */
       document.getElementById('readingsCard').classList.remove('hidden');
       document.getElementById('readingsBody').innerHTML = readings.map((r) => `
@@ -858,6 +864,48 @@ async function deleteConsumer(id, name) {
 /* ═══════════════════════════════════════════════
    NOTIFY BUTTONS
    ═══════════════════════════════════════════════ */
+function wireStatementDownloadButton(consumerId) {
+  const btn = document.getElementById('downloadStatementBtn');
+  if (!btn || btn.dataset.wired) return;
+  btn.dataset.wired = '1';
+
+  btn.addEventListener('click', async () => {
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="btn-icon">⏳</span> Generating…';
+
+    try {
+      const r = await fetch(`${API}/api/consumer/${consumerId}/statement.pdf`,
+        { credentials: 'same-origin' });
+
+      if (r.status === 401) { requireLoginRedirect(); return; }
+      if (!r.ok) {
+        let msg = 'Statement generation failed.';
+        try { const j = await r.json(); msg = j.error || msg; } catch {}
+        throw new Error(msg);
+      }
+
+      const blob = await r.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url;
+      a.download = `SimonWater_Statement_${String(consumerId).padStart(6, '0')}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      btn.innerHTML = '<span class="btn-icon">✓</span> Statement Already Downloaded';
+      btn.classList.add('btn-download-done');
+      btn.disabled = true;
+    } catch (e) {
+      btn.disabled = false;
+      btn.innerHTML = original;
+      alert('❌ ' + (e.message || 'Statement generation failed.'));
+    }
+  });
+}
+
 function wireNotifyButtons(consumerId) {
   const smsBtn = document.getElementById('sendSmsBtn');
   const emailBtn = document.getElementById('sendEmailBtn');
