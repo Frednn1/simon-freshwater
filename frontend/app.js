@@ -484,12 +484,17 @@ async function initConsumerPage(consumerId) {
         });
         renderPaymentHistory();
 
-        /* Show download button if a payment was just recorded in this session */
-        const lastPid = sessionStorage.getItem('lastPaymentId');
-        const lastNo  = sessionStorage.getItem('lastPaymentReceiptNo');
-        const lastCid = sessionStorage.getItem('lastPaymentConsumer');
-        if (lastPid && String(lastCid) === String(consumerId)) {
-          showDownloadReceiptButton(lastPid, lastNo);
+        /* Show download button ONCE if a payment was just recorded.
+           Reading + clearing here ensures the button disappears on the
+           NEXT refresh — it only survives the single post-payment reload. */
+        const pid  = sessionStorage.getItem('pendingReceiptPid');
+        const rno  = sessionStorage.getItem('pendingReceiptNo');
+        const pcid = sessionStorage.getItem('pendingReceiptCid');
+        if (pid && String(pcid) === String(consumerId)) {
+          showDownloadReceiptButton(pid, rno);
+          sessionStorage.removeItem('pendingReceiptPid');
+          sessionStorage.removeItem('pendingReceiptNo');
+          sessionStorage.removeItem('pendingReceiptCid');
         }
       }
 
@@ -735,10 +740,10 @@ async function submitPayment(consumerId) {
       msgEl.classList.remove('hidden');
       document.getElementById('paymentForm').reset();
 
-      /* Persist for the download button after reload */
-      sessionStorage.setItem('lastPaymentId', data.payment_id);
-      sessionStorage.setItem('lastPaymentReceiptNo', data.receipt_no);
-      sessionStorage.setItem('lastPaymentConsumer', consumerId);
+      /* One-shot storage: shown once after the auto-reload, then cleared. */
+      sessionStorage.setItem('pendingReceiptPid', data.payment_id);
+      sessionStorage.setItem('pendingReceiptNo',  data.receipt_no);
+      sessionStorage.setItem('pendingReceiptCid', consumerId);
 
       setTimeout(() => location.reload(), 2200);
     } else {
