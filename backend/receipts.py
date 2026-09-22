@@ -1,16 +1,20 @@
 """
 Receipt PDF generator.
 
-Approach:
+Rendering approach:
   • Find every {{placeholder}} by walking the PDF's character stream —
     handles single-line, multi-line, and mixed-case tokens uniformly.
   • Erase the placeholder using a no-fill redaction (no white boxes).
   • Insert the replacement value at the placeholder's exact origin, at
-    the placeholder's font size and colour. No padding, no stretching,
-    no wrapping.
+    the placeholder's font size and colour.
 
-Bill Allocation is handled by 5 fixed rows in the template, named
-a1_* through a5_*. Rows beyond the number of allocations are blanked.
+Bill Allocation is rendered from the payment snapshot's `statement`
+array (last 5 readings, newest first). If a snapshot predates the
+statement feature, we fall back to the older `allocations` array.
+
+For placeholders whose name ends in `_applied`, the inserted amount is
+coloured red when it represents a positive value — making the reading(s)
+that this payment actually reduced visually obvious.
 
 Uses PyMuPDF (fitz). If PyMuPDF is not installed, generate_receipt_pdf
 raises a clear RuntimeError.
@@ -26,6 +30,9 @@ _CANDIDATES = [
     os.path.join(_HERE, "SimonWater_ReceiptTemplate.pdf"),
 ]
 TEMPLATE_PATH = next((p for p in _CANDIDATES if os.path.exists(p)), _CANDIDATES[0])
+
+
+RED = (0.80, 0.10, 0.10)   # ~#cc1a1a — used for the touched applied amounts
 
 
 # ─────────────────────────────────────────────
@@ -117,31 +124,52 @@ def _scalar_value(snapshot, name):
     return "—"
 
 
-def _alloc_value(alloc, key):
-    """Allocation-row lookup. Empty/missing → blank string."""
-    if alloc is None:
+def _row_value(row, key):
+    """Value of a single statement/allocations row, or blank."""
+    if row is None:
         return ""
-    v = alloc.get(key)
+    v = row.get(key)
     if v in (None, ""):
         return ""
     return str(v)
 
 
+def _is_positive_amount(text):
+    """True if `text` is a money string like '1,000.00' with value > 0."""
+    if not text:
+        return False
+    try:
+        n = float(str(text).replace(",", "").replace("KES", "").strip())
+        return n > 0
+    except ValueError:
+        return False
+
+
 def _build_alloc_replacements(snapshot):
     """
-    For each of the 5 fixed allocation rows, build:
-        a<N>_date, a<N>_m3, a<N>_amt, a<N>_applied, a<N>_bal
-    Values come from snapshot['allocations'][N-1], or blank if absent.
+    Build the a1..a5 placeholder values.
+
+    Prefers snapshot['statement'] — the last 5 readings, newest first,
+    each with: reading_date, reading_m3, amount_kes, applied, new_balance.
+
+    Falls back to snapshot['allocations'] for receipts recorded before
+    the statement feature was added. Those receipts only carry the
+    touched rows, so the rendering will show fewer rows — that's
+    expected for historical receipts.
     """
-    allocations = snapshot.get("allocations") or []
+    rows = snapshot.get("statement")
+    if not rows:
+        rows = snapshot.get("allocations") or []
+
     out = {}
     for idx in range(1, 6):
-        alloc = allocations[idx - 1] if idx - 1 < len(allocations) else None
-        out[f"a{idx}_date"]    = _alloc_value(alloc, "reading_date")
-        out[f"a{idx}_m3"]      = _alloc_value(alloc, "reading_m3")
-        out[f"a{idx}_amt"]     = _alloc_value(alloc, "amount_kes")
-        out[f"a{idx}_applied"] = _alloc_value(alloc, "applied")
-        out[f"a{idx}_bal"]     = _alloc_value(alloc, "new_balance")
+        row = rows[idx - 1] if idx - 1 < len(rows) else None
+        out[f"a{idx}_date"]    = _row_value(row, "reading_date")
+        out[f"a{idx}_m3"]      = _row_value(row, "reading_m3")
+        out[f"a{idx}_amt"]     = _row_value(row, "amount_kes")
+        out[f"a{idx}_applied"] = _row_value(row, "applied")
+        # Older snapshots use `new_balance`; new statement uses the same key.
+        out[f"a{idx}_bal"]     = _row_value(row, "new_balance")
     return out
 
 
@@ -152,10 +180,9 @@ def _build_alloc_replacements(snapshot):
 def _apply_replacements(page, pairs):
     """
     pairs = [(placeholder_dict, text_value), ...]
-    Steps:
-      1. Mark every placeholder's bbox for redaction, with no fill.
-      2. Apply redactions (removes original text, draws nothing).
-      3. Insert replacement text at each origin, preserving font size/color.
+      1. Redact every placeholder's bbox with no fill.
+      2. Insert the replacement text at each origin, preserving font size.
+      3. For `_applied` placeholders with a positive value, use RED.
     """
     if not pairs:
         return
@@ -169,12 +196,16 @@ def _apply_replacements(page, pairs):
     for ph, text in pairs:
         if not text:
             continue
+        name = ph["name"].lower()
+        color = ph["color"]
+        if name.endswith("_applied") and _is_positive_amount(text):
+            color = RED
         x, y = ph["origin"]
         page.insert_text(
             (x, y), text,
             fontsize=ph["size"],
             fontname="helv",
-            color=ph["color"],
+            color=color,
         )
 
 

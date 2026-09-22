@@ -842,6 +842,24 @@ def admin_record_payment(consumer_id):
         "last_reading_m3": f"{newest.reading_m3:.2f}",
         "allocations": allocations,
     }
+    # ── Statement: last 5 readings, newest first, with applied-from-this-payment
+    touched_ids = {a["reading_id"] for a in allocations}
+    applied_by_id = {a["reading_id"]: a["applied"] for a in allocations}
+
+    statement = []
+    for r in reversed(readings[-5:]):   # readings asc; take last 5, reverse → desc
+        applied_amt = applied_by_id.get(r.id, "0.00")
+        statement.append({
+            "reading_id": r.id,
+            "reading_date": _fmt_date(r.reading_date),
+            "reading_m3": f"{r.reading_m3:.2f}",
+            "amount_kes": _fmt_money(r.amount_kes),
+            "applied": applied_amt,
+            "new_balance": _fmt_money(r.amount_kes - r.amount_paid),
+            "touched": r.id in touched_ids,
+        })
+    snapshot["statement"] = statement
+
     log.receipt_json = json.dumps(snapshot)
 
     db.session.commit()
