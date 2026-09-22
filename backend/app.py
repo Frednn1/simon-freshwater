@@ -259,6 +259,21 @@ def appjs():
     return send_from_directory(FRONTEND_DIR, "app.js")
 
 
+@app.route("/template/statement")
+def statement_template_view():
+    """
+    Serve the statement template HTML for manual Chrome -> Save as PDF.
+    Admin-only.
+    """
+    if not _current_admin():
+        return redirect("/admin/login?next=/template/statement")
+    return send_from_directory(
+        TEMPLATES_DIR,
+        "SimonWater_StatementTemplate.html",
+        mimetype="text/html",
+    )
+
+
 @app.route("/template/receipt")
 def receipt_template_view():
     """
