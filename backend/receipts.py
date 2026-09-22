@@ -167,6 +167,7 @@ def _build_alloc_replacements(snapshot):
         out[f"a{idx}_date"]    = _row_value(row, "reading_date")
         out[f"a{idx}_m3"]      = _row_value(row, "reading_m3")
         out[f"a{idx}_amt"]     = _row_value(row, "amount_kes")
+        out[f"a{idx}_paid"]    = _row_value(row, "paid")
         out[f"a{idx}_applied"] = _row_value(row, "applied")
         # Older snapshots use `new_balance`; new statement uses the same key.
         out[f"a{idx}_bal"]     = _row_value(row, "new_balance")

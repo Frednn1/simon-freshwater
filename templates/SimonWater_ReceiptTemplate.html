@@ -154,11 +154,12 @@
   }
   table.alloc tbody tr:nth-child(even) td { background: #f8fbff; }
   table.alloc tbody td.right { text-align: right; }
-  table.alloc th:nth-child(1), table.alloc td:nth-child(1) { width: 22%; }
-  table.alloc th:nth-child(2), table.alloc td:nth-child(2) { width: 15%; }
-  table.alloc th:nth-child(3), table.alloc td:nth-child(3) { width: 20%; }
-  table.alloc th:nth-child(4), table.alloc td:nth-child(4) { width: 20%; }
-  table.alloc th:nth-child(5), table.alloc td:nth-child(5) { width: 23%; }
+  table.alloc th:nth-child(1), table.alloc td:nth-child(1) { width: 18%; }
+  table.alloc th:nth-child(2), table.alloc td:nth-child(2) { width: 12%; }
+  table.alloc th:nth-child(3), table.alloc td:nth-child(3) { width: 18%; }
+  table.alloc th:nth-child(4), table.alloc td:nth-child(4) { width: 18%; }
+  table.alloc th:nth-child(5), table.alloc td:nth-child(5) { width: 17%; }
+  table.alloc th:nth-child(6), table.alloc td:nth-child(6) { width: 17%; }
 
   table.alloc .placeholder {
     padding: 0;
@@ -331,56 +332,63 @@
         <div class="section-title">Bill Allocation (Oldest First)</div>
         <table class="alloc">
           <colgroup>
-            <col style="width:22%">
-            <col style="width:15%">
-            <col style="width:20%">
-            <col style="width:20%">
-            <col style="width:23%">
+            <col style="width:18%">
+            <col style="width:12%">
+            <col style="width:18%">
+            <col style="width:18%">
+            <col style="width:17%">
+            <col style="width:17%">
           </colgroup>
           <thead>
             <tr>
               <th>Bill Date</th>
               <th>Reading (M³)</th>
-              <th class="right">Bill Amt</th>
-              <th class="right">Applied</th>
-              <th class="right">Balance</th>
+              <th class="right">Bill Amt (KES)</th>
+              <th class="right">Paid (KES)</th>
+              <th class="right">Applied (KES)</th>
+              <th class="right">Balance (KES)</th>
             </tr>
           </thead>
           <tbody>
             <tr>
               <td>{{a1_date}}</td>
               <td>{{a1_m3}}</td>
-              <td class="right">KES {{a1_amt}}</td>
-              <td class="right">KES {{a1_applied}}</td>
-              <td class="right">KES {{a1_bal}}</td>
+              <td class="right">{{a1_amt}}</td>
+              <td class="right">{{a1_paid}}</td>
+              <td class="right">{{a1_applied}}</td>
+              <td class="right">{{a1_bal}}</td>
             </tr>
             <tr>
               <td>{{a2_date}}</td>
               <td>{{a2_m3}}</td>
-              <td class="right">KES {{a2_amt}}</td>
-              <td class="right">KES {{a2_applied}}</td>
-              <td class="right">KES {{a2_bal}}</td>
+              <td class="right">{{a2_amt}}</td>
+              <td class="right">{{a2_paid}}</td>
+              <td class="right">{{a2_applied}}</td>
+              <td class="right">{{a2_bal}}</td>
             </tr>
             <tr>
               <td>{{a3_date}}</td>
               <td>{{a3_m3}}</td>
-              <td class="right">KES {{a3_amt}}</td>
-              <td class="right">KES {{a3_applied}}</td>
-              <td class="right">KES {{a3_bal}}</td>
+              <td class="right">{{a3_amt}}</td>
+              <td class="right">{{a3_paid}}</td>
+              <td class="right">{{a3_applied}}</td>
+              <td class="right">{{a3_bal}}</td>
             </tr>
             <tr>
               <td>{{a4_date}}</td>
               <td>{{a4_m3}}</td>
-              <td class="right">KES {{a4_amt}}</td>
-              <td class="right">KES {{a4_applied}}</td>
-              <td class="right">KES {{a4_bal}}</td>
+              <td class="right">{{a4_amt}}</td>
+              <td class="right">{{a4_paid}}</td>
+              <td class="right">{{a4_applied}}</td>
+              <td class="right">{{a4_bal}}</td>
             </tr>
             <tr>
               <td>{{a5_date}}</td>
               <td>{{a5_m3}}</td>
-              <td class="right">KES {{a5_amt}}</td>
-              <td class="right">KES {{a5_applied}}</td>
-              <td class="right">KES {{a5_bal}}</td>
+              <td class="right">{{a5_amt}}</td>
+              <td class="right">{{a5_paid}}</td>
+              <td class="right">{{a5_applied}}</td>
+              <td class="right">{{a5_bal}}</td>
             </tr>
           </tbody>
         </table>

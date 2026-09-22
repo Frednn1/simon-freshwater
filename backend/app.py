@@ -854,6 +854,7 @@ def admin_record_payment(consumer_id):
             "reading_date": _fmt_date(r.reading_date),
             "reading_m3": f"{r.reading_m3:.2f}",
             "amount_kes": _fmt_money(r.amount_kes),
+            "paid": _fmt_money(r.amount_paid),
             "applied": applied_amt,
             "new_balance": _fmt_money(r.amount_kes - r.amount_paid),
             "touched": r.id in touched_ids,
@@ -904,6 +905,41 @@ def download_receipt(payment_id):
     except Exception as e:
         app.logger.exception("[Receipt] PDF generation failed")
         return jsonify({"error": f"PDF generation failed: {e}"}), 500
+
+    filename = f"SimonWater_Receipt_{snapshot.get('receipt_no','payment')}.pdf"
+    return send_file(
+        pdf_buf,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+@app.route("/receipt/<int:payment_id>")
+def receipt_browser_view(payment_id):
+    """
+    Convenience URL for admin to download a receipt straight from the browser.
+    Admin-only — unauthenticated visitors are redirected to the login page.
+    """
+    if not _current_admin():
+        return redirect(f"/admin/login?next=/receipt/{payment_id}")
+
+    log = PaymentLog.query.get(payment_id)
+    if not log:
+        return "Payment not found.", 404
+    if not log.receipt_json:
+        return "Receipt not available for this payment.", 400
+
+    try:
+        snapshot = json.loads(log.receipt_json)
+    except Exception:
+        return "Receipt data corrupted.", 500
+
+    try:
+        pdf_buf = generate_receipt_pdf(snapshot)
+    except Exception:
+        app.logger.exception("[Receipt] PDF generation failed")
+        return "PDF generation failed.", 500
 
     filename = f"SimonWater_Receipt_{snapshot.get('receipt_no','payment')}.pdf"
     return send_file(
