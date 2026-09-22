@@ -30,6 +30,7 @@ from admin_auth import (
     request_password_reset, confirm_password_reset,
 )
 from receipts import generate_receipt_pdf
+from water_bill import generate_water_bill_pdf
 
 
 BACKEND_DIR   = os.path.dirname(os.path.abspath(__file__))
@@ -396,6 +397,63 @@ def get_reading_bill(reading_id):
             "bill_status": get_reading_bill_status(reading),
         },
     })
+
+
+@app.route("/api/reading/<int:reading_id>/bill.pdf")
+def download_water_bill(reading_id):
+    """Generate and stream the water-bill PDF for a specific reading.
+    Admin-only."""
+    if not _rate_limit("water_bill", 20, 60):
+        return _too_many(60)
+
+    u = _require_admin()
+    if u:
+        return u
+
+    reading = MeterReading.query.get_or_404(reading_id)
+    consumer = reading.consumer
+
+    # Consumption for this specific reading
+    prev = _previous_reading(consumer.id, exclude_id=reading.id)
+    prev_m3 = None
+    if prev and (prev.reading_date < reading.reading_date
+                 or (prev.reading_date == reading.reading_date
+                     and prev.id < reading.id)):
+        prev_m3 = prev.reading_m3
+    consumption = compute_consumption(
+        reading.reading_m3, prev_m3,
+        float(consumer.meter_initial_reading_m3 or 0.0),
+    )
+
+    # Total outstanding balance across all readings
+    all_r = _all_readings(consumer.id)
+    info = get_consumer_status(all_r)
+
+    snapshot = {
+        "bill_no":        f"{reading.id:06d}",
+        "date":           reading.reading_date.strftime("%d %b %Y"),
+        "cust_name":      consumer.cust_name,
+        "meter_acc_no":   consumer.meter_acc_no,
+        "reading_m3":     f"{reading.reading_m3:.2f}",
+        "consumption_m3": f"{consumption:.2f}",
+        "amount_kes":     _fmt_money(reading.amount_kes),
+        "balance":        _fmt_money(info["total_due"]),
+        "status_label":   get_reading_bill_status(reading).upper(),
+    }
+
+    try:
+        pdf_buf = generate_water_bill_pdf(snapshot)
+    except Exception as e:
+        app.logger.exception("[WaterBill] PDF generation failed")
+        return jsonify({"error": f"PDF generation failed: {e}"}), 500
+
+    filename = f"SimonWater_Bill_{reading.id:06d}.pdf"
+    return send_file(
+        pdf_buf,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=filename,
+    )
 
 
 @app.route("/api/reading", methods=["POST"])

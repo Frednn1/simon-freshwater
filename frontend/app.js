@@ -886,9 +886,11 @@ function wireNotifyButtons(consumerId) {
 /* ═══════════════════════════════════════════════
    BILL PAGE
    ═══════════════════════════════════════════════ */
-function initBillPage(readingId) {
+async function initBillPage(readingId) {
   const loader = document.getElementById('billLoader');
   if (!readingId) { loader.textContent = 'No reading selected.'; return; }
+
+  await refreshAuth();
 
   fetch(`${API}/api/reading/${readingId}`)
     .then((r) => r.json())
@@ -907,8 +909,56 @@ function initBillPage(readingId) {
       document.getElementById('bPaid').textContent = 'KES ' + fmt(r.amount_paid);
       document.getElementById('bBalance').textContent = 'KES ' + fmt(r.balance);
       document.getElementById('billStatusBadge').textContent = r.bill_status;
+
+      /* Show Download action only when an admin is signed in */
+      if (AUTH_STATE.authenticated) {
+        document.getElementById('billActions').classList.remove('hidden');
+        wireBillDownloadButton(readingId);
+      }
     })
     .catch(() => { loader.textContent = 'Failed to load bill.'; });
+}
+
+function wireBillDownloadButton(readingId) {
+  const btn = document.getElementById('downloadBillBtn');
+  if (!btn || btn.dataset.wired) return;
+  btn.dataset.wired = '1';
+
+  btn.addEventListener('click', async () => {
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="btn-icon">⏳</span> Generating…';
+
+    try {
+      const r = await fetch(`${API}/api/reading/${readingId}/bill.pdf`,
+        { credentials: 'same-origin' });
+
+      if (r.status === 401) { requireLoginRedirect(); return; }
+      if (!r.ok) {
+        let msg = 'Water bill generation failed.';
+        try { const j = await r.json(); msg = j.error || msg; } catch {}
+        throw new Error(msg);
+      }
+
+      const blob = await r.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url;
+      a.download = `SimonWater_Bill_${String(readingId).padStart(6, '0')}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      btn.innerHTML = '<span class="btn-icon">✓</span> Water Bill Already Downloaded';
+      btn.classList.add('btn-download-done');
+      btn.disabled = true;
+    } catch (e) {
+      btn.disabled = false;
+      btn.innerHTML = original;
+      alert('❌ ' + (e.message || 'Water bill generation failed.'));
+    }
+  });
 }
 
 /* ═══════════════════════════════════════════════

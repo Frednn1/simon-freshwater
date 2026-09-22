@@ -895,3 +895,12 @@ body {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
+
+/* ═══════════════════════════════════════════════
+   BILL PAGE — Download water bill action
+   ═══════════════════════════════════════════════ */
+.bill-actions {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--grey-100);
+}
