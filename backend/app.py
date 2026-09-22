@@ -52,7 +52,9 @@ if DATABASE_URL.startswith("postgres://"):
 app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-change-me")
-app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=30)
+app.config["SESSION_REFRESH_EACH_REQUEST"] = True
+SESSION_IDLE_MINUTES = 30
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = bool(os.environ.get("RENDER"))
@@ -137,11 +139,32 @@ def _all_readings(consumer_id):
 
 
 def _current_admin():
+    """Return the authenticated AdminUser or None. Enforces idle timeout."""
     aid = session.get("admin_id")
     if not aid:
         return None
+
+    # Idle-timeout enforcement (server-side — cannot be bypassed by client)
+    last = session.get("last_activity")
+    now = datetime.utcnow()
+    if last:
+        try:
+            last_dt = datetime.fromisoformat(last)
+        except (ValueError, TypeError):
+            session.clear()
+            return None
+        if now - last_dt > timedelta(minutes=SESSION_IDLE_MINUTES):
+            session.clear()
+            return None
+
     a = AdminUser.query.get(aid)
-    return a if (a and a.is_active) else None
+    if not a or not a.is_active:
+        session.clear()
+        return None
+
+    # Roll the activity timestamp forward on each authenticated request
+    session["last_activity"] = now.isoformat()
+    return a
 
 
 def _require_admin():
@@ -608,6 +631,7 @@ def admin_setup_route():
         session.permanent = True
         session["admin_id"] = result["admin_id"]
         session["admin_username"] = result["username"]
+        session["last_activity"] = datetime.utcnow().isoformat()
         return jsonify({"ok": True, "username": result["username"]}), 200
     return jsonify(result), 400
 
@@ -624,6 +648,7 @@ def admin_login_route():
         session.permanent = True
         session["admin_id"] = result["admin_id"]
         session["admin_username"] = result["username"]
+        session["last_activity"] = datetime.utcnow().isoformat()
         return jsonify({"ok": True, "username": result["username"]}), 200
     return jsonify({"ok": False, "error": result["error"]}), 401
 

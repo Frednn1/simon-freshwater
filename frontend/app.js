@@ -57,6 +57,25 @@ async function refreshAuth() {
   return AUTH_STATE;
 }
 
+/* ─── Session idle watch: every 60s verify the session is still valid.
+       If the server says unauthenticated, redirect to login. ─── */
+let _idleWatchInterval = null;
+function startSessionIdleWatch() {
+  if (_idleWatchInterval) return;
+  _idleWatchInterval = setInterval(async () => {
+    try {
+      const r = await fetch('/api/admin/whoami', { credentials: 'same-origin' });
+      const d = await r.json();
+      if (!d.authenticated) {
+        // Session expired (idle) or was revoked. Bounce to login.
+        AUTH_STATE = { authenticated: false, username: null, setup_required: false };
+        const next = encodeURIComponent(location.pathname + location.search);
+        location.href = `/admin/login?next=${next}`;
+      }
+    } catch { /* network blip — ignore, retry next interval */ }
+  }, 60000);
+}
+
 function requireLoginRedirect() {
   const next = encodeURIComponent(location.pathname + location.search);
   location.href = `/admin/login?next=${next}`;
@@ -117,6 +136,7 @@ async function initHomePage() {
 
   await refreshAuth();
   renderAuthTab();
+  startSessionIdleWatch();
 
   let debounce;
 
@@ -385,6 +405,7 @@ async function initConsumerPage(consumerId) {
   if (!consumerId) { loader.textContent = 'No consumer selected.'; return; }
 
   await refreshAuth();
+  startSessionIdleWatch();
 
   fetch(`${API}/api/consumer/${consumerId}`, { credentials: 'same-origin' })
     .then((r) => r.json())
