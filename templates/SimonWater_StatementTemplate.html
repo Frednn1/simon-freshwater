@@ -61,7 +61,7 @@
     padding: 10px 18px;
   }
 
-  .section { margin-bottom: 8px; page-break-inside: avoid; }
+  .section { margin-bottom: 8px; }
   .section-title {
     font-size: 7pt;
     font-weight: 700;
@@ -178,6 +178,15 @@
   .footer .slogan { font-size: 7.5pt; opacity: .85; font-style: italic; margin-bottom: 4px; }
   .footer .contact { font-size: 6.5pt; opacity: .75; border-top: 1px solid rgba(255,255,255,.2);
                     padding-top: 4px; letter-spacing: .4px; }
+
+  /* ─── Normal document flow for multipage output ─── */
+  table.ledger { page-break-inside: auto; }
+  table.ledger thead { display: table-header-group; }   /* repeat headers on page 2 */
+  table.ledger tbody tr { page-break-inside: avoid; }   /* never split a row */
+  .summary-strip { page-break-inside: avoid; }          /* keep the 4-cell summary together */
+  .field-grid    { page-break-inside: avoid; }          /* keep small grids together */
+  .totals        { page-break-inside: avoid; }          /* totals bar stays intact */
+  .statement-header, .meta-band { page-break-inside: avoid; }
 
   .print-hint {
     max-width: 190mm; margin: 10px auto; padding: 9px 14px;
