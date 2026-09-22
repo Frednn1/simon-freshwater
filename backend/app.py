@@ -31,6 +31,7 @@ from admin_auth import (
 )
 from receipts import generate_receipt_pdf
 from water_bill import generate_water_bill_pdf
+from statement import generate_statement_pdf
 
 
 BACKEND_DIR   = os.path.dirname(os.path.abspath(__file__))
@@ -486,6 +487,148 @@ def download_water_bill(reading_id):
         return jsonify({"error": f"PDF generation failed: {e}"}), 500
 
     filename = f"SimonWater_Bill_{reading.id:06d}.pdf"
+    return send_file(
+        pdf_buf,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+@app.route("/api/consumer/<int:consumer_id>/statement.pdf")
+def download_statement(consumer_id):
+    """Generate the customer accounting statement PDF (admin-only).
+    Built on-the-fly from current DB state — reflects live readings + payments."""
+    if not _rate_limit("statement", 20, 60):
+        return _too_many(60)
+
+    u = _require_admin()
+    if u:
+        return u
+
+    consumer = Consumer.query.get_or_404(consumer_id)
+
+    # ── Readings, oldest first ──
+    readings_asc = (MeterReading.query
+                    .filter_by(consumer_id=consumer.id)
+                    .order_by(MeterReading.reading_date.asc(),
+                              MeterReading.id.asc())
+                    .all())
+
+    initial = float(consumer.meter_initial_reading_m3 or 0.0)
+    cons_by_id = {}
+    prev_m3 = None
+    for r in readings_asc:
+        cons_by_id[r.id] = compute_consumption(r.reading_m3, prev_m3, initial)
+        prev_m3 = r.reading_m3
+
+    # ── Payments, oldest first ──
+    payments_asc = (PaymentLog.query
+                    .filter_by(consumer_id=consumer.id)
+                    .order_by(PaymentLog.created_at.asc(),
+                              PaymentLog.id.asc())
+                    .all())
+
+    # ── Build the unified ledger ──
+    events = []
+    for r in readings_asc:
+        events.append({
+            "date": r.reading_date,
+            "type": "Water Bill",
+            "ref":  f"Reading {r.reading_m3:.2f} M³",
+            "dr":   float(r.amount_kes or 0.0),
+            "cr":   0.0,
+            "sort": (r.reading_date, 0, r.id),
+        })
+    for p in payments_asc:
+        pdate = p.created_at.date() if p.created_at else date.today()
+        ref = (p.method or "Payment").title()
+        if p.reference:
+            ref += f" · {p.reference}"
+        events.append({
+            "date": pdate,
+            "type": "Payment",
+            "ref":  ref,
+            "dr":   0.0,
+            "cr":   float(p.amount_kes or 0.0),
+            "sort": (pdate, 1, p.id),
+        })
+
+    events.sort(key=lambda e: e["sort"])
+
+    # Running balance (oldest → newest)
+    bal = 0.0
+    for e in events:
+        bal += e["dr"] - e["cr"]
+        e["balance"] = round(bal, 2)
+
+    # Newest first
+    events_desc = list(reversed(events))
+    rows = events_desc[:20]
+
+    # ── Totals ──
+    total_billed = round(sum(float(r.amount_kes or 0.0) for r in readings_asc), 2)
+    total_paid   = round(sum(float(p.amount_kes or 0.0) for p in payments_asc), 2)
+    outstanding  = round(max(total_billed - total_paid, 0.0), 2)
+    total_consumption_m3 = round(sum(cons_by_id.values()), 2)
+
+    latest_r = readings_asc[-1] if readings_asc else None
+
+    # Newest-first list for status calc
+    info = get_consumer_status(list(reversed(readings_asc))) if readings_asc \
+           else get_consumer_status([])
+
+    # Period
+    if events:
+        period_from = events[0]["date"].strftime("%d %b %Y")
+        period_to   = events[-1]["date"].strftime("%d %b %Y")
+    else:
+        period_from = period_to = "—"
+
+    snapshot = {
+        "statement_no":   f"STMT-{consumer.id:06d}",
+        "statement_date": date.today().strftime("%d %b %Y"),
+        "period_from":    period_from,
+        "period_to":      period_to,
+        "cust_name":      consumer.cust_name,
+        "acc_name":       consumer.acc_name,
+        "meter_acc_no":   consumer.meter_acc_no,
+        "contact":        consumer.contact or "—",
+        "email":          consumer.email or "—",
+        "address":        consumer.address or "—",
+        "total_consumption_m3": f"{total_consumption_m3:.2f}",
+        "latest_reading_m3":    f"{latest_r.reading_m3:.2f}" if latest_r else "—",
+        "latest_reading_date":  latest_r.reading_date.strftime("%d %b %Y") if latest_r else "—",
+        "status_label":         info["label"],
+        "total_billed":         _fmt_money(total_billed),
+        "total_paid":           _fmt_money(total_paid),
+        "outstanding_balance":  _fmt_money(outstanding),
+    }
+
+    for idx in range(1, 21):
+        if idx - 1 < len(rows):
+            e = rows[idx - 1]
+            snapshot[f"t{idx}_date"] = e["date"].strftime("%d %b %Y")
+            snapshot[f"t{idx}_type"] = e["type"]
+            snapshot[f"t{idx}_ref"]  = e["ref"]
+            snapshot[f"t{idx}_dr"]   = _fmt_money(e["dr"]) if e["dr"] > 0 else ""
+            snapshot[f"t{idx}_cr"]   = _fmt_money(e["cr"]) if e["cr"] > 0 else ""
+            snapshot[f"t{idx}_bal"]  = _fmt_money(e["balance"])
+        else:
+            snapshot[f"t{idx}_date"] = ""
+            snapshot[f"t{idx}_type"] = ""
+            snapshot[f"t{idx}_ref"]  = ""
+            snapshot[f"t{idx}_dr"]   = ""
+            snapshot[f"t{idx}_cr"]   = ""
+            snapshot[f"t{idx}_bal"]  = ""
+
+    try:
+        pdf_buf = generate_statement_pdf(snapshot)
+    except Exception as e:
+        app.logger.exception("[Statement] PDF generation failed")
+        return jsonify({"error": f"PDF generation failed: {e}"}), 500
+
+    filename = f"SimonWater_Statement_{consumer.id:06d}.pdf"
     return send_file(
         pdf_buf,
         mimetype="application/pdf",
