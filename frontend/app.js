@@ -759,16 +759,21 @@ async function submitPayment(consumerId) {
 }
 
 function renderPaymentHistory() {
-  const wrap = document.getElementById('paymentHistory');
-  const list = document.getElementById('paymentHistoryList');
-  if (!wrap || !list) return;
+  const wrap  = document.getElementById('paymentHistory');
+  const list  = document.getElementById('paymentHistoryList');
+  const body  = document.getElementById('paymentHistoryBody');
+  const btn   = document.getElementById('paymentToggleBtn');
+  if (!wrap || !list || !body || !btn) return;
 
   if (!CURRENT_PAYMENTS.length) {
     wrap.classList.add('hidden');
     return;
   }
 
-  list.innerHTML = CURRENT_PAYMENTS.map((p) => `
+  // Cap at 10 most recent (backend already returns ≤10, this is belt-and-braces)
+  const recent = CURRENT_PAYMENTS.slice(0, 10);
+
+  list.innerHTML = recent.map((p) => `
     <div class="payment-item">
       <div>
         <div class="amount">KES ${fmt(p.amount_kes)}</div>
@@ -779,6 +784,17 @@ function renderPaymentHistory() {
       </div>
       <div class="meta">${fmtDateTime(p.created_at)}</div>
     </div>`).join('');
+
+  // Wire the toggle once per page load
+  if (!btn.dataset.wired) {
+    btn.addEventListener('click', () => {
+      const nowHidden = body.classList.toggle('hidden');
+      btn.classList.toggle('open', !nowHidden);
+      btn.setAttribute('aria-expanded', String(!nowHidden));
+    });
+    btn.dataset.wired = '1';
+  }
+
   wrap.classList.remove('hidden');
 }
 

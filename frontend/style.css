@@ -798,3 +798,100 @@ body {
   box-shadow: none !important;
 }
 .btn-download-done:hover { transform: none; }
+
+/* ═══════════════════════════════════════════════
+   MOBILE VIEW (≤600px) — Home header + search bar
+   Overrides earlier rules by cascade order.
+   ═══════════════════════════════════════════════ */
+@media (max-width: 600px) {
+
+  /* ── Header: brand on top, tabs below, both centered ── */
+  .site-header .header-inner {
+    flex-direction: column;
+    align-items: center;
+    gap: .65rem;
+    text-align: center;
+  }
+  .site-header .brand {
+    justify-content: center;
+    width: 100%;
+  }
+  .site-header .brand-link .brand {
+    justify-content: center;
+  }
+  .site-header .brand > div:last-child {
+    text-align: left;
+  }
+  .site-header h1 { font-size: 1.15rem; }
+  .site-header .header-actions {
+    justify-content: center;
+    width: 100%;
+  }
+
+  /* ── Search bar: single row, compact button ── */
+  .search-box {
+    flex-direction: row;
+    align-items: stretch;
+  }
+  .search-box input {
+    width: auto;
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: .85rem .5rem;
+    font-size: .95rem;
+  }
+  .search-icon {
+    display: block;
+    padding: 0 .35rem 0 .85rem;
+    font-size: 1rem;
+  }
+  .btn-primary {
+    width: auto;
+    flex-shrink: 0;
+    border-radius: 0;
+    padding: .85rem 1rem;
+    font-size: .88rem;
+  }
+}
+
+/* ═══════════════════════════════════════════════
+   RECENT PAYMENTS DROPDOWN (consumer page)
+   ═══════════════════════════════════════════════ */
+.payment-history {
+  margin-top: 1.2rem;
+  background: #fff;
+  border: 1px solid var(--grey-100);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.payment-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .55rem;
+  background: linear-gradient(135deg, #e3f2fd, #f5faff);
+  border: none;
+  padding: .9rem 1rem;
+  font-size: .92rem;
+  font-weight: 700;
+  font-family: var(--font);
+  color: var(--blue-700);
+  cursor: pointer;
+  transition: background .2s;
+  text-align: left;
+}
+.payment-toggle:hover { background: linear-gradient(135deg, #d4e8fb, #e8f3ff); }
+.payment-toggle .chev {
+  font-size: 1rem;
+  line-height: 1;
+  transition: transform .2s;
+}
+.payment-toggle.open .chev { transform: rotate(180deg); }
+.payment-history-body {
+  padding: .55rem 1rem .85rem;
+  border-top: 1px solid var(--grey-100);
+  max-height: 420px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}

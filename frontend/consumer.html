@@ -150,8 +150,14 @@
       </div>
 
       <div id="paymentHistory" class="payment-history hidden">
-        <h4>Recent Payments</h4>
-        <div id="paymentHistoryList"></div>
+        <button class="payment-toggle" id="paymentToggleBtn" type="button"
+                aria-expanded="false" aria-controls="paymentHistoryBody">
+          <span>💳 Recent Payments</span>
+          <span class="chev" id="paymentToggleChev">▾</span>
+        </button>
+        <div class="payment-history-body hidden" id="paymentHistoryBody">
+          <div id="paymentHistoryList"></div>
+        </div>
       </div>
     </section>
 
