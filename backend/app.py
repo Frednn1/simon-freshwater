@@ -1,5 +1,6 @@
 import os
 import json
+import secrets
 from datetime import datetime, date, timedelta
 from collections import deque
 from threading import Lock
@@ -23,7 +24,8 @@ from billing import (
 from sheets import sync_consumer_to_sheet
 from reminders import start_scheduler
 from notifications import (
-    send_sms, send_whatsapp, build_bill_message, get_available_channels,
+    send_sms, send_whatsapp, send_whatsapp_document,
+    build_bill_message, get_available_channels,
 )
 from admin_auth import (
     create_first_admin, login as admin_login_fn,
@@ -637,6 +639,107 @@ def download_statement(consumer_id):
     )
 
 
+@app.route("/api/consumer/<int:consumer_id>/whatsapp_bill", methods=["POST"])
+def send_whatsapp_bill(consumer_id):
+    """
+    Build the water bill PDF for the consumer's most recent reading,
+    upload it to a public URL, and deliver it via WhatsApp template.
+    Admin-only.
+    """
+    if not _rate_limit("whatsapp_bill", 20, 60):
+        return _too_many(60)
+
+    u = _require_admin()
+    if u:
+        return u
+
+    consumer = Consumer.query.get_or_404(consumer_id)
+    if not consumer.is_active:
+        return jsonify({"error": "Consumer is terminated. No reminders sent."}), 403
+    if not consumer.contact:
+        return jsonify({"error": "Consumer has no contact number on file."}), 400
+
+    # Latest reading
+    latest = _all_readings(consumer.id)
+    if not latest:
+        return jsonify({"error": "No readings on file — cannot generate bill."}), 400
+    reading = latest[0]
+
+    # Consumption for that reading
+    prev = _previous_reading(consumer.id, exclude_id=reading.id)
+    prev_m3 = None
+    if prev and (prev.reading_date < reading.reading_date
+                 or (prev.reading_date == reading.reading_date
+                     and prev.id < reading.id)):
+        prev_m3 = prev.reading_m3
+    consumption = compute_consumption(
+        reading.reading_m3, prev_m3,
+        float(consumer.meter_initial_reading_m3 or 0.0),
+    )
+
+    info = get_consumer_status(latest)
+
+    # Build water bill snapshot (same shape as /bill.pdf endpoint)
+    snapshot = {
+        "bill_no":        f"{reading.id:06d}",
+        "date":           reading.reading_date.strftime("%d %b %Y"),
+        "cust_name":      consumer.cust_name,
+        "meter_acc_no":   consumer.meter_acc_no,
+        "reading_m3":     f"{reading.reading_m3:.2f}",
+        "consumption_m3": f"{consumption:.2f}",
+        "amount_kes":     _fmt_money(reading.amount_kes),
+        "balance":        _fmt_money(info["total_due"]),
+        "status_label":   get_reading_bill_status(reading).upper(),
+    }
+
+    try:
+        pdf_buf = generate_water_bill_pdf(snapshot)
+    except Exception as e:
+        app.logger.exception("[WhatsApp Bill] PDF generation failed")
+        return jsonify({"error": f"PDF generation failed: {e}"}), 500
+
+    # Save PDF into a token-addressed public slot.
+    # Reuse the receipt token machinery but with a dedicated store.
+    token = secrets.token_urlsafe(32)
+    _PUBLIC_BILL_TOKENS[token] = bytes(pdf_buf.getvalue())
+
+    public_url = request.host_url.rstrip("/") + f"/public/bill/{token}.pdf"
+    filename = f"SimonWater_Bill_{reading.id:06d}.pdf"
+
+    # Send via WhatsApp template with document header
+    result = send_whatsapp_document(
+        to_phone=consumer.contact,
+        pdf_public_url=public_url,
+        filename=filename,
+        body_params=[consumer.cust_name, consumer.meter_acc_no],
+    )
+
+    if result.get("ok"):
+        return jsonify({
+            "ok": True,
+            "channel": "whatsapp",
+            "message": "WhatsApp bill sent successfully.",
+            "to": consumer.contact,
+        }), 200
+
+    return jsonify({
+        "ok": False,
+        "error": result.get("error", "Send failed"),
+    }), 502
+
+
+@app.route("/public/bill/<token>.pdf")
+def public_bill_pdf(token):
+    """Serve a token-addressed water bill PDF (no auth)."""
+    data = _PUBLIC_BILL_TOKENS.get(token)
+    if not data:
+        return "Not found.", 404
+    from io import BytesIO
+    return send_file(BytesIO(data), mimetype="application/pdf",
+                     as_attachment=False,
+                     download_name="SimonWater_Bill.pdf")
+
+
 @app.route("/api/reading", methods=["POST"])
 def submit_reading():
     if not _rate_limit("reading_post", 60, 60):
@@ -954,6 +1057,50 @@ def admin_update_consumer(consumer_id):
         "meter_initial_reading_m3": float(consumer.meter_initial_reading_m3 or 0.0),
         "is_active": bool(consumer.is_active),
     }})
+
+
+# ═══════════════════════════════════════════════
+#  PUBLIC — token-based bill PDF (used by WhatsApp)
+# ═══════════════════════════════════════════════
+
+# In-memory store: {token: payment_id}
+# Tokens live for the lifetime of the process — enough for WhatsApp to fetch
+# the PDF within seconds of the send request.
+_PUBLIC_PDF_TOKENS = {}
+_PUBLIC_BILL_TOKENS = {}
+
+
+def _register_public_pdf(payment_id: int) -> str:
+    """Create a one-time-style token for a payment PDF."""
+    token = secrets.token_urlsafe(32)
+    _PUBLIC_PDF_TOKENS[token] = payment_id
+    return token
+
+
+@app.route("/public/receipt/<token>.pdf")
+def public_receipt_pdf(token):
+    """
+    Public PDF endpoint — no auth. Token is unguessable (32-byte URL-safe).
+    Meta's servers call this URL to fetch the PDF for WhatsApp delivery.
+    """
+    payment_id = _PUBLIC_PDF_TOKENS.get(token)
+    if not payment_id:
+        return "Not found.", 404
+
+    log = PaymentLog.query.get(payment_id)
+    if not log or not log.receipt_json:
+        return "Receipt not available.", 404
+
+    try:
+        snapshot = json.loads(log.receipt_json)
+        pdf_buf = generate_receipt_pdf(snapshot)
+    except Exception:
+        app.logger.exception("[Public Receipt] generation failed")
+        return "PDF generation failed.", 500
+
+    filename = f"SimonWater_Receipt_{snapshot.get('receipt_no','payment')}.pdf"
+    return send_file(pdf_buf, mimetype="application/pdf",
+                     as_attachment=False, download_name=filename)
 
 
 # ═══════════════════════════════════════════════

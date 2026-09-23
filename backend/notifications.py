@@ -179,3 +179,102 @@ def build_bill_message(consumer, status_info: dict, channel: str = "sms") -> dic
         f"Thank you."
     )
     return {"body": body}
+
+
+# ─── WhatsApp document sender (PDF bill via template) ───
+def send_whatsapp_document(to_phone: str,
+                           pdf_public_url: str,
+                           filename: str,
+                           body_params: list,
+                           template_name: str = None,
+                           language: str = None) -> dict:
+    """
+    Send a WhatsApp message with a Document header via an approved template.
+
+    Args:
+        to_phone        : recipient phone (any Kenyan format)
+        pdf_public_url  : publicly reachable HTTPS URL of the PDF
+        filename        : what WhatsApp should show as the file name
+        body_params     : list of strings for the template body variables
+                          e.g. ["John Kamau", "MTR-0012"]
+        template_name   : overrides WA_TEMPLATE_NAME if provided
+        language        : overrides WA_TEMPLATE_LANG if provided
+
+    Returns {ok, provider_id?, error?}.
+    """
+    if not WA_PHONE_NUMBER_ID or not WA_ACCESS_TOKEN:
+        return {"ok": False,
+                "error": "WhatsApp provider not configured (set WA_PHONE_NUMBER_ID & WA_ACCESS_TOKEN)"}
+
+    tpl_name = template_name or WA_TEMPLATE_NAME
+    tpl_lang = language or WA_TEMPLATE_LANG
+
+    if not tpl_name:
+        return {"ok": False,
+                "error": "WhatsApp template name not configured (set WA_TEMPLATE_NAME)"}
+
+    recipient = _normalize_phone_wa(to_phone)
+    if not recipient:
+        return {"ok": False, "error": "Invalid phone number"}
+
+    body_components = [
+        {"type": "text", "text": str(v if v not in (None, "") else "-")}
+        for v in body_params
+    ]
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": recipient,
+        "type": "template",
+        "template": {
+            "name": tpl_name,
+            "language": {"code": tpl_lang},
+            "components": [
+                {
+                    "type": "header",
+                    "parameters": [
+                        {
+                            "type": "document",
+                            "document": {
+                                "link": pdf_public_url,
+                                "filename": filename,
+                            },
+                        }
+                    ],
+                },
+                {
+                    "type": "body",
+                    "parameters": body_components,
+                },
+            ],
+        },
+    }
+
+    headers = {
+        "Authorization": f"Bearer {WA_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        r = requests.post(WA_API_URL, json=payload, headers=headers, timeout=30)
+        if r.status_code in (200, 201):
+            body = r.json()
+            msgs = body.get("messages", [])
+            provider_id = msgs[0].get("id") if msgs else ""
+            return {"ok": True, "provider_id": provider_id}
+
+        # Extract readable error
+        try:
+            err_body = r.json()
+            err = err_body.get("error", {}) or {}
+            msg = (err.get("error_user_msg")
+                   or err.get("message")
+                   or f"HTTP {r.status_code}")
+            code = err.get("code")
+            if code:
+                msg = f"[{code}] {msg}"
+        except Exception:
+            msg = f"HTTP {r.status_code}: {r.text[:200]}"
+        return {"ok": False, "error": msg}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}

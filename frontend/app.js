@@ -906,6 +906,42 @@ function wireStatementDownloadButton(consumerId) {
   });
 }
 
+async function sendBillWhatsApp(consumerId, btn) {
+  const msgEl = document.getElementById('notifyMsg');
+  const original = btn.innerHTML;
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="btn-icon">⏳</span> Sending…';
+  msgEl.classList.add('hidden');
+
+  try {
+    const r = await fetch(`${API}/api/consumer/${consumerId}/whatsapp_bill`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const data = await r.json();
+
+    btn.disabled = false;
+    btn.innerHTML = original;
+
+    if (r.ok && data.ok) {
+      msgEl.className = 'alert alert-success';
+      msgEl.textContent = `✅ ${data.message} → ${data.to}`;
+    } else {
+      msgEl.className = 'alert alert-error';
+      msgEl.textContent = `❌ ${data.error || 'Send failed.'}`;
+    }
+    msgEl.classList.remove('hidden');
+  } catch (e) {
+    btn.disabled = false;
+    btn.innerHTML = original;
+    msgEl.className = 'alert alert-error';
+    msgEl.textContent = '❌ Network error — please try again.';
+    msgEl.classList.remove('hidden');
+  }
+}
+
 function wireNotifyButtons(consumerId) {
   const smsBtn = document.getElementById('sendSmsBtn');
   const waBtn  = document.getElementById('sendWhatsAppBtn');
@@ -949,7 +985,7 @@ function wireNotifyButtons(consumerId) {
   document.getElementById('sendSmsBtn')
     .addEventListener('click', (e) => send('sms', e.currentTarget));
   document.getElementById('sendWhatsAppBtn')
-    .addEventListener('click', (e) => send('whatsapp', e.currentTarget));
+    .addEventListener('click', (e) => sendBillWhatsApp(consumerId, e.currentTarget));
 }
 
 /* ═══════════════════════════════════════════════
