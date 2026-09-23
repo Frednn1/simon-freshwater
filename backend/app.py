@@ -653,6 +653,12 @@ def send_whatsapp_bill(consumer_id):
     if u:
         return u
 
+    # Honor the WA_ENABLED toggle — refuse if disabled, even if the
+    # request bypasses the UI.
+    wa_toggle = os.environ.get("WA_ENABLED", "false").strip().lower()
+    if wa_toggle not in ("1", "true", "yes", "on"):
+        return jsonify({"error": "WhatsApp sending is currently disabled."}), 403
+
     consumer = Consumer.query.get_or_404(consumer_id)
     if not consumer.is_active:
         return jsonify({"error": "Consumer is terminated. No reminders sent."}), 403

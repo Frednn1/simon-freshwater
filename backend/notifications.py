@@ -27,12 +27,22 @@ WA_API_URL = (
 
 
 def get_available_channels() -> list:
-    """Return ['sms'] and/or ['whatsapp'] depending on configured providers."""
+    """
+    Return ['sms'] and/or ['whatsapp'] depending on configured providers.
+
+    The WhatsApp channel is additionally gated by the WA_ENABLED environment
+    variable — set it to 'true'/'1'/'yes' to expose the WhatsApp button, or
+    to 'false'/'0'/'no' (or omit it) to hide it entirely.
+    """
     channels = []
     if SMSGATE_USERNAME and SMSGATE_PASSWORD:
         channels.append("sms")
-    if WA_PHONE_NUMBER_ID and WA_ACCESS_TOKEN:
+
+    wa_toggle = os.environ.get("WA_ENABLED", "false").strip().lower()
+    wa_on = wa_toggle in ("1", "true", "yes", "on")
+    if wa_on and WA_PHONE_NUMBER_ID and WA_ACCESS_TOKEN:
         channels.append("whatsapp")
+
     return channels
 
 
