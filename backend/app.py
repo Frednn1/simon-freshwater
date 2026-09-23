@@ -348,43 +348,6 @@ def receipt_template_view():
 #  API — HEALTH
 # ═══════════════════════════════════════════════
 
-@app.route("/api/_diag")
-def _diag():
-    """TEMPORARY diagnostic route — remove after debugging D1 switch."""
-    from sqlalchemy import text
-    info = {}
-
-    info["db_dialect"]   = db.engine.dialect.name
-    info["db_driver"]    = db.engine.url.drivername
-    info["db_host"]      = (db.engine.url.host or "(none)")[:40]
-    info["cf_account_set"]   = bool(os.environ.get("CF_ACCOUNT_ID"))
-    info["cf_db_set"]        = bool(os.environ.get("CF_D1_DATABASE_ID"))
-    info["cf_token_len"]     = len(os.environ.get("CF_API_TOKEN", ""))
-    info["database_url_set"] = bool(os.environ.get("DATABASE_URL"))
-
-    try:
-        n = db.session.execute(text("SELECT COUNT(*) FROM admin_users")).scalar()
-        info["admin_count"] = n
-    except Exception as e:
-        info["admin_count_error"] = str(e)[:200]
-
-    try:
-        rows = db.session.execute(
-            text("SELECT id, username, is_active FROM admin_users")
-        ).fetchall()
-        info["admin_rows"] = [[r[0], r[1], r[2]] for r in rows]
-    except Exception as e:
-        info["admin_rows_error"] = str(e)[:200]
-
-    try:
-        n = db.session.execute(text("SELECT COUNT(*) FROM consumers")).scalar()
-        info["consumer_count"] = n
-    except Exception as e:
-        info["consumer_count_error"] = str(e)[:200]
-
-    return jsonify(info)
-
-
 @app.route("/api/health")
 def health():
     return jsonify({"status": "ok", "time": datetime.utcnow().isoformat()})
