@@ -7,5 +7,6 @@ google-auth==2.27.0
 APScheduler==3.10.4
 python-dotenv==1.0.1
 python-dateutil==2.9.0.post0
-psycopg2-binary==2.9.9
 pymupdf==1.24.14
+sqlalchemy-cloudflare-d1
+httpx>=0.24.0
