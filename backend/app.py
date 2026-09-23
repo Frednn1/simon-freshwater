@@ -412,12 +412,22 @@ def get_consumer_details(consumer_id):
 def get_reading_bill(reading_id):
     reading = MeterReading.query.get_or_404(reading_id)
     consumer = reading.consumer
-    prev = _previous_reading(consumer.id, exclude_id=reading.id)
-    prev_m3 = None
-    if prev and (prev.reading_date < reading.reading_date
-                 or (prev.reading_date == reading.reading_date
-                     and prev.id < reading.id)):
-        prev_m3 = prev.reading_m3
+    # Find the reading that came immediately BEFORE this one
+    # (largest (reading_date, id) strictly smaller than the current one).
+    prev_query = (MeterReading.query
+                  .filter_by(consumer_id=consumer.id)
+                  .filter(db.or_(
+                      MeterReading.reading_date < reading.reading_date,
+                      db.and_(
+                          MeterReading.reading_date == reading.reading_date,
+                          MeterReading.id < reading.id,
+                      ),
+                  ))
+                  .order_by(MeterReading.reading_date.desc(),
+                            MeterReading.id.desc()))
+    prev = prev_query.first()
+    prev_m3 = prev.reading_m3 if prev else None
+
     consumption = compute_consumption(
         reading.reading_m3, prev_m3,
         float(consumer.meter_initial_reading_m3 or 0.0),
