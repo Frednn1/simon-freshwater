@@ -23,7 +23,7 @@ from billing import (
 from sheets import sync_consumer_to_sheet
 from reminders import start_scheduler
 from notifications import (
-    send_sms, send_email, build_bill_message, get_available_channels,
+    send_sms, send_whatsapp, build_bill_message, get_available_channels,
 )
 from admin_auth import (
     create_first_admin, login as admin_login_fn,
@@ -707,8 +707,8 @@ def notify_consumer(consumer_id):
 
     data = request.get_json(silent=True) or {}
     channel = (data.get("channel") or "").lower().strip()
-    if channel not in ("sms", "email"):
-        return jsonify({"error": "channel must be 'sms' or 'email'"}), 400
+    if channel not in ("sms", "whatsapp"):
+        return jsonify({"error": "channel must be 'sms' or 'whatsapp'"}), 400
 
     consumer = Consumer.query.get_or_404(consumer_id)
     if not consumer.is_active:
@@ -735,12 +735,11 @@ def notify_consumer(consumer_id):
             return jsonify({"error": "Consumer has no contact number on file."}), 400
         result = send_sms(consumer.contact, payload["body"])
         to_value = consumer.contact
-    else:
-        if not consumer.email:
-            return jsonify({"error": "Consumer has no email on file."}), 400
-        result = send_email(consumer.email, payload["subject"],
-                            payload["body_text"], payload.get("body_html"))
-        to_value = consumer.email
+    else:  # whatsapp
+        if not consumer.contact:
+            return jsonify({"error": "Consumer has no contact number on file."}), 400
+        result = send_whatsapp(consumer.contact, payload["body"])
+        to_value = consumer.contact
 
     log = NotificationLog(
         consumer_id=consumer.id, channel=channel,

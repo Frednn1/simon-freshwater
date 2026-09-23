@@ -1,44 +1,44 @@
 """
 Notification senders.
-  SMS   → SMSGate (Android SMS Gateway) via api.sms-gate.app
-  Email → SMTP (optional; gracefully skipped if not configured)
+
+  SMS       → SMSGate (Android SMS Gateway) via api.sms-gate.app
+  WhatsApp  → Meta WhatsApp Cloud API (graph.facebook.com)
 """
 import os
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-
 import requests
 
 
 # ─── SMS: SMSGate (Android SMS Gateway) ───
 SMSGATE_USERNAME  = os.environ.get("SMSGATE_USERNAME", "")
 SMSGATE_PASSWORD  = os.environ.get("SMSGATE_PASSWORD", "")
-SMSGATE_DEVICE_ID = os.environ.get("SMSGATE_DEVICE_ID", "")   # optional
+SMSGATE_DEVICE_ID = os.environ.get("SMSGATE_DEVICE_ID", "")
 SMSGATE_URL = "https://api.sms-gate.app/3rdparty/v1/messages"
 
 
-# ─── Email: SMTP (optional) ───
-SMTP_HOST      = os.environ.get("SMTP_HOST", "")
-SMTP_PORT      = int(os.environ.get("SMTP_PORT", "587"))
-SMTP_USER      = os.environ.get("SMTP_USER", "")
-SMTP_PASS      = os.environ.get("SMTP_PASSWORD", "")
-SMTP_FROM      = os.environ.get("SMTP_FROM", SMTP_USER)
-SMTP_FROM_NAME = os.environ.get("SMTP_FROM_NAME", "Simon Fresh Water")
+# ─── WhatsApp: Meta Cloud API ───
+WA_PHONE_NUMBER_ID = os.environ.get("WA_PHONE_NUMBER_ID", "")
+WA_ACCESS_TOKEN    = os.environ.get("WA_ACCESS_TOKEN", "")
+WA_TEMPLATE_NAME   = os.environ.get("WA_TEMPLATE_NAME", "")   # optional
+WA_TEMPLATE_LANG   = os.environ.get("WA_TEMPLATE_LANG", "en")
+WA_API_URL = (
+    f"https://graph.facebook.com/v21.0/{WA_PHONE_NUMBER_ID}/messages"
+    if WA_PHONE_NUMBER_ID else ""
+)
 
 
 def get_available_channels() -> list:
-    """Return ['sms'] and/or ['email'] depending on configured providers."""
+    """Return ['sms'] and/or ['whatsapp'] depending on configured providers."""
     channels = []
     if SMSGATE_USERNAME and SMSGATE_PASSWORD:
         channels.append("sms")
-    if SMTP_HOST and SMTP_USER and SMTP_PASS:
-        channels.append("email")
+    if WA_PHONE_NUMBER_ID and WA_ACCESS_TOKEN:
+        channels.append("whatsapp")
     return channels
 
 
+# ─── Phone normalisation ───
 def _normalize_phone_ke(phone: str) -> str:
-    """Kenyan local (0712…) → E.164 (+254712…)."""
+    """Kenyan local (0712…) → E.164 with + prefix (used for SMSGate)."""
     p = "".join(c for c in (phone or "") if c.isdigit())
     if not p:
         return ""
@@ -51,6 +51,21 @@ def _normalize_phone_ke(phone: str) -> str:
     return "+" + p
 
 
+def _normalize_phone_wa(phone: str) -> str:
+    """Meta Cloud API expects digits only, including country code, no '+'."""
+    p = "".join(c for c in (phone or "") if c.isdigit())
+    if not p:
+        return ""
+    if p.startswith("0") and len(p) == 10:
+        return "254" + p[1:]
+    if p.startswith("254"):
+        return p
+    if len(p) == 9:
+        return "254" + p
+    return p
+
+
+# ─── SMS sender ───
 def send_sms(to_phone: str, message: str) -> dict:
     """Send SMS via SMSGate. Returns {ok, provider_id?, error?}."""
     if not SMSGATE_USERNAME or not SMSGATE_PASSWORD:
@@ -60,17 +75,13 @@ def send_sms(to_phone: str, message: str) -> dict:
     if not recipient:
         return {"ok": False, "error": "Invalid phone number"}
 
-    payload = {
-        "textMessage": {"text": message},
-        "phoneNumbers": [recipient],
-    }
+    payload = {"textMessage": {"text": message}, "phoneNumbers": [recipient]}
     if SMSGATE_DEVICE_ID:
         payload["deviceId"] = SMSGATE_DEVICE_ID
 
-    auth = (SMSGATE_USERNAME, SMSGATE_PASSWORD)
-
     try:
-        r = requests.post(SMSGATE_URL, json=payload, auth=auth, timeout=20)
+        r = requests.post(SMSGATE_URL, json=payload,
+                          auth=(SMSGATE_USERNAME, SMSGATE_PASSWORD), timeout=20)
         if r.status_code not in (200, 201, 202):
             return {"ok": False, "error": f"HTTP {r.status_code}: {r.text[:200]}"}
         body = r.json()
@@ -79,85 +90,92 @@ def send_sms(to_phone: str, message: str) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-def send_email(to_email: str, subject: str, body_text: str,
-               body_html: str | None = None) -> dict:
-    """Send email via SMTP. Returns {ok, error?}."""
-    if not SMTP_HOST or not SMTP_USER or not SMTP_PASS:
-        return {"ok": False, "error": "Email provider not configured (set SMTP_HOST/USER/PASSWORD)"}
-    if not to_email or "@" not in to_email:
-        return {"ok": False, "error": "Invalid email address"}
+# ─── WhatsApp sender ───
+def send_whatsapp(to_phone: str, message: str) -> dict:
+    """
+    Send WhatsApp message via Meta Cloud API.
 
-    msg = MIMEMultipart("alternative")
-    msg["Subject"] = subject
-    msg["From"] = f"{SMTP_FROM_NAME} <{SMTP_FROM}>"
-    msg["To"] = to_email
+    Behaviour:
+      • If WA_TEMPLATE_NAME is set → send as template (works anytime).
+      • Otherwise → send as plain text (only deliverable within the 24h
+        customer-service window; Meta will reject it outside that window
+        with a specific error which we return as-is).
 
-    msg.attach(MIMEText(body_text, "plain"))
-    if body_html:
-        msg.attach(MIMEText(body_html, "html"))
+    Returns {ok, provider_id?, error?}.
+    """
+    if not WA_PHONE_NUMBER_ID or not WA_ACCESS_TOKEN:
+        return {"ok": False,
+                "error": "WhatsApp provider not configured (set WA_PHONE_NUMBER_ID & WA_ACCESS_TOKEN)"}
+
+    recipient = _normalize_phone_wa(to_phone)
+    if not recipient:
+        return {"ok": False, "error": "Invalid phone number"}
+
+    headers = {
+        "Authorization": f"Bearer {WA_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+    if WA_TEMPLATE_NAME:
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": recipient,
+            "type": "template",
+            "template": {
+                "name": WA_TEMPLATE_NAME,
+                "language": {"code": WA_TEMPLATE_LANG},
+                "components": [
+                    {"type": "body",
+                     "parameters": [{"type": "text", "text": message}]}
+                ],
+            },
+        }
+    else:
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": recipient,
+            "type": "text",
+            "text": {"preview_url": False, "body": message},
+        }
 
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(SMTP_USER, SMTP_PASS)
-            server.sendmail(SMTP_FROM, [to_email], msg.as_string())
-        return {"ok": True}
+        r = requests.post(WA_API_URL, json=payload, headers=headers, timeout=20)
+        if r.status_code in (200, 201):
+            body = r.json()
+            msgs = body.get("messages", [])
+            provider_id = msgs[0].get("id") if msgs else ""
+            return {"ok": True, "provider_id": provider_id}
+
+        # Extract a readable error from Meta's response
+        try:
+            err_body = r.json()
+            err = err_body.get("error", {}) or {}
+            msg = (err.get("error_user_msg")
+                   or err.get("message")
+                   or f"HTTP {r.status_code}")
+        except Exception:
+            msg = f"HTTP {r.status_code}: {r.text[:200]}"
+        return {"ok": False, "error": msg}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
+# ─── Message builder ───
 def build_bill_message(consumer, status_info: dict, channel: str = "sms") -> dict:
-    """Return {'body': ...} for SMS, or {'subject', 'body_text', 'body_html'} for email."""
+    """
+    Return {'body': ...} for both SMS and WhatsApp. The message body is
+    identical across channels — only the transport differs.
+    """
     amount = status_info.get("total_due", 0.0)
     label = status_info.get("label", "Due")
     paybill = os.environ.get("PAYBILL", "XXXXXX")
 
-    if channel == "sms":
-        body = (
-            f"SIMON FRESH WATER - Kikuyu\n"
-            f"Dear {consumer.cust_name},\n"
-            f"Your water bill ({consumer.meter_acc_no}) status: {label}. "
-            f"Outstanding: KES {amount:,.2f}. "
-            f"Pay via Paybill {paybill}, Acc {consumer.meter_acc_no}. "
-            f"Thank you."
-        )
-        return {"body": body}
-
-    subject = f"Water Bill Reminder - {label} - {consumer.meter_acc_no}"
-    body_text = (
-        f"Dear {consumer.cust_name},\n\n"
-        f"Your water account {consumer.meter_acc_no} is currently {label}.\n"
-        f"Outstanding balance: KES {amount:,.2f}\n\n"
-        f"Please settle to continue enjoying uninterrupted water service.\n\n"
-        f"Payment:\n"
-        f"  Paybill: {paybill}\n"
-        f"  Account: {consumer.meter_acc_no}\n\n"
-        f"Thank you for choosing Simon Fresh Water.\n"
-        f"- Kikuyu, Kenya"
+    body = (
+        f"SIMON FRESH WATER - Kikuyu\n"
+        f"Dear {consumer.cust_name},\n"
+        f"Your water bill ({consumer.meter_acc_no}) status: {label}. "
+        f"Outstanding: KES {amount:,.2f}. "
+        f"Pay via Paybill {paybill}, Acc {consumer.meter_acc_no}. "
+        f"Thank you."
     )
-    body_html = (
-        '<div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;'
-        'padding:0;background:#f8f9fa;">'
-        '<div style="background:#0d47a1;color:#fff;padding:20px;'
-        'border-radius:14px 14px 0 0;">'
-        '<h2 style="margin:0;font-size:1.1rem;">Simon Fresh Water</h2>'
-        '<p style="margin:4px 0 0;opacity:.85;font-size:.85rem;">Kikuyu, Kenya</p>'
-        '</div>'
-        '<div style="background:#fff;padding:22px;border-radius:0 0 14px 14px;">'
-        f'<p>Dear <strong>{consumer.cust_name}</strong>,</p>'
-        f'<p>Your water account <strong>{consumer.meter_acc_no}</strong> '
-        f'is currently <strong>{label}</strong>.</p>'
-        f'<p style="font-size:1.2rem;color:#0d47a1;">Outstanding: '
-        f'<strong>KES {amount:,.2f}</strong></p>'
-        '<p>Please settle your bill to continue enjoying uninterrupted '
-        'water service.</p>'
-        '<div style="background:#e3f2fd;padding:14px;border-radius:9px;font-size:.9rem;">'
-        f'<strong>Payment details</strong><br>Paybill: <strong>{paybill}</strong><br>'
-        f'Account: <strong>{consumer.meter_acc_no}</strong></div>'
-        '<p style="margin-top:18px;color:#455a64;font-size:.85rem;">'
-        'Thank you for choosing Simon Fresh Water.</p>'
-        '</div></div>'
-    )
-    return {"subject": subject, "body_text": body_text, "body_html": body_html}
+    return {"body": body}

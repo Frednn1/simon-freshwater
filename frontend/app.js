@@ -533,9 +533,9 @@ async function initConsumerPage(consumerId) {
         if (outstanding && available.length > 0 && isAdmin) {
           notifyCard.classList.remove('hidden');
           const smsBtn = document.getElementById('sendSmsBtn');
-          const emailBtn = document.getElementById('sendEmailBtn');
-          if (!available.includes('sms'))   smsBtn.style.display = 'none';
-          if (!available.includes('email')) emailBtn.style.display = 'none';
+          const waBtn  = document.getElementById('sendWhatsAppBtn');
+          if (!available.includes('sms'))      smsBtn.style.display = 'none';
+          if (!available.includes('whatsapp')) waBtn.style.display  = 'none';
           wireNotifyButtons(consumerId);
         }
 
@@ -908,7 +908,7 @@ function wireStatementDownloadButton(consumerId) {
 
 function wireNotifyButtons(consumerId) {
   const smsBtn = document.getElementById('sendSmsBtn');
-  const emailBtn = document.getElementById('sendEmailBtn');
+  const waBtn  = document.getElementById('sendWhatsAppBtn');
   const msgEl = document.getElementById('notifyMsg');
 
   function send(channel, btn) {
@@ -944,12 +944,12 @@ function wireNotifyButtons(consumerId) {
   }
 
   smsBtn.replaceWith(smsBtn.cloneNode(true));
-  emailBtn.replaceWith(emailBtn.cloneNode(true));
+  waBtn.replaceWith(waBtn.cloneNode(true));
 
   document.getElementById('sendSmsBtn')
     .addEventListener('click', (e) => send('sms', e.currentTarget));
-  document.getElementById('sendEmailBtn')
-    .addEventListener('click', (e) => send('email', e.currentTarget));
+  document.getElementById('sendWhatsAppBtn')
+    .addEventListener('click', (e) => send('whatsapp', e.currentTarget));
 }
 
 /* ═══════════════════════════════════════════════
