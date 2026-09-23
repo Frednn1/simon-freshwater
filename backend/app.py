@@ -141,6 +141,27 @@ def _all_readings(consumer_id):
                       MeterReading.id.desc()).all())
 
 
+def _total_uncleared_consumption(consumer) -> float:
+    """
+    Sum of consumption (M³) across readings whose bill is NOT fully paid.
+    Cleared bills are excluded.
+
+    Consumption for each reading = reading − previous reading
+    (for the very first reading: reading − initial_meter_reading).
+    """
+    readings_asc = list(reversed(_all_readings(consumer.id)))  # oldest → newest
+    initial = float(consumer.meter_initial_reading_m3 or 0.0)
+    total = 0.0
+    prev_m3 = None
+    for r in readings_asc:
+        cons = compute_consumption(r.reading_m3, prev_m3, initial)
+        balance = (r.amount_kes or 0.0) - (r.amount_paid or 0.0)
+        if balance > 0:
+            total += cons
+        prev_m3 = r.reading_m3
+    return round(total, 2)
+
+
 def _current_admin():
     """Return the authenticated AdminUser or None. Enforces idle timeout."""
     aid = session.get("admin_id")
@@ -486,7 +507,7 @@ def download_water_bill(reading_id):
         "cust_name":      consumer.cust_name,
         "meter_acc_no":   consumer.meter_acc_no,
         "reading_m3":     f"{reading.reading_m3:.2f}",
-        "consumption_m3": f"{consumption:.2f}",
+        "consumption_m3": f"{_total_uncleared_consumption(consumer):.2f}",
         "amount_kes":     _fmt_money(reading.amount_kes),
         "balance":        _fmt_money(info["total_due"]),
         "status_label":   get_reading_bill_status(reading).upper(),
@@ -702,7 +723,7 @@ def send_whatsapp_bill(consumer_id):
         "cust_name":      consumer.cust_name,
         "meter_acc_no":   consumer.meter_acc_no,
         "reading_m3":     f"{reading.reading_m3:.2f}",
-        "consumption_m3": f"{consumption:.2f}",
+        "consumption_m3": f"{_total_uncleared_consumption(consumer):.2f}",
         "amount_kes":     _fmt_money(reading.amount_kes),
         "balance":        _fmt_money(info["total_due"]),
         "status_label":   get_reading_bill_status(reading).upper(),
