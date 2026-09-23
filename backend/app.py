@@ -49,8 +49,25 @@ CORS(app, supports_credentials=True)
 
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///simon_freshwater.db")
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# ─── Cloudflare D1 credentials (build the URL from parts if not already set) ───
+CF_ACCOUNT_ID    = os.environ.get("CF_ACCOUNT_ID", "")
+CF_D1_DATABASE_ID = os.environ.get("CF_D1_DATABASE_ID", "")
+CF_API_TOKEN     = os.environ.get("CF_API_TOKEN", "")
+
+# If a cloudflare_d1:// URL is provided, use it as-is.
+# Otherwise, if the three CF_* values are set, build the D1 URL.
+if not DATABASE_URL.startswith("cloudflare_d1://"):
+    if CF_ACCOUNT_ID and CF_D1_DATABASE_ID and CF_API_TOKEN:
+        DATABASE_URL = f"cloudflare_d1://{CF_ACCOUNT_ID}:{CF_API_TOKEN}@{CF_D1_DATABASE_ID}"
+        app.logger.info("[DB] Using Cloudflare D1 database")
+    elif DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+        app.logger.info("[DB] Using PostgreSQL database")
+
+# SQLAlchemy 2.x needs the dialect imported before use for D1
+if DATABASE_URL.startswith("cloudflare_d1://"):
+    import sqlalchemy_cloudflare_d1  # noqa: F401
 
 app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -62,7 +79,9 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = bool(os.environ.get("RENDER"))
 
-if not DATABASE_URL.startswith("sqlite"):
+# Connection-pool options only apply to real socket-based DBs (PostgreSQL).
+# D1 uses stateless HTTP requests — no pool to manage.
+if DATABASE_URL.startswith("postgres"):
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
         "pool_pre_ping": True,
         "pool_recycle": 180,
@@ -215,23 +234,35 @@ def _fmt_date(d):
 
 
 def _ensure_all_columns():
-    """Idempotent migration for consumers + payment_log."""
+    """Idempotent migration for consumers + payment_log.
+    Uses dialect-aware SQL types so it works on both SQLite (D1) and PostgreSQL."""
     insp = inspect(db.engine)
+    dialect = db.engine.dialect.name  # 'sqlite' or 'postgresql'
     tables = set(insp.get_table_names())
+
+    if dialect == "sqlite":
+        REAL_T = "REAL"
+        TIME_T = "TEXT"
+    else:
+        REAL_T = "DOUBLE PRECISION"
+        TIME_T = "TIMESTAMP"
 
     if "consumers" in tables:
         existing = {c["name"] for c in insp.get_columns("consumers")}
         alters = []
         if "latitude" not in existing:
-            alters.append("ADD COLUMN latitude DOUBLE PRECISION NULL")
+            alters.append(f"ADD COLUMN latitude {REAL_T} NULL")
         if "longitude" not in existing:
-            alters.append("ADD COLUMN longitude DOUBLE PRECISION NULL")
+            alters.append(f"ADD COLUMN longitude {REAL_T} NULL")
         if "is_active" not in existing:
-            alters.append("ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE")
+            if dialect == "sqlite":
+                alters.append("ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1")
+            else:
+                alters.append("ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE")
         if "terminated_at" not in existing:
-            alters.append("ADD COLUMN terminated_at TIMESTAMP NULL")
+            alters.append(f"ADD COLUMN terminated_at {TIME_T} NULL")
         if "meter_initial_reading_m3" not in existing:
-            alters.append("ADD COLUMN meter_initial_reading_m3 DOUBLE PRECISION NOT NULL DEFAULT 0")
+            alters.append(f"ADD COLUMN meter_initial_reading_m3 {REAL_T} NOT NULL DEFAULT 0")
         for alt in alters:
             db.session.execute(text(f"ALTER TABLE consumers {alt}"))
         if alters:
