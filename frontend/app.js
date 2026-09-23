@@ -170,7 +170,7 @@ async function initHomePage() {
           errorBox.innerHTML =
             '🔐 Please <a href="/admin/login?next=' +
             encodeURIComponent(location.pathname) +
-            '" style="color:#fff;text-decoration:underline;font-weight:700;">log in</a> to access consumer records.';
+            '" style="color:#1b5e20;text-decoration:underline;font-weight:700;">log in</a> to access consumer records.';
           errorBox.classList.remove('hidden');
           return;
         }
