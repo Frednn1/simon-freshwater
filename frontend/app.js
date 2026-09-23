@@ -1010,6 +1010,8 @@ async function initBillPage(readingId) {
       document.getElementById('bAddress').textContent = c.address || '—';
       document.getElementById('bDate').textContent = fmtDate(r.reading_date);
       document.getElementById('bM3').textContent = Number(r.reading_m3).toFixed(2) + ' M³';
+      document.getElementById('bConsumption').textContent =
+        Number(r.consumption_m3 || 0).toFixed(2) + ' M³';
       document.getElementById('bAmount').textContent = 'KES ' + fmt(r.amount_kes);
       document.getElementById('bPaid').textContent = 'KES ' + fmt(r.amount_paid);
       document.getElementById('bBalance').textContent = 'KES ' + fmt(r.balance);
