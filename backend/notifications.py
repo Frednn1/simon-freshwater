@@ -9,9 +9,10 @@ import requests
 
 
 # ─── SMS: SMSGate (Android SMS Gateway) ───
-SMSGATE_USERNAME  = os.environ.get("SMSGATE_USERNAME", "")
-SMSGATE_PASSWORD  = os.environ.get("SMSGATE_PASSWORD", "")
-SMSGATE_DEVICE_ID = os.environ.get("SMSGATE_DEVICE_ID", "")
+SMSGATE_USERNAME   = os.environ.get("SMSGATE_USERNAME", "")
+SMSGATE_PASSWORD   = os.environ.get("SMSGATE_PASSWORD", "")
+SMSGATE_DEVICE_ID  = os.environ.get("SMSGATE_DEVICE_ID", "")
+SMSGATE_SIM_NUMBER = os.environ.get("SMSGATE_SIM_NUMBER", "").strip()
 SMSGATE_URL = "https://api.sms-gate.app/3rdparty/v1/messages"
 
 
@@ -88,6 +89,15 @@ def send_sms(to_phone: str, message: str) -> dict:
     payload = {"textMessage": {"text": message}, "phoneNumbers": [recipient]}
     if SMSGATE_DEVICE_ID:
         payload["deviceId"] = SMSGATE_DEVICE_ID
+
+    # Optional: pin the sending SIM slot (1-based). When unset, SMSGate
+    # falls back to its own setting (OS Default / Round Robin / Random).
+    if SMSGATE_SIM_NUMBER:
+        try:
+            payload["simNumber"] = int(SMSGATE_SIM_NUMBER)
+        except ValueError:
+            # Ignore invalid values rather than failing the send
+            pass
 
     try:
         r = requests.post(SMSGATE_URL, json=payload,
