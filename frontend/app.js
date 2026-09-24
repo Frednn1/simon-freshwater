@@ -101,6 +101,12 @@ function renderAuthTab() {
   const icon = document.getElementById('authTabIcon');
   if (!btn) return;
 
+  // Show the Settings tab only when signed in
+  const settingsTab = document.getElementById('settingsTab');
+  if (settingsTab) {
+    settingsTab.classList.toggle('hidden', !AUTH_STATE.authenticated);
+  }
+
   if (AUTH_STATE.authenticated) {
     btn.classList.remove('tab-login');
     btn.classList.add('tab-logout');

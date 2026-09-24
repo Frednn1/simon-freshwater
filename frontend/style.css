@@ -950,3 +950,90 @@ body {
   vertical-align: middle;
   margin-right: .35rem;
 }
+
+/* ═══════════════════════════════════════════════
+   ADMIN SETTINGS PAGE
+   ═══════════════════════════════════════════════ */
+.settings-body {
+  background: linear-gradient(135deg, var(--blue-900), var(--blue-700));
+  min-height: 100vh;
+  padding: 1.5rem 1rem 3rem;
+}
+.settings-wrap {
+  max-width: 520px;
+  margin: 0 auto;
+}
+.settings-header {
+  text-align: center;
+  color: #fff;
+  margin-bottom: 1.2rem;
+}
+.settings-header .logo-drop { font-size: 2.5rem; }
+.settings-header h1 { font-size: 1.3rem; margin-bottom: .15rem; }
+.settings-header p  { font-size: .88rem; opacity: .85; }
+
+.settings-card {
+  background: #fff;
+  border-radius: var(--radius);
+  box-shadow: 0 12px 40px rgba(0,0,0,.25);
+  padding: 1.5rem 1.4rem;
+  margin-bottom: 1rem;
+}
+.settings-card h2 {
+  font-size: 1rem;
+  color: var(--blue-900);
+  margin-bottom: .5rem;
+}
+.settings-card .current-value {
+  font-size: .82rem;
+  color: var(--grey-700);
+  background: var(--grey-50);
+  padding: .5rem .75rem;
+  border-radius: var(--radius-sm);
+  margin-bottom: .9rem;
+  font-family: 'Courier New', monospace;
+}
+.settings-card .current-value strong { color: var(--blue-700); }
+.settings-card .form-row { margin-bottom: .75rem; }
+.settings-card .form-row label {
+  font-size: .8rem;
+  font-weight: 600;
+  color: var(--grey-700);
+  display: block;
+  margin-bottom: .25rem;
+}
+.settings-card .form-row input {
+  width: 100%;
+  padding: .75rem .85rem;
+  border: 2px solid var(--grey-300);
+  border-radius: var(--radius-sm);
+  font-size: .95rem;
+  font-family: var(--font);
+  transition: border-color .2s;
+  box-sizing: border-box;
+}
+.settings-card .form-row input:focus {
+  outline: none;
+  border-color: var(--blue-500);
+  box-shadow: 0 0 0 3px rgba(25,118,210,.12);
+}
+.settings-card .btn-primary {
+  width: 100%;
+  border-radius: var(--radius-sm);
+  padding: .8rem 1rem;
+  font-size: .9rem;
+}
+.settings-card .alert { margin-top: .75rem; }
+
+.settings-back { text-align: center; margin-top: 1rem; }
+.settings-back a {
+  color: #fff;
+  text-decoration: none;
+  font-size: .88rem;
+  opacity: .85;
+}
+.settings-back a:hover { opacity: 1; text-decoration: underline; }
+
+/* Settings tab in the home header */
+.tab-settings { border-color: #b39ddb; }
+.tab-settings:hover { background: rgba(179,157,219,.35); }

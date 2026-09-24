@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Settings – Simon Fresh Water</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="settings-body">
+  <main class="settings-wrap">
+    <div class="settings-header">
+      <div class="logo-drop">💧</div>
+      <h1>Simon Fresh Water</h1>
+      <p>Admin Settings</p>
+    </div>
+
+    <!-- Username -->
+    <div class="settings-card">
+      <h2>👤 Username</h2>
+      <div class="current-value">
+        Current: <strong id="curUsername">—</strong>
+      </div>
+      <form id="usernameForm" autocomplete="off">
+        <div class="form-row">
+          <label for="newUsername">New Username</label>
+          <input type="text" id="newUsername" required minlength="3" maxlength="60"
+                 placeholder="e.g. sfw_admin">
+        </div>
+        <button type="submit" class="btn-primary" id="usernameBtn">Update Username</button>
+      </form>
+      <div id="usernameMsg" class="alert hidden"></div>
+    </div>
+
+    <!-- Reset phone -->
+    <div class="settings-card">
+      <h2>📱 Password Reset Phone</h2>
+      <div class="current-value">
+        Current: <strong id="curPhone">—</strong>
+      </div>
+      <p class="form-hint-small" style="margin-bottom:.75rem;">
+        The phone that receives the SMS code when you reset your password.
+      </p>
+      <form id="phoneForm" autocomplete="off">
+        <div class="form-row">
+          <label for="newPhone">New Phone (Kenyan)</label>
+          <input type="tel" id="newPhone" required
+                 placeholder="e.g. 0791389935">
+        </div>
+        <button type="submit" class="btn-primary" id="phoneBtn">Update Phone</button>
+      </form>
+      <div id="phoneMsg" class="alert hidden"></div>
+    </div>
+
+    <!-- Password -->
+    <div class="settings-card">
+      <h2>🔑 Password</h2>
+      <p class="form-hint-small" style="margin-bottom:.75rem;">
+        Enter your current password to confirm, then choose a new one (min 8 characters).
+        You will be signed out after the change.
+      </p>
+      <form id="passwordForm" autocomplete="off">
+        <div class="form-row">
+          <label for="curPassword">Current Password</label>
+          <input type="password" id="curPassword" required autocomplete="current-password">
+        </div>
+        <div class="form-row">
+          <label for="newPassword">New Password</label>
+          <input type="password" id="newPassword" required minlength="8" autocomplete="new-password">
+        </div>
+        <div class="form-row">
+          <label for="confirmPassword">Confirm New Password</label>
+          <input type="password" id="confirmPassword" required minlength="8" autocomplete="new-password">
+        </div>
+        <button type="submit" class="btn-primary" id="passwordBtn">Change Password</button>
+      </form>
+      <div id="passwordMsg" class="alert hidden"></div>
+    </div>
+
+    <div class="settings-back">
+      <a href="/">← Back to Home</a>
+    </div>
+  </main>
+
+  <script>
+    function show(el, kind, text) {
+      el.className = 'alert alert-' + kind;
+      el.textContent = text;
+      el.classList.remove('hidden');
+    }
+    function hide(el) { el.classList.add('hidden'); }
+
+    async function loadSettings() {
+      try {
+        const r = await fetch('/api/admin/settings', { credentials: 'same-origin' });
+        if (r.status === 401) {
+          location.href = '/admin/login?next=/admin/settings';
+          return;
+        }
+        const d = await r.json();
+        document.getElementById('curUsername').textContent = d.username || '—';
+        document.getElementById('curPhone').textContent = d.phone || '—';
+      } catch {
+        alert('Failed to load settings.');
+      }
+    }
+    loadSettings();
+
+    // ─── Username ───
+    document.getElementById('usernameForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('usernameBtn');
+      const msg = document.getElementById('usernameMsg');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      hide(msg);
+      try {
+        const r = await fetch('/api/admin/settings/username', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ new_username: document.getElementById('newUsername').value.trim() }),
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) {
+          document.getElementById('curUsername').textContent = d.username;
+          document.getElementById('newUsername').value = '';
+          show(msg, 'success', '✅ Username updated to ' + d.username);
+        } else {
+          show(msg, 'error', d.error || 'Update failed.');
+        }
+      } catch { show(msg, 'error', 'Network error.'); }
+      finally { btn.disabled = false; btn.textContent = 'Update Username'; }
+    });
+
+    // ─── Phone ───
+    document.getElementById('phoneForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('phoneBtn');
+      const msg = document.getElementById('phoneMsg');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      hide(msg);
+      try {
+        const r = await fetch('/api/admin/settings/phone', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ new_phone: document.getElementById('newPhone').value.trim() }),
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) {
+          document.getElementById('curPhone').textContent = d.phone;
+          document.getElementById('newPhone').value = '';
+          show(msg, 'success', '✅ Reset phone updated.');
+        } else {
+          show(msg, 'error', d.error || 'Update failed.');
+        }
+      } catch { show(msg, 'error', 'Network error.'); }
+      finally { btn.disabled = false; btn.textContent = 'Update Phone'; }
+    });
+
+    // ─── Password ───
+    document.getElementById('passwordForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('passwordBtn');
+      const msg = document.getElementById('passwordMsg');
+      const cur = document.getElementById('curPassword').value;
+      const nw  = document.getElementById('newPassword').value;
+      const cf  = document.getElementById('confirmPassword').value;
+
+      if (nw !== cf) {
+        show(msg, 'error', 'New passwords do not match.');
+        return;
+      }
+      btn.disabled = true; btn.textContent = 'Saving…';
+      hide(msg);
+      try {
+        const r = await fetch('/api/admin/settings/password', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ current_password: cur, new_password: nw }),
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) {
+          show(msg, 'success', '✅ Password changed. Redirecting to login…');
+          setTimeout(() => { location.href = '/admin/login'; }, 2000);
+        } else {
+          show(msg, 'error', d.error || 'Update failed.');
+          btn.disabled = false; btn.textContent = 'Change Password';
+        }
+      } catch {
+        show(msg, 'error', 'Network error.');
+        btn.disabled = false; btn.textContent = 'Change Password';
+      }
+    });
+  </script>
+</body>
+</html>

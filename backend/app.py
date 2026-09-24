@@ -31,6 +31,7 @@ from admin_auth import (
     create_first_admin, login as admin_login_fn,
     request_password_reset, confirm_password_reset,
 )
+from werkzeug.security import check_password_hash, generate_password_hash
 from receipts import generate_receipt_pdf
 from water_bill import generate_water_bill_pdf
 from statement import generate_statement_pdf
@@ -304,6 +305,10 @@ def admin_setup_page():
 @app.route("/admin/forgot")
 def admin_forgot_page():
     return send_from_directory(FRONTEND_DIR, "admin_forgot.html")
+
+@app.route("/admin/settings")
+def admin_settings_page():
+    return send_from_directory(FRONTEND_DIR, "admin_settings.html")
 
 @app.route("/style.css")
 def styles():
@@ -1007,6 +1012,117 @@ def admin_reset_route():
         data.get("token", ""), data.get("otp", ""), data.get("new_password", ""),
     )
     return jsonify(result), (200 if result.get("ok") else 400)
+
+
+# ═══════════════════════════════════════════════
+#  ADMIN — SETTINGS
+# ═══════════════════════════════════════════════
+
+@app.route("/api/admin/settings", methods=["GET"])
+def admin_get_settings():
+    if not _rate_limit("settings_get", 30, 60):
+        return _too_many(60)
+    u = _require_admin()
+    if u:
+        return u
+    admin = _current_admin()
+    return jsonify({
+        "username": admin.username,
+        "phone": admin.phone,
+    })
+
+
+@app.route("/api/admin/settings/username", methods=["POST"])
+def admin_update_username():
+    if not _rate_limit("settings_username", 5, 60):
+        return _too_many(60)
+    u = _require_admin()
+    if u:
+        return u
+    admin = _current_admin()
+
+    data = request.get_json(silent=True) or {}
+    new_username = (data.get("new_username") or "").strip().lower()
+
+    if len(new_username) < 3:
+        return jsonify({"error": "Username must be at least 3 characters."}), 400
+    if len(new_username) > 60:
+        return jsonify({"error": "Username too long (max 60)."}), 400
+    if not all(c.isalnum() or c in "@._-" for c in new_username):
+        return jsonify({"error": "Only letters, digits, and @ . _ - are allowed."}), 400
+    if new_username == (admin.username or "").lower():
+        return jsonify({"error": "That is already your username."}), 400
+
+    dup = AdminUser.query.filter_by(username=new_username).first()
+    if dup and dup.id != admin.id:
+        return jsonify({"error": "That username is already taken."}), 409
+
+    admin.username = new_username
+    db.session.commit()
+    session["admin_username"] = new_username   # keep display in sync
+
+    return jsonify({"ok": True, "username": new_username})
+
+
+@app.route("/api/admin/settings/phone", methods=["POST"])
+def admin_update_phone():
+    if not _rate_limit("settings_phone", 5, 60):
+        return _too_many(60)
+    u = _require_admin()
+    if u:
+        return u
+    admin = _current_admin()
+
+    data = request.get_json(silent=True) or {}
+    new_phone = (data.get("new_phone") or "").strip()
+
+    digits = "".join(c for c in new_phone if c.isdigit())
+    if not digits:
+        return jsonify({"error": "Phone number is required."}), 400
+
+    # Accept: 07XXXXXXXX, 254XXXXXXXXX, 7XXXXXXXX, +254XXXXXXXXX
+    if digits.startswith("254") and len(digits) == 12:
+        pass
+    elif digits.startswith("0") and len(digits) == 10:
+        pass
+    elif len(digits) == 9:
+        pass
+    else:
+        return jsonify({"error": "Invalid Kenyan phone number."}), 400
+
+    admin.phone = new_phone
+    db.session.commit()
+    return jsonify({"ok": True, "phone": new_phone})
+
+
+@app.route("/api/admin/settings/password", methods=["POST"])
+def admin_update_password():
+    if not _rate_limit("settings_password", 5, 60):
+        return _too_many(60)
+    u = _require_admin()
+    if u:
+        return u
+    admin = _current_admin()
+
+    data = request.get_json(silent=True) or {}
+    current_pw = data.get("current_password") or ""
+    new_pw = data.get("new_password") or ""
+
+    if not check_password_hash(admin.password_hash, current_pw):
+        return jsonify({"error": "Current password is incorrect."}), 401
+    if len(new_pw) < 8:
+        return jsonify({"error": "New password must be at least 8 characters."}), 400
+    if new_pw == current_pw:
+        return jsonify({"error": "New password must be different from current."}), 400
+
+    admin.password_hash = generate_password_hash(new_pw)
+    admin.failed_attempts = 0
+    admin.locked_until = None
+    db.session.commit()
+
+    # Force re-login: clearing the session confirms the new password works.
+    session.clear()
+    return jsonify({"ok": True, "message": "Password updated. Please log in again."})
 
 
 # ═══════════════════════════════════════════════
