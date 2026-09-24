@@ -1034,6 +1034,19 @@ body {
 }
 .settings-back a:hover { opacity: 1; text-decoration: underline; }
 
-/* Settings tab in the home header */
+/* Settings tab in the home header — icon-only circular button */
+.tab-settings-icon {
+  padding: .5rem;
+  border-radius: 50%;
+  border-color: #b39ddb;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  min-height: 38px;
+}
+.tab-settings-icon:hover { background: rgba(179,157,219,.35); }
+.tab-settings-icon .tab-icon { font-size: 1.05rem; margin: 0; }
+/* Legacy rule (kept for safety — no longer referenced) */
 .tab-settings { border-color: #b39ddb; }
 .tab-settings:hover { background: rgba(179,157,219,.35); }
