@@ -35,6 +35,7 @@
         <p class="form-hint-small">
           Enter the 6-digit code sent to your phone, then choose a new password.
         </p>
+        <div id="countdown" class="form-hint-small" style="color:#c62828; font-weight:700;"></div>
         <form id="resetForm" class="auth-form">
           <div class="form-row">
             <label for="otp">6-Digit Code</label>
@@ -59,14 +60,85 @@
   </main>
 
   <script>
+    const SS_TOKEN_KEY  = 'pwResetToken';
+    const SS_EXPIRY_KEY = 'pwResetExpiry';
     let RESET_TOKEN = null;
+    let countdownTimer = null;
 
+    function showMsg(kind, text) {
+      const msg = document.getElementById('forgotMsg');
+      msg.className = 'alert alert-' + kind;
+      msg.textContent = text;
+      msg.classList.remove('hidden');
+    }
+    function hideMsg() {
+      document.getElementById('forgotMsg').classList.add('hidden');
+    }
+
+    // ─── Save the token + its expiry (5 minutes) to sessionStorage ───
+    function saveToken(token) {
+      RESET_TOKEN = token;
+      const expiry = Date.now() + (5 * 60 * 1000);
+      sessionStorage.setItem(SS_TOKEN_KEY, token);
+      sessionStorage.setItem(SS_EXPIRY_KEY, String(expiry));
+    }
+
+    // ─── On load: if a valid token exists, jump straight to step 2 ───
+    function restoreToken() {
+      const saved  = sessionStorage.getItem(SS_TOKEN_KEY);
+      const expiry = parseInt(sessionStorage.getItem(SS_EXPIRY_KEY) || '0', 10);
+      if (saved && expiry > Date.now()) {
+        RESET_TOKEN = saved;
+        showStep2();
+        startCountdown(expiry);
+        return true;
+      }
+      // Expired or missing — clear and show step 1
+      sessionStorage.removeItem(SS_TOKEN_KEY);
+      sessionStorage.removeItem(SS_EXPIRY_KEY);
+      return false;
+    }
+
+    function showStep2() {
+      document.getElementById('step1').classList.add('hidden');
+      document.getElementById('step2').classList.remove('hidden');
+    }
+    function showStep1() {
+      document.getElementById('step1').classList.remove('hidden');
+      document.getElementById('step2').classList.add('hidden');
+    }
+
+    // ─── Countdown display: MM:SS until expiry ───
+    function startCountdown(expiryMs) {
+      if (countdownTimer) clearInterval(countdownTimer);
+      const el = document.getElementById('countdown');
+      function tick() {
+        const left = expiryMs - Date.now();
+        if (left <= 0) {
+          clearInterval(countdownTimer);
+          countdownTimer = null;
+          sessionStorage.removeItem(SS_TOKEN_KEY);
+          sessionStorage.removeItem(SS_EXPIRY_KEY);
+          RESET_TOKEN = null;
+          el.textContent = '⏰ Code expired. Please request a new one.';
+          showStep1();
+          return;
+        }
+        const s = Math.floor(left / 1000);
+        const mm = String(Math.floor(s / 60)).padStart(2, '0');
+        const ss = String(s % 60).padStart(2, '0');
+        el.textContent = `⏰ Code expires in ${mm}:${ss}`;
+      }
+      tick();
+      countdownTimer = setInterval(tick, 1000);
+    }
+
+    // ─── STEP 1: request OTP ───
     document.getElementById('forgotForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('forgotBtn');
-      const msg = document.getElementById('forgotMsg');
       btn.disabled = true; btn.textContent = 'Sending…';
-      msg.classList.add('hidden');
+      hideMsg();
 
       try {
         const r = await fetch('/api/admin/forgot', {
@@ -76,36 +148,34 @@
         });
         const data = await r.json();
         if (r.ok && data.ok) {
-          msg.className = data.sms_ok ? 'alert alert-success' : 'alert alert-error';
-          msg.textContent = data.message;
-          msg.classList.remove('hidden');
+          showMsg(data.sms_ok ? 'success' : 'error', data.message);
           if (data.token) {
-            RESET_TOKEN = data.token;
-            document.getElementById('step1').classList.add('hidden');
-            document.getElementById('step2').classList.remove('hidden');
+            saveToken(data.token);
+            showStep2();
+            startCountdown(parseInt(sessionStorage.getItem(SS_EXPIRY_KEY), 10));
           }
           btn.disabled = false; btn.textContent = 'Send Reset Code';
         } else {
-          msg.className = 'alert alert-error';
-          msg.textContent = data.error || 'Request failed.';
-          msg.classList.remove('hidden');
+          showMsg('error', data.error || 'Request failed.');
           btn.disabled = false; btn.textContent = 'Send Reset Code';
         }
       } catch {
-        msg.className = 'alert alert-error';
-        msg.textContent = 'Network error.';
-        msg.classList.remove('hidden');
+        showMsg('error', 'Network error.');
         btn.disabled = false; btn.textContent = 'Send Reset Code';
       }
     });
 
+    // ─── STEP 2: verify OTP + set new password ───
     document.getElementById('resetForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-      if (!RESET_TOKEN) return;
+      if (!RESET_TOKEN) {
+        showMsg('error', 'Reset session expired. Please request a new code.');
+        showStep1();
+        return;
+      }
       const btn = document.getElementById('resetBtn');
-      const msg = document.getElementById('forgotMsg');
       btn.disabled = true; btn.textContent = 'Resetting…';
-      msg.classList.add('hidden');
+      hideMsg();
 
       try {
         const r = await fetch('/api/admin/reset', {
@@ -119,23 +189,23 @@
         });
         const data = await r.json();
         if (r.ok && data.ok) {
-          msg.className = 'alert alert-success';
-          msg.textContent = '✅ ' + data.message;
-          msg.classList.remove('hidden');
+          if (countdownTimer) clearInterval(countdownTimer);
+          sessionStorage.removeItem(SS_TOKEN_KEY);
+          sessionStorage.removeItem(SS_EXPIRY_KEY);
+          showMsg('success', '✅ ' + data.message);
           setTimeout(() => { location.href = '/admin/login'; }, 1200);
         } else {
-          msg.className = 'alert alert-error';
-          msg.textContent = data.error || 'Reset failed.';
-          msg.classList.remove('hidden');
+          showMsg('error', data.error || 'Reset failed.');
           btn.disabled = false; btn.textContent = 'Reset Password';
         }
       } catch {
-        msg.className = 'alert alert-error';
-        msg.textContent = 'Network error.';
-        msg.classList.remove('hidden');
+        showMsg('error', 'Network error.');
         btn.disabled = false; btn.textContent = 'Reset Password';
       }
     });
+
+    // ─── On page load: try to restore a valid in-progress reset ───
+    restoreToken();
   </script>
 </body>
 </html>

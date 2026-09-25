@@ -17,7 +17,7 @@ from notifications import send_sms
 
 LOCKOUT_THRESHOLD = 5
 LOCKOUT_MINUTES   = 15
-RESET_TOKEN_TTL   = 15          # minutes
+RESET_TOKEN_TTL   = 5           # minutes
 OTP_LENGTH        = 6
 
 ADMIN_SETUP_CODE = os.environ.get("ADMIN_SETUP_CODE", "")
