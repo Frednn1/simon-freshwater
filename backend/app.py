@@ -313,6 +313,10 @@ def admin_forgot_page():
 def admin_settings_page():
     return send_from_directory(FRONTEND_DIR, "admin_settings.html")
 
+@app.route("/admin/mpesa")
+def admin_mpesa_page():
+    return send_from_directory(FRONTEND_DIR, "admin_mpesa.html")
+
 @app.route("/style.css")
 def styles():
     return send_from_directory(FRONTEND_DIR, "style.css")
