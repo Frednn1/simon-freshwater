@@ -1,6 +1,7 @@
 import os
 import json
 import secrets
+import ipaddress
 from datetime import datetime, date, timedelta
 from collections import deque
 from threading import Lock
@@ -24,7 +25,7 @@ from billing import (
 from sheets import sync_consumer_to_sheet
 from reminders import start_scheduler
 from notifications import (
-    send_sms, send_whatsapp, send_whatsapp_document,
+    send_sms, send_sms_with_retry, send_whatsapp, send_whatsapp_document,
     build_bill_message, get_available_channels,
 )
 from admin_auth import (
@@ -123,6 +124,35 @@ def _client_ip():
     if xff:
         return xff.split(",")[0].strip()
     return request.remote_addr or "unknown"
+
+
+def _ip_in_allowlist(ip_str: str, allowlist_csv: str) -> bool:
+    """
+    Return True if `ip_str` is in the comma-separated CIDR list.
+    Fail-open when the allowlist is empty (safe for initial rollout).
+    """
+    if not allowlist_csv or not allowlist_csv.strip():
+        return True
+    try:
+        ip = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return False
+    for cidr in allowlist_csv.split(","):
+        cidr = cidr.strip()
+        if not cidr:
+            continue
+        try:
+            if ip in ipaddress.ip_network(cidr, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def _mpesa_ip_ok() -> bool:
+    """True if the current request's client IP is allowed to call M-Pesa endpoints."""
+    allowed = os.environ.get("MPESA_ALLOWED_IPS", "").strip()
+    return _ip_in_allowlist(_client_ip(), allowed)
 
 
 def _rate_limit(scope: str, limit: int, window: int) -> bool:
@@ -359,6 +389,15 @@ def receipt_template_view():
 # ═══════════════════════════════════════════════
 #  API — HEALTH
 # ═══════════════════════════════════════════════
+
+@app.route("/api/public/config")
+def public_config():
+    """Non-secret config values safe for the frontend to read."""
+    return jsonify({
+        "paybill": os.environ.get("PAYBILL", ""),
+        "company": "Simon Fresh Water",
+    })
+
 
 @app.route("/api/health")
 def health():
@@ -1798,6 +1837,9 @@ def mpesa_c2b_validation():
     Safaricom calls this BEFORE processing a payment.
     We always accept (ResponseCode=0) — bill matching happens post-payment.
     """
+    if not _mpesa_ip_ok():
+        app.logger.warning(f"[M-Pesa] Rejected validation from {_client_ip()}")
+        return jsonify({"ResultCode": 1, "ResultDesc": "Forbidden"}), 403
     return jsonify({"ResultCode": 0, "ResultDesc": "Accepted"}), 200
 
 
@@ -1807,6 +1849,10 @@ def mpesa_c2b_confirmation():
     Safaricom calls this AFTER a payment is processed.
     Public endpoint (Safaricom cannot authenticate). Idempotent on TransID.
     """
+    if not _mpesa_ip_ok():
+        app.logger.warning(f"[M-Pesa] Rejected confirmation from {_client_ip()}")
+        return jsonify({"ResultCode": 1, "ResultDesc": "Forbidden"}), 403
+
     data = request.get_json(silent=True) or {}
     trans_id = (data.get("TransID") or "").strip()
     if not trans_id:
@@ -1878,13 +1924,15 @@ def mpesa_c2b_confirmation():
         db.session.commit()
         return jsonify({"ResultCode": 0, "ResultDesc": "Accepted"}), 200
 
-    # SMS confirmation (best-effort)
+    # SMS confirmation (with retry — does not block the flow)
     try:
         msg = (f"Payment received: KES {amount:,.2f} for {consumer.meter_acc_no}. "
                f"Ref {trans_id}. Thank you.")
-        send_sms(consumer.contact, msg)
+        sms_result = send_sms_with_retry(consumer.contact, msg, max_attempts=3)
+        if not sms_result.get("ok"):
+            app.logger.warning(f"[M-Pesa SMS] final failure: {sms_result.get('error')}")
     except Exception as e:
-        app.logger.warning(f"[M-Pesa SMS] {e}")
+        app.logger.warning(f"[M-Pesa SMS] exception: {e}")
 
     return jsonify({"ResultCode": 0, "ResultDesc": "Accepted"}), 200
 
@@ -1967,6 +2015,38 @@ def admin_mpesa_payments():
             "payment_log_id": l.payment_log_id,
             "received_at": l.received_at.isoformat() if l.received_at else None,
         } for l in logs],
+    })
+
+
+@app.route("/api/admin/consumers/search", methods=["GET"])
+def admin_consumers_search():
+    """
+    Admin-only search for the M-Pesa assign form.
+    Accepts q=<any substring of name, meter, or phone>.
+    """
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("consumer_search", 60, 60):
+        return _too_many(60)
+
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 2:
+        return jsonify({"results": []})
+
+    pattern = f"%{q}%"
+    consumers = (Consumer.query.filter(db.or_(
+        Consumer.cust_name.ilike(pattern),
+        Consumer.meter_acc_no.ilike(pattern),
+        Consumer.contact.ilike(pattern),
+    )).limit(15).all())
+
+    return jsonify({
+        "results": [{
+            "id": c.id,
+            "cust_name": c.cust_name,
+            "meter_acc_no": c.meter_acc_no,
+            "contact": c.contact,
+        } for c in consumers],
     })
 
 

@@ -139,13 +139,14 @@
             : (p.status === 'duplicate' ? 'badge badge-none'
                 : 'badge badge-due');
           const manual = (p.status === 'unmatched')
-            ? `<div style="margin-top:.5rem;">
-                 <input type="number" id="assign-${p.id}" min="1"
-                        placeholder="Consumer ID to assign…"
-                        style="padding:.4rem .6rem; border:1px solid #cfd8dc; border-radius:6px; width:180px;">
-                 <button type="button" class="btn-secondary"
-                         style="padding:.4rem .8rem; font-size:.82rem;"
-                         onclick="assignPayment(${p.id})">Assign</button>
+            ? `<div style="margin-top:.6rem;">
+                 <input type="text" id="assignSearch-${p.id}"
+                        placeholder="Search name / phone / meter…"
+                        style="padding:.45rem .6rem; border:1px solid #cfd8dc; border-radius:6px; width:220px;"
+                        oninput="searchAssign(${p.id})">
+                 <div id="assignResults-${p.id}"
+                      style="margin-top:.4rem; border:1px solid #eef1f5; border-radius:6px;
+                             background:#fff; max-height:200px; overflow-y:auto; display:none;"></div>
                </div>`
             : '';
           return `
@@ -174,23 +175,6 @@
         el.textContent = 'Failed to load payments.';
       }
     }
-
-    async function assignPayment(logId) {
-      const cidInput = document.getElementById('assign-' + logId);
-      const cid = parseInt(cidInput.value, 10);
-      if (!cid || cid <= 0) { alert('Enter a valid Consumer ID.'); return; }
-      try {
-        const r = await fetch('/api/admin/mpesa/assign', {
-          method: 'POST', credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ log_id: logId, consumer_id: cid }),
-        });
-        const d = await r.json();
-        if (r.ok && d.ok) { alert('✅ Assigned.'); loadPayments(); }
-        else { alert('❌ ' + (d.error || 'Failed.')); }
-      } catch { alert('❌ Network error.'); }
-    }
-    window.assignPayment = assignPayment;
 
     // ── Register URLs ──
     document.getElementById('registerBtn').addEventListener('click', async () => {
@@ -250,6 +234,73 @@
 
     loadConfig();
     loadPayments();
+
+    // ── Search consumers for the assign form ──
+    let _searchTimers = {};
+    async function searchAssign(logId) {
+      const input = document.getElementById('assignSearch-' + logId);
+      const results = document.getElementById('assignResults-' + logId);
+      if (!input || !results) return;
+
+      const q = input.value.trim();
+      clearTimeout(_searchTimers[logId]);
+
+      if (q.length < 2) {
+        results.style.display = 'none';
+        results.innerHTML = '';
+        return;
+      }
+
+      _searchTimers[logId] = setTimeout(async () => {
+        try {
+          const r = await fetch('/api/admin/consumers/search?q=' + encodeURIComponent(q),
+                                { credentials: 'same-origin' });
+          if (r.status === 401) { location.href = '/admin/login?next=/admin/mpesa'; return; }
+          const d = await r.json();
+          const list = d.results || [];
+          if (list.length === 0) {
+            results.innerHTML = '<div style="padding:.5rem .7rem; color:#90a4ae; font-size:.82rem;">No matches</div>';
+            results.style.display = 'block';
+            return;
+          }
+          results.innerHTML = list.map(c => `
+            <div style="padding:.5rem .7rem; border-bottom:1px solid #f5f5f5; cursor:pointer;"
+                 onclick="selectAssign(${logId}, ${c.id}, '${escAttr(c.cust_name)}', '${escAttr(c.meter_acc_no)}')">
+              <div style="font-weight:600;">${esc(c.cust_name)}</div>
+              <div style="font-size:.78rem; color:#455a64;">
+                Meter ${esc(c.meter_acc_no)} · Phone ${esc(c.contact || '—')}
+              </div>
+            </div>`).join('');
+          results.style.display = 'block';
+        } catch { /* ignore */ }
+      }, 350);
+    }
+    window.searchAssign = searchAssign;
+
+    async function selectAssign(logId, consumerId, name, meter) {
+      if (!confirm(`Assign this payment to ${name} (${meter})?`)) return;
+      try {
+        const r = await fetch('/api/admin/mpesa/assign', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ log_id: logId, consumer_id: consumerId }),
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) { alert('✅ Assigned.'); loadPayments(); }
+        else { alert('❌ ' + (d.error || 'Failed.')); }
+      } catch { alert('❌ Network error.'); }
+    }
+    window.selectAssign = selectAssign;
+
+    // Small HTML-attribute escaping helper
+    function escAttr(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/'/g, '&#39;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
   </script>
 </body>
 </html>

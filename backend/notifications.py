@@ -298,3 +298,21 @@ def send_whatsapp_document(to_phone: str,
         return {"ok": False, "error": msg}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+# ─── SMS retry wrapper (used for payment confirmations) ───
+def send_sms_with_retry(to_phone: str, message: str, max_attempts: int = 3) -> dict:
+    """
+    Send SMS with exponential backoff on failure.
+    Attempts: 1 → wait 2s → 2 → wait 4s → 3.
+    Returns the last result (ok or error).
+    """
+    import time as _time
+    last = {"ok": False, "error": "no attempts"}
+    for attempt in range(1, max_attempts + 1):
+        last = send_sms(to_phone, message)
+        if last.get("ok"):
+            return last
+        if attempt < max_attempts:
+            _time.sleep(2 ** attempt)   # 2s, 4s
+    return last
