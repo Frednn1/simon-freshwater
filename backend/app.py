@@ -1776,6 +1776,22 @@ def _normalize_msisdn(msisdn: str) -> list:
     return list(variants)
 
 
+# ── Safe-path aliases for Safaricom callback registration ──
+# Safaricom rejects URLs containing "mpesa", "m-pesa", "safaricom", "exe", "cmd", "sql".
+# These aliases use a clean path so the URLs pass Safaricom's validation.
+
+@app.route("/api/pay/c2b/validation", methods=["POST"])
+def pay_c2b_validation():
+    """Safe-path alias for mpesa_c2b_validation."""
+    return mpesa_c2b_validation()
+
+
+@app.route("/api/pay/c2b/confirmation", methods=["POST"])
+def pay_c2b_confirmation():
+    """Safe-path alias for mpesa_c2b_confirmation."""
+    return mpesa_c2b_confirmation()
+
+
 @app.route("/api/mpesa/c2b/validation", methods=["POST"])
 def mpesa_c2b_validation():
     """
@@ -1892,8 +1908,9 @@ def admin_mpesa_register():
         return _too_many(60)
 
     base = request.host_url.rstrip("/")
-    conf = f"{base}/api/mpesa/c2b/confirmation"
-    val  = f"{base}/api/mpesa/c2b/validation"
+    # Use safe paths (no forbidden words) for Safaricom registration
+    conf = f"{base}/api/pay/c2b/confirmation"
+    val  = f"{base}/api/pay/c2b/validation"
 
     result = register_c2b_urls(conf, val)
     if not result.get("ok"):
