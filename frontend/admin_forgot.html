@@ -35,7 +35,8 @@
         <p class="form-hint-small">
           Enter the 6-digit code sent to your phone, then choose a new password.
         </p>
-        <div id="countdown" class="form-hint-small" style="color:#c62828; font-weight:700;"></div>
+        <div id="countdown" class="form-hint-small"
+             style="color:#c62828; font-weight:700; margin-bottom:.6rem;"></div>
         <form id="resetForm" class="auth-form">
           <div class="form-row">
             <label for="otp">6-Digit Code</label>
@@ -49,6 +50,9 @@
           </div>
           <button type="submit" class="btn-primary btn-full" id="resetBtn">Reset Password</button>
         </form>
+        <p style="text-align:center; margin-top:.75rem;">
+          <a href="#" id="startOver" class="auth-link" style="font-size:.82rem;">← Start over</a>
+        </p>
       </div>
 
       <div id="forgotMsg" class="alert hidden"></div>
@@ -60,8 +64,9 @@
   </main>
 
   <script>
-    const SS_TOKEN_KEY  = 'pwResetToken';
-    const SS_EXPIRY_KEY = 'pwResetExpiry';
+    // localStorage survives Android Chrome killing the tab.
+    const LS_TOKEN_KEY  = 'sfw_pwResetToken';
+    const LS_EXPIRY_KEY = 'sfw_pwResetExpiry';
     let RESET_TOKEN = null;
     let countdownTimer = null;
 
@@ -75,27 +80,30 @@
       document.getElementById('forgotMsg').classList.add('hidden');
     }
 
-    // ─── Save the token + its expiry (5 minutes) to sessionStorage ───
     function saveToken(token) {
       RESET_TOKEN = token;
       const expiry = Date.now() + (5 * 60 * 1000);
-      sessionStorage.setItem(SS_TOKEN_KEY, token);
-      sessionStorage.setItem(SS_EXPIRY_KEY, String(expiry));
+      localStorage.setItem(LS_TOKEN_KEY, token);
+      localStorage.setItem(LS_EXPIRY_KEY, String(expiry));
     }
 
-    // ─── On load: if a valid token exists, jump straight to step 2 ───
+    function clearToken() {
+      RESET_TOKEN = null;
+      localStorage.removeItem(LS_TOKEN_KEY);
+      localStorage.removeItem(LS_EXPIRY_KEY);
+      if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
+    }
+
     function restoreToken() {
-      const saved  = sessionStorage.getItem(SS_TOKEN_KEY);
-      const expiry = parseInt(sessionStorage.getItem(SS_EXPIRY_KEY) || '0', 10);
+      const saved  = localStorage.getItem(LS_TOKEN_KEY);
+      const expiry = parseInt(localStorage.getItem(LS_EXPIRY_KEY) || '0', 10);
       if (saved && expiry > Date.now()) {
         RESET_TOKEN = saved;
         showStep2();
         startCountdown(expiry);
         return true;
       }
-      // Expired or missing — clear and show step 1
-      sessionStorage.removeItem(SS_TOKEN_KEY);
-      sessionStorage.removeItem(SS_EXPIRY_KEY);
+      clearToken();
       return false;
     }
 
@@ -108,7 +116,6 @@
       document.getElementById('step2').classList.add('hidden');
     }
 
-    // ─── Countdown display: MM:SS until expiry ───
     function startCountdown(expiryMs) {
       if (countdownTimer) clearInterval(countdownTimer);
       const el = document.getElementById('countdown');
@@ -117,9 +124,7 @@
         if (left <= 0) {
           clearInterval(countdownTimer);
           countdownTimer = null;
-          sessionStorage.removeItem(SS_TOKEN_KEY);
-          sessionStorage.removeItem(SS_EXPIRY_KEY);
-          RESET_TOKEN = null;
+          clearToken();
           el.textContent = '⏰ Code expired. Please request a new one.';
           showStep1();
           return;
@@ -133,13 +138,11 @@
       countdownTimer = setInterval(tick, 1000);
     }
 
-    // ─── STEP 1: request OTP ───
     document.getElementById('forgotForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('forgotBtn');
       btn.disabled = true; btn.textContent = 'Sending…';
       hideMsg();
-
       try {
         const r = await fetch('/api/admin/forgot', {
           method: 'POST',
@@ -152,20 +155,15 @@
           if (data.token) {
             saveToken(data.token);
             showStep2();
-            startCountdown(parseInt(sessionStorage.getItem(SS_EXPIRY_KEY), 10));
+            startCountdown(parseInt(localStorage.getItem(LS_EXPIRY_KEY), 10));
           }
-          btn.disabled = false; btn.textContent = 'Send Reset Code';
         } else {
           showMsg('error', data.error || 'Request failed.');
-          btn.disabled = false; btn.textContent = 'Send Reset Code';
         }
-      } catch {
-        showMsg('error', 'Network error.');
-        btn.disabled = false; btn.textContent = 'Send Reset Code';
-      }
+      } catch { showMsg('error', 'Network error.'); }
+      finally { btn.disabled = false; btn.textContent = 'Send Reset Code'; }
     });
 
-    // ─── STEP 2: verify OTP + set new password ───
     document.getElementById('resetForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       if (!RESET_TOKEN) {
@@ -176,7 +174,6 @@
       const btn = document.getElementById('resetBtn');
       btn.disabled = true; btn.textContent = 'Resetting…';
       hideMsg();
-
       try {
         const r = await fetch('/api/admin/reset', {
           method: 'POST',
@@ -189,9 +186,7 @@
         });
         const data = await r.json();
         if (r.ok && data.ok) {
-          if (countdownTimer) clearInterval(countdownTimer);
-          sessionStorage.removeItem(SS_TOKEN_KEY);
-          sessionStorage.removeItem(SS_EXPIRY_KEY);
+          clearToken();
           showMsg('success', '✅ ' + data.message);
           setTimeout(() => { location.href = '/admin/login'; }, 1200);
         } else {
@@ -204,7 +199,14 @@
       }
     });
 
-    // ─── On page load: try to restore a valid in-progress reset ───
+    document.getElementById('startOver').addEventListener('click', (e) => {
+      e.preventDefault();
+      clearToken();
+      hideMsg();
+      showStep1();
+    });
+
+    // On load: restore an in-progress reset from localStorage
     restoreToken();
   </script>
 </body>

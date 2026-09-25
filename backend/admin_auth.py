@@ -120,11 +120,7 @@ def request_password_reset(identifier):
     db.session.add(tok)
     db.session.commit()
 
-    sms_body = (
-        f"SIMON FRESH WATER - Admin\n"
-        f"Password reset code: {otp}\n"
-        f"Valid {RESET_TOKEN_TTL} min. If you didn't request it, ignore."
-    )
+    sms_body = f"Your Simon Fresh Water reset code: {otp}  (valid {RESET_TOKEN_TTL} min)"
     sms_result = send_sms(admin.phone, sms_body)
 
     tail = admin.phone[-4:] if len(admin.phone) >= 4 else "****"
