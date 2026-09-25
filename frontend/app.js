@@ -101,10 +101,14 @@ function renderAuthTab() {
   const icon = document.getElementById('authTabIcon');
   if (!btn) return;
 
-  // Show the Settings tab only when signed in
+  // Show the Settings + M-Pesa tabs only when signed in
   const settingsTab = document.getElementById('settingsTab');
   if (settingsTab) {
     settingsTab.classList.toggle('hidden', !AUTH_STATE.authenticated);
+  }
+  const mpesaTab = document.getElementById('mpesaTab');
+  if (mpesaTab) {
+    mpesaTab.classList.toggle('hidden', !AUTH_STATE.authenticated);
   }
 
   if (AUTH_STATE.authenticated) {

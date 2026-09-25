@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>M-Pesa — Simon Fresh Water</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="settings-body">
+  <main class="settings-wrap" style="max-width: 780px;">
+
+    <div class="settings-header">
+      <div class="logo-drop">📲</div>
+      <h1>Simon Fresh Water</h1>
+      <p>M-Pesa C2B — Sandbox Testing</p>
+    </div>
+
+    <!-- Config -->
+    <div class="settings-card">
+      <h2>⚙️ Configuration</h2>
+      <div class="current-value" id="mpesaConfig">Loading…</div>
+      <p class="form-hint-small" style="margin-top:.5rem;">
+        Values come from <code>MPESA_ENV</code>, <code>MPESA_SHORTCODE</code>,
+        <code>MPESA_CONSUMER_KEY</code>, <code>MPESA_CONSUMER_SECRET</code>
+        on Render. Sandbox shortcode is <code>174379</code>.
+      </p>
+    </div>
+
+    <!-- Register URLs -->
+    <div class="settings-card">
+      <h2>🔗 Register Callback URLs</h2>
+      <p class="form-hint-small" style="margin-bottom:.75rem;">
+        Tells Safaricom where to POST payment notifications.
+        Run this once per environment — safe to run again.
+      </p>
+      <button id="registerBtn" class="btn-primary" type="button">Register URLs</button>
+      <div id="registerMsg" class="alert hidden"></div>
+      <div id="registerResult" class="current-value hidden" style="margin-top:.75rem;"></div>
+    </div>
+
+    <!-- Simulate -->
+    <div class="settings-card" id="simulateCard">
+      <h2>🧪 Simulate a Payment (Sandbox only)</h2>
+      <p class="form-hint-small" style="margin-bottom:.75rem;">
+        Asks Safaricom to fire a test C2B confirmation at our callback URL.
+        Use a real consumer's meter number so it matches.
+      </p>
+      <form id="simulateForm" autocomplete="off">
+        <div class="form-row">
+          <label for="simAmount">Amount (KES)</label>
+          <input type="number" id="simAmount" min="1" step="1" value="10" required>
+        </div>
+        <div class="form-row">
+          <label for="simMsisdn">Customer Phone (MSISDN)</label>
+          <input type="text" id="simMsisdn" required value="254708374149"
+                 placeholder="e.g. 254708374149">
+        </div>
+        <div class="form-row">
+          <label for="simBillRef">Bill Ref (meter number)</label>
+          <input type="text" id="simBillRef" required placeholder="e.g. MTR-0012">
+        </div>
+        <button type="submit" class="btn-primary" id="simulateBtn">Simulate Payment</button>
+      </form>
+      <div id="simulateMsg" class="alert hidden"></div>
+    </div>
+
+    <!-- Recent payments -->
+    <div class="settings-card">
+      <h2>📋 Recent M-Pesa Payments</h2>
+      <button id="refreshBtn" class="btn-secondary" type="button"
+              style="margin-bottom:.75rem;">↻ Refresh</button>
+      <div id="paymentsList">Loading…</div>
+    </div>
+
+    <div class="settings-back">
+      <a href="/">← Back to Home</a>
+    </div>
+  </main>
+
+  <script>
+    function show(el, kind, text) {
+      el.className = 'alert alert-' + kind;
+      el.textContent = text;
+      el.classList.remove('hidden');
+    }
+    function hide(el) { el.classList.add('hidden'); }
+
+    function fmt(n) {
+      return Number(n).toLocaleString('en-KE', {
+        minimumFractionDigits: 2, maximumFractionDigits: 2,
+      });
+    }
+    function fmtDate(iso) {
+      if (!iso) return '—';
+      const d = new Date(iso);
+      return d.toLocaleString('en-KE', {
+        day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+      });
+    }
+    function esc(s) {
+      const d = document.createElement('div');
+      d.textContent = s == null ? '' : String(s);
+      return d.innerHTML;
+    }
+
+    async function loadConfig() {
+      try {
+        const r = await fetch('/api/admin/mpesa/config', { credentials: 'same-origin' });
+        if (r.status === 401) { location.href = '/admin/login?next=/admin/mpesa'; return; }
+        const d = await r.json();
+        document.getElementById('mpesaConfig').innerHTML =
+          `Env: <strong>${esc(d.env)}</strong> · ` +
+          `Shortcode: <strong>${esc(d.shortcode || '—')}</strong> · ` +
+          `Configured: <strong>${d.configured ? '✅ Yes' : '❌ No'}</strong>`;
+        // Hide simulate card in production
+        if (d.env === 'production') {
+          document.getElementById('simulateCard').classList.add('hidden');
+        }
+      } catch {
+        document.getElementById('mpesaConfig').textContent = 'Failed to load config.';
+      }
+    }
+
+    async function loadPayments() {
+      const el = document.getElementById('paymentsList');
+      el.textContent = 'Loading…';
+      try {
+        const r = await fetch('/api/admin/mpesa/payments', { credentials: 'same-origin' });
+        if (r.status === 401) { location.href = '/admin/login?next=/admin/mpesa'; return; }
+        const d = await r.json();
+        const ps = d.payments || [];
+        if (ps.length === 0) {
+          el.innerHTML = '<p class="form-hint-small">No payments received yet.</p>';
+          return;
+        }
+        el.innerHTML = ps.map(p => {
+          const statusClass = p.status === 'matched'
+            ? 'badge badge-cleared'
+            : (p.status === 'duplicate' ? 'badge badge-none'
+                : 'badge badge-due');
+          const manual = (p.status === 'unmatched')
+            ? `<div style="margin-top:.5rem;">
+                 <input type="number" id="assign-${p.id}" min="1"
+                        placeholder="Consumer ID to assign…"
+                        style="padding:.4rem .6rem; border:1px solid #cfd8dc; border-radius:6px; width:180px;">
+                 <button type="button" class="btn-secondary"
+                         style="padding:.4rem .8rem; font-size:.82rem;"
+                         onclick="assignPayment(${p.id})">Assign</button>
+               </div>`
+            : '';
+          return `
+            <div style="padding:.6rem 0; border-bottom:1px solid #eef1f5;">
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:.5rem;">
+                <div>
+                  <div style="font-weight:700; font-family:'Courier New', monospace;">
+                    KES ${fmt(p.amount)} · ${esc(p.trans_id)}
+                  </div>
+                  <div style="font-size:.78rem; color:#455a64; margin-top:.15rem;">
+                    Ref: <strong>${esc(p.bill_ref || '—')}</strong> ·
+                    Phone: ${esc(p.msisdn || '—')} ·
+                    ${esc(p.first_name || '')}
+                  </div>
+                  <div style="font-size:.72rem; color:#90a4ae; margin-top:.1rem;">
+                    ${esc(fmtDate(p.received_at))}
+                    ${p.consumer_id ? '· assigned to #' + p.consumer_id : ''}
+                  </div>
+                </div>
+                <span class="${statusClass}">${esc(p.status)}</span>
+              </div>
+              ${manual}
+            </div>`;
+        }).join('');
+      } catch {
+        el.textContent = 'Failed to load payments.';
+      }
+    }
+
+    async function assignPayment(logId) {
+      const cidInput = document.getElementById('assign-' + logId);
+      const cid = parseInt(cidInput.value, 10);
+      if (!cid || cid <= 0) { alert('Enter a valid Consumer ID.'); return; }
+      try {
+        const r = await fetch('/api/admin/mpesa/assign', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ log_id: logId, consumer_id: cid }),
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) { alert('✅ Assigned.'); loadPayments(); }
+        else { alert('❌ ' + (d.error || 'Failed.')); }
+      } catch { alert('❌ Network error.'); }
+    }
+    window.assignPayment = assignPayment;
+
+    // ── Register URLs ──
+    document.getElementById('registerBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('registerBtn');
+      const msg = document.getElementById('registerMsg');
+      const res = document.getElementById('registerResult');
+      btn.disabled = true; btn.textContent = 'Registering…';
+      hide(msg); res.classList.add('hidden');
+      try {
+        const r = await fetch('/api/admin/mpesa/register', {
+          method: 'POST', credentials: 'same-origin',
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) {
+          show(msg, 'success', '✅ URLs registered with Safaricom.');
+          res.innerHTML =
+            `Confirmation: <strong>${esc(d.confirmation_url)}</strong><br>` +
+            `Validation: <strong>${esc(d.validation_url)}</strong>`;
+          res.classList.remove('hidden');
+        } else {
+          show(msg, 'error', '❌ ' + (d.error || 'Registration failed.'));
+        }
+      } catch { show(msg, 'error', '❌ Network error.'); }
+      finally { btn.disabled = false; btn.textContent = 'Register URLs'; }
+    });
+
+    // ── Simulate ──
+    document.getElementById('simulateForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('simulateBtn');
+      const msg = document.getElementById('simulateMsg');
+      btn.disabled = true; btn.textContent = 'Simulating…';
+      hide(msg);
+      try {
+        const r = await fetch('/api/admin/mpesa/simulate', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            amount: parseInt(document.getElementById('simAmount').value, 10),
+            msisdn: document.getElementById('simMsisdn').value.trim(),
+            bill_ref_number: document.getElementById('simBillRef').value.trim(),
+          }),
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) {
+          show(msg, 'success', '✅ Safaricom accepted the simulation. Callback will arrive within ~10s.');
+          setTimeout(loadPayments, 3000);
+          setTimeout(loadPayments, 8000);
+        } else {
+          show(msg, 'error', '❌ ' + (d.error || 'Simulation failed.'));
+        }
+      } catch { show(msg, 'error', '❌ Network error.'); }
+      finally { btn.disabled = false; btn.textContent = 'Simulate Payment'; }
+    });
+
+    document.getElementById('refreshBtn').addEventListener('click', loadPayments);
+
+    loadConfig();
+    loadPayments();
+  </script>
+</body>
+</html>
