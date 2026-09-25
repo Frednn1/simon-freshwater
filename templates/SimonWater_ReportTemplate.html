@@ -10,7 +10,7 @@
     font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
     color: #1c2b36;
     background: #fff;
-    font-size: 8pt;
+    font-size: 9.5pt;
     line-height: 1.3;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
@@ -27,14 +27,14 @@
     gap: 12px;
   }
   .r-brand { display: flex; align-items: center; gap: 10px; }
-  .r-drop { width: 32px; height: 32px; background: rgba(255,255,255,.15);
+  .r-drop { width: 34px; height: 34px; background: rgba(255,255,255,.15);
             border-radius: 50%; display: flex; align-items: center;
-            justify-content: center; font-size: 14pt; }
-  .r-brand h1 { font-size: 12pt; letter-spacing: .4px; }
-  .r-brand p  { font-size: 7pt; opacity: .88; }
-  .r-tag { text-align: right; font-size: 7pt; letter-spacing: 1.5px;
+            justify-content: center; font-size: 15pt; }
+  .r-brand h1 { font-size: 13pt; letter-spacing: .4px; }
+  .r-brand p  { font-size: 8pt; opacity: .88; }
+  .r-tag { text-align: right; font-size: 8pt; letter-spacing: 1.5px;
            text-transform: uppercase; opacity: .95; }
-  .r-tag strong { display: block; font-size: 11pt; letter-spacing: 1.5px;
+  .r-tag strong { display: block; font-size: 12pt; letter-spacing: 1.5px;
                   margin-top: 2px; }
 
   .r-meta {
@@ -42,12 +42,12 @@
     border-left: 4px solid #1976d2; border-right: 4px solid #1976d2;
     padding: 6px 18px;
     display: flex; justify-content: space-between; gap: 14px;
-    font-size: 8pt;
+    font-size: 9pt;
   }
   .r-meta .cell { flex: 1; }
-  .r-meta .label { font-size: 6.5pt; text-transform: uppercase;
+  .r-meta .label { font-size: 7pt; text-transform: uppercase;
                    letter-spacing: .6px; color: #455a64; font-weight: 700; }
-  .r-meta .value { font-size: 9pt; font-weight: 700; color: #0d47a1;
+  .r-meta .value { font-size: 10.5pt; font-weight: 700; color: #0d47a1;
                    font-family: 'Courier New', monospace; }
 
   .r-body {
@@ -56,7 +56,7 @@
   }
 
   .r-title {
-    font-size: 7pt; font-weight: 700; text-transform: uppercase;
+    font-size: 8pt; font-weight: 700; text-transform: uppercase;
     letter-spacing: 1.2px; color: #0d47a1;
     padding-bottom: 3px; margin-bottom: 6px;
     border-bottom: 2px solid #e3f2fd;
@@ -76,21 +76,21 @@
     border-radius: 5px; padding: 5px 8px;
   }
   .r-summary .label {
-    font-size: 6pt; text-transform: uppercase; letter-spacing: .5px;
+    font-size: 7pt; text-transform: uppercase; letter-spacing: .5px;
     color: #455a64; font-weight: 700;
   }
   .r-summary .value {
-    font-size: 9pt; font-weight: 700; color: #0d47a1;
+    font-size: 10.5pt; font-weight: 700; color: #0d47a1;
     font-family: 'Courier New', monospace;
   }
 
   table.r-data {
-    width: 100%; border-collapse: collapse; font-size: 7pt;
+    width: 100%; border-collapse: collapse; font-size: 8.5pt;
     table-layout: fixed;
   }
   table.r-data thead th {
     background: #0d47a1; color: #fff;
-    font-size: 6pt; text-transform: uppercase; letter-spacing: .4px;
+    font-size: 7pt; text-transform: uppercase; letter-spacing: .4px;
     padding: 4px 5px; text-align: left; font-weight: 700;
   }
   table.r-data thead th.right { text-align: right; }
@@ -118,7 +118,7 @@
   .r-totals {
     background: #0d47a1; color: #fff;
     padding: 6px 10px; display: flex; justify-content: flex-end;
-    gap: 16px; font-size: 8pt; font-weight: 700;
+    gap: 16px; font-size: 9.5pt; font-weight: 700;
     margin-top: -1px; border-radius: 0 0 5px 5px;
     font-family: 'Courier New', monospace;
   }
@@ -128,8 +128,8 @@
     color: #fff; border-radius: 0 0 10px 10px;
     padding: 8px 18px; text-align: center; margin-top: 8px;
   }
-  .r-footer .thanks { font-size: 8.5pt; font-weight: 600; }
-  .r-footer .contact { font-size: 6.5pt; opacity: .75;
+  .r-footer .thanks { font-size: 9.5pt; font-weight: 600; }
+  .r-footer .contact { font-size: 7pt; opacity: .75;
                        border-top: 1px solid rgba(255,255,255,.2);
                        padding-top: 4px; margin-top: 4px;
                        letter-spacing: .4px; }
@@ -144,11 +144,11 @@
 
   .ph { color: #1976d2; font-family: 'Courier New', monospace;
         font-weight: 700; background: #e3f2fd; padding: 0 2px;
-        border-radius: 2px; font-size: 6.5pt; }
+        border-radius: 2px; font-size: 8pt; }
 
   /* In the data table, placeholder chips shrink and don't wrap */
   table.r-data .ph { padding: 0; background: transparent;
-                     font-size: 6pt; font-weight: 600; color: #0d47a1; }
+                     font-size: 7.5pt; font-weight: 600; color: #0d47a1; }
 </style>
 </head>
 <body>
@@ -249,6 +249,11 @@
           <tr><td>13</td><td class="name">{{r13_name}}</td><td>{{r13_meter}}</td><td class="right">{{r13_cnt}}</td><td class="right">{{r13_cm3}}</td><td class="right">{{r13_amt}}</td><td class="right">{{r13_paid}}</td><td class="right">{{r13_bal}}</td></tr>
           <tr><td>14</td><td class="name">{{r14_name}}</td><td>{{r14_meter}}</td><td class="right">{{r14_cnt}}</td><td class="right">{{r14_cm3}}</td><td class="right">{{r14_amt}}</td><td class="right">{{r14_paid}}</td><td class="right">{{r14_bal}}</td></tr>
           <tr><td>15</td><td class="name">{{r15_name}}</td><td>{{r15_meter}}</td><td class="right">{{r15_cnt}}</td><td class="right">{{r15_cm3}}</td><td class="right">{{r15_amt}}</td><td class="right">{{r15_paid}}</td><td class="right">{{r15_bal}}</td></tr>
+          <tr><td>16</td><td class="name">{{r16_name}}</td><td>{{r16_meter}}</td><td class="right">{{r16_cnt}}</td><td class="right">{{r16_cm3}}</td><td class="right">{{r16_amt}}</td><td class="right">{{r16_paid}}</td><td class="right">{{r16_bal}}</td></tr>
+          <tr><td>17</td><td class="name">{{r17_name}}</td><td>{{r17_meter}}</td><td class="right">{{r17_cnt}}</td><td class="right">{{r17_cm3}}</td><td class="right">{{r17_amt}}</td><td class="right">{{r17_paid}}</td><td class="right">{{r17_bal}}</td></tr>
+          <tr><td>18</td><td class="name">{{r18_name}}</td><td>{{r18_meter}}</td><td class="right">{{r18_cnt}}</td><td class="right">{{r18_cm3}}</td><td class="right">{{r18_amt}}</td><td class="right">{{r18_paid}}</td><td class="right">{{r18_bal}}</td></tr>
+          <tr><td>19</td><td class="name">{{r19_name}}</td><td>{{r19_meter}}</td><td class="right">{{r19_cnt}}</td><td class="right">{{r19_cm3}}</td><td class="right">{{r19_amt}}</td><td class="right">{{r19_paid}}</td><td class="right">{{r19_bal}}</td></tr>
+          <tr><td>20</td><td class="name">{{r20_name}}</td><td>{{r20_meter}}</td><td class="right">{{r20_cnt}}</td><td class="right">{{r20_cm3}}</td><td class="right">{{r20_amt}}</td><td class="right">{{r20_paid}}</td><td class="right">{{r20_bal}}</td></tr>
         </tbody>
       </table>
       <div class="r-totals">
