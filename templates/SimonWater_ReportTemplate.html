@@ -18,7 +18,6 @@
   }
   .report { max-width: 282mm; margin: 0 auto; }
 
-  /* Header */
   .r-header {
     background: linear-gradient(135deg, #0a2540 0%, #0d47a1 55%, #1976d2 100%);
     color: #fff;
@@ -38,7 +37,6 @@
   .r-tag strong { display: block; font-size: 11pt; letter-spacing: 1.5px;
                   margin-top: 2px; }
 
-  /* Meta band */
   .r-meta {
     background: #e3f2fd;
     border-left: 4px solid #1976d2; border-right: 4px solid #1976d2;
@@ -52,7 +50,6 @@
   .r-meta .value { font-size: 9pt; font-weight: 700; color: #0d47a1;
                    font-family: 'Courier New', monospace; }
 
-  /* Body */
   .r-body {
     border: 2px solid #90caf9; border-top: none;
     padding: 8px 18px 12px;
@@ -70,7 +67,6 @@
     background: #1976d2; border-radius: 2px;
   }
 
-  /* Summary strip */
   .r-summary {
     display: grid; grid-template-columns: repeat(5, 1fr);
     gap: 5px; margin-bottom: 8px;
@@ -88,7 +84,6 @@
     font-family: 'Courier New', monospace;
   }
 
-  /* Data table */
   table.r-data {
     width: 100%; border-collapse: collapse; font-size: 7pt;
     table-layout: fixed;
@@ -104,35 +99,22 @@
     border-bottom: 1px solid #e3f2fd;
     font-family: 'Courier New', monospace;
     color: #1c2b36;
-    overflow: hidden; text-overflow: ellipsis;
     white-space: nowrap;
   }
   table.r-data tbody tr:nth-child(even) td { background: #f8fbff; }
   table.r-data tbody td.right { text-align: right; }
   table.r-data tbody td.name { font-family: 'Segoe UI', Arial, sans-serif; }
 
-  /* Column widths (8 columns) */
+  /* 8-column widths */
   table.r-data th:nth-child(1), td:nth-child(1) { width: 4%; }
   table.r-data th:nth-child(2), td:nth-child(2) { width: 20%; }
-  table.r-data th:nth-child(3), td:nth-child(3) { width: 12%; }
+  table.r-data th:nth-child(3), td:nth-child(3) { width: 13%; }
   table.r-data th:nth-child(4), td:nth-child(4) { width: 8%; }
-  table.r-data th:nth-child(5), td:nth-child(5) { width: 10%; }
-  table.r-data th:nth-child(6), td:nth-child(6) { width: 12%; }
-  table.r-data th:nth-child(7), td:nth-child(7) { width: 12%; }
-  table.r-data th:nth-child(8), td:nth-child(8) { width: 22%; }
+  table.r-data th:nth-child(5), td:nth-child(5) { width: 11%; }
+  table.r-data th:nth-child(6), td:nth-child(6) { width: 13%; }
+  table.r-data th:nth-child(7), td:nth-child(7) { width: 13%; }
+  table.r-data th:nth-child(8), td:nth-child(8) { width: 18%; }
 
-  .r-status {
-    display: inline-block; padding: 1px 5px; border-radius: 3px;
-    font-size: 6pt; font-weight: 700; letter-spacing: .3px;
-    font-family: 'Segoe UI', Arial, sans-serif;
-    background: #eef1f5; color: #455a64;
-  }
-  .r-status.due       { background: #fff8e1; color: #f57c00; }
-  .r-status.overdue   { background: #fdecea; color: #c62828; }
-  .r-status.cleared   { background: #e8f5e9; color: #2e7d32; }
-  .r-status.prepaid   { background: #e0f7fa; color: #00acc1; }
-
-  /* Totals row */
   .r-totals {
     background: #0d47a1; color: #fff;
     padding: 6px 10px; display: flex; justify-content: flex-end;
@@ -141,7 +123,6 @@
     font-family: 'Courier New', monospace;
   }
 
-  /* Footer */
   .r-footer {
     background: linear-gradient(135deg, #0a2540, #0d47a1);
     color: #fff; border-radius: 0 0 10px 10px;
@@ -164,6 +145,10 @@
   .ph { color: #1976d2; font-family: 'Courier New', monospace;
         font-weight: 700; background: #e3f2fd; padding: 0 2px;
         border-radius: 2px; font-size: 6.5pt; }
+
+  /* In the data table, placeholder chips shrink and don't wrap */
+  table.r-data .ph { padding: 0; background: transparent;
+                     font-size: 6pt; font-weight: 600; color: #0d47a1; }
 </style>
 </head>
 <body>
@@ -239,31 +224,31 @@
         <thead>
           <tr>
             <th>#</th>
-            <th>Customer Name</th>
+            <th>Customer</th>
             <th>Meter No.</th>
-            <th class="right">Readings</th>
-            <th class="right">Consump. M³</th>
-            <th class="right">Billed (KES)</th>
-            <th class="right">Paid (KES)</th>
+            <th class="right">Rds</th>
+            <th class="right">M³</th>
+            <th class="right">Billed</th>
+            <th class="right">Paid</th>
             <th class="right">Balance / Status</th>
           </tr>
         </thead>
         <tbody>
-          <tr><td>1</td><td class="name">{{r1_name}}</td><td>{{r1_meter}}</td><td class="right">{{r1_readings}}</td><td class="right">{{r1_consumption}}</td><td class="right">{{r1_billed}}</td><td class="right">{{r1_paid}}</td><td class="right">{{r1_bal}}</td></tr>
-          <tr><td>2</td><td class="name">{{r2_name}}</td><td>{{r2_meter}}</td><td class="right">{{r2_readings}}</td><td class="right">{{r2_consumption}}</td><td class="right">{{r2_billed}}</td><td class="right">{{r2_paid}}</td><td class="right">{{r2_bal}}</td></tr>
-          <tr><td>3</td><td class="name">{{r3_name}}</td><td>{{r3_meter}}</td><td class="right">{{r3_readings}}</td><td class="right">{{r3_consumption}}</td><td class="right">{{r3_billed}}</td><td class="right">{{r3_paid}}</td><td class="right">{{r3_bal}}</td></tr>
-          <tr><td>4</td><td class="name">{{r4_name}}</td><td>{{r4_meter}}</td><td class="right">{{r4_readings}}</td><td class="right">{{r4_consumption}}</td><td class="right">{{r4_billed}}</td><td class="right">{{r4_paid}}</td><td class="right">{{r4_bal}}</td></tr>
-          <tr><td>5</td><td class="name">{{r5_name}}</td><td>{{r5_meter}}</td><td class="right">{{r5_readings}}</td><td class="right">{{r5_consumption}}</td><td class="right">{{r5_billed}}</td><td class="right">{{r5_paid}}</td><td class="right">{{r5_bal}}</td></tr>
-          <tr><td>6</td><td class="name">{{r6_name}}</td><td>{{r6_meter}}</td><td class="right">{{r6_readings}}</td><td class="right">{{r6_consumption}}</td><td class="right">{{r6_billed}}</td><td class="right">{{r6_paid}}</td><td class="right">{{r6_bal}}</td></tr>
-          <tr><td>7</td><td class="name">{{r7_name}}</td><td>{{r7_meter}}</td><td class="right">{{r7_readings}}</td><td class="right">{{r7_consumption}}</td><td class="right">{{r7_billed}}</td><td class="right">{{r7_paid}}</td><td class="right">{{r7_bal}}</td></tr>
-          <tr><td>8</td><td class="name">{{r8_name}}</td><td>{{r8_meter}}</td><td class="right">{{r8_readings}}</td><td class="right">{{r8_consumption}}</td><td class="right">{{r8_billed}}</td><td class="right">{{r8_paid}}</td><td class="right">{{r8_bal}}</td></tr>
-          <tr><td>9</td><td class="name">{{r9_name}}</td><td>{{r9_meter}}</td><td class="right">{{r9_readings}}</td><td class="right">{{r9_consumption}}</td><td class="right">{{r9_billed}}</td><td class="right">{{r9_paid}}</td><td class="right">{{r9_bal}}</td></tr>
-          <tr><td>10</td><td class="name">{{r10_name}}</td><td>{{r10_meter}}</td><td class="right">{{r10_readings}}</td><td class="right">{{r10_consumption}}</td><td class="right">{{r10_billed}}</td><td class="right">{{r10_paid}}</td><td class="right">{{r10_bal}}</td></tr>
-          <tr><td>11</td><td class="name">{{r11_name}}</td><td>{{r11_meter}}</td><td class="right">{{r11_readings}}</td><td class="right">{{r11_consumption}}</td><td class="right">{{r11_billed}}</td><td class="right">{{r11_paid}}</td><td class="right">{{r11_bal}}</td></tr>
-          <tr><td>12</td><td class="name">{{r12_name}}</td><td>{{r12_meter}}</td><td class="right">{{r12_readings}}</td><td class="right">{{r12_consumption}}</td><td class="right">{{r12_billed}}</td><td class="right">{{r12_paid}}</td><td class="right">{{r12_bal}}</td></tr>
-          <tr><td>13</td><td class="name">{{r13_name}}</td><td>{{r13_meter}}</td><td class="right">{{r13_readings}}</td><td class="right">{{r13_consumption}}</td><td class="right">{{r13_billed}}</td><td class="right">{{r13_paid}}</td><td class="right">{{r13_bal}}</td></tr>
-          <tr><td>14</td><td class="name">{{r14_name}}</td><td>{{r14_meter}}</td><td class="right">{{r14_readings}}</td><td class="right">{{r14_consumption}}</td><td class="right">{{r14_billed}}</td><td class="right">{{r14_paid}}</td><td class="right">{{r14_bal}}</td></tr>
-          <tr><td>15</td><td class="name">{{r15_name}}</td><td>{{r15_meter}}</td><td class="right">{{r15_readings}}</td><td class="right">{{r15_consumption}}</td><td class="right">{{r15_billed}}</td><td class="right">{{r15_paid}}</td><td class="right">{{r15_bal}}</td></tr>
+          <tr><td>1</td><td class="name">{{r1_name}}</td><td>{{r1_meter}}</td><td class="right">{{r1_cnt}}</td><td class="right">{{r1_cm3}}</td><td class="right">{{r1_amt}}</td><td class="right">{{r1_paid}}</td><td class="right">{{r1_bal}}</td></tr>
+          <tr><td>2</td><td class="name">{{r2_name}}</td><td>{{r2_meter}}</td><td class="right">{{r2_cnt}}</td><td class="right">{{r2_cm3}}</td><td class="right">{{r2_amt}}</td><td class="right">{{r2_paid}}</td><td class="right">{{r2_bal}}</td></tr>
+          <tr><td>3</td><td class="name">{{r3_name}}</td><td>{{r3_meter}}</td><td class="right">{{r3_cnt}}</td><td class="right">{{r3_cm3}}</td><td class="right">{{r3_amt}}</td><td class="right">{{r3_paid}}</td><td class="right">{{r3_bal}}</td></tr>
+          <tr><td>4</td><td class="name">{{r4_name}}</td><td>{{r4_meter}}</td><td class="right">{{r4_cnt}}</td><td class="right">{{r4_cm3}}</td><td class="right">{{r4_amt}}</td><td class="right">{{r4_paid}}</td><td class="right">{{r4_bal}}</td></tr>
+          <tr><td>5</td><td class="name">{{r5_name}}</td><td>{{r5_meter}}</td><td class="right">{{r5_cnt}}</td><td class="right">{{r5_cm3}}</td><td class="right">{{r5_amt}}</td><td class="right">{{r5_paid}}</td><td class="right">{{r5_bal}}</td></tr>
+          <tr><td>6</td><td class="name">{{r6_name}}</td><td>{{r6_meter}}</td><td class="right">{{r6_cnt}}</td><td class="right">{{r6_cm3}}</td><td class="right">{{r6_amt}}</td><td class="right">{{r6_paid}}</td><td class="right">{{r6_bal}}</td></tr>
+          <tr><td>7</td><td class="name">{{r7_name}}</td><td>{{r7_meter}}</td><td class="right">{{r7_cnt}}</td><td class="right">{{r7_cm3}}</td><td class="right">{{r7_amt}}</td><td class="right">{{r7_paid}}</td><td class="right">{{r7_bal}}</td></tr>
+          <tr><td>8</td><td class="name">{{r8_name}}</td><td>{{r8_meter}}</td><td class="right">{{r8_cnt}}</td><td class="right">{{r8_cm3}}</td><td class="right">{{r8_amt}}</td><td class="right">{{r8_paid}}</td><td class="right">{{r8_bal}}</td></tr>
+          <tr><td>9</td><td class="name">{{r9_name}}</td><td>{{r9_meter}}</td><td class="right">{{r9_cnt}}</td><td class="right">{{r9_cm3}}</td><td class="right">{{r9_amt}}</td><td class="right">{{r9_paid}}</td><td class="right">{{r9_bal}}</td></tr>
+          <tr><td>10</td><td class="name">{{r10_name}}</td><td>{{r10_meter}}</td><td class="right">{{r10_cnt}}</td><td class="right">{{r10_cm3}}</td><td class="right">{{r10_amt}}</td><td class="right">{{r10_paid}}</td><td class="right">{{r10_bal}}</td></tr>
+          <tr><td>11</td><td class="name">{{r11_name}}</td><td>{{r11_meter}}</td><td class="right">{{r11_cnt}}</td><td class="right">{{r11_cm3}}</td><td class="right">{{r11_amt}}</td><td class="right">{{r11_paid}}</td><td class="right">{{r11_bal}}</td></tr>
+          <tr><td>12</td><td class="name">{{r12_name}}</td><td>{{r12_meter}}</td><td class="right">{{r12_cnt}}</td><td class="right">{{r12_cm3}}</td><td class="right">{{r12_amt}}</td><td class="right">{{r12_paid}}</td><td class="right">{{r12_bal}}</td></tr>
+          <tr><td>13</td><td class="name">{{r13_name}}</td><td>{{r13_meter}}</td><td class="right">{{r13_cnt}}</td><td class="right">{{r13_cm3}}</td><td class="right">{{r13_amt}}</td><td class="right">{{r13_paid}}</td><td class="right">{{r13_bal}}</td></tr>
+          <tr><td>14</td><td class="name">{{r14_name}}</td><td>{{r14_meter}}</td><td class="right">{{r14_cnt}}</td><td class="right">{{r14_cm3}}</td><td class="right">{{r14_amt}}</td><td class="right">{{r14_paid}}</td><td class="right">{{r14_bal}}</td></tr>
+          <tr><td>15</td><td class="name">{{r15_name}}</td><td>{{r15_meter}}</td><td class="right">{{r15_cnt}}</td><td class="right">{{r15_cm3}}</td><td class="right">{{r15_amt}}</td><td class="right">{{r15_paid}}</td><td class="right">{{r15_bal}}</td></tr>
         </tbody>
       </table>
       <div class="r-totals">
