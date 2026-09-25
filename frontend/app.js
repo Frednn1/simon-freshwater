@@ -117,6 +117,10 @@ function renderAuthTab() {
   if (mpesaTab) {
     mpesaTab.classList.toggle('hidden', !AUTH_STATE.authenticated);
   }
+  const reportsTab = document.getElementById('reportsTab');
+  if (reportsTab) {
+    reportsTab.classList.toggle('hidden', !AUTH_STATE.authenticated);
+  }
 
   if (AUTH_STATE.authenticated) {
     btn.classList.remove('tab-login');

@@ -1067,6 +1067,29 @@ body {
 .tab-mpesa-icon:hover { background: rgba(102,187,106,.30); }
 .tab-mpesa-icon .tab-icon { font-size: 1.05rem; margin: 0; }
 
+/* Reports icon tab — matches M-Pesa icon styling, different colour */
+.tab-reports-icon {
+  padding: .5rem;
+  border-radius: 50%;
+  border-color: #ffa726;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  min-height: 38px;
+}
+.tab-reports-icon:hover { background: rgba(255,167,38,.30); }
+.tab-reports-icon .tab-icon { font-size: 1.05rem; margin: 0; }
+
+@media (max-width: 600px) {
+  .tab-reports-icon {
+    min-width: 34px;
+    min-height: 34px;
+    padding: .4rem;
+  }
+  .tab-reports-icon .tab-icon { font-size: .95rem; }
+}
+
 @media (max-width: 600px) {
   .tab-mpesa-icon, .tab-settings-icon {
     min-width: 34px;
