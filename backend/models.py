@@ -68,6 +68,30 @@ class NotificationLog(db.Model):
                         nullable=False, index=True)
 
 
+class MpesaLog(db.Model):
+    """Audit trail for every M-Pesa C2B callback received."""
+    __tablename__ = 'mpesa_log'
+    id = db.Column(db.Integer, primary_key=True)
+    trans_id = db.Column(db.String(40), unique=True, nullable=False, index=True)
+    trans_time = db.Column(db.String(20))
+    trans_amount = db.Column(db.Float, nullable=False, default=0.0)
+    business_shortcode = db.Column(db.String(20))
+    bill_ref_number = db.Column(db.String(60), index=True)
+    msisdn = db.Column(db.String(20), index=True)
+    first_name = db.Column(db.String(60))
+    middle_name = db.Column(db.String(60))
+    last_name = db.Column(db.String(60))
+    raw_payload = db.Column(db.Text)
+    status = db.Column(db.String(20), nullable=False, default="received",
+                       index=True)  # received | matched | unmatched | duplicate
+    consumer_id = db.Column(db.Integer, db.ForeignKey('consumers.id'),
+                            nullable=True, index=True)
+    payment_log_id = db.Column(db.Integer, db.ForeignKey('payment_log.id'),
+                               nullable=True)
+    received_at = db.Column(db.DateTime, default=datetime.utcnow,
+                            nullable=False, index=True)
+
+
 class AdminUser(db.Model):
     __tablename__ = 'admin_users'
     id = db.Column(db.Integer, primary_key=True)

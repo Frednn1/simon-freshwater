@@ -15,7 +15,7 @@ from sqlalchemy import text, inspect
 
 from models import (
     db, Consumer, MeterReading, NotificationLog,
-    AdminUser, PaymentLog,
+    AdminUser, PaymentLog, MpesaLog,
 )
 from billing import (
     compute_amount, compute_consumption,
@@ -34,6 +34,9 @@ from admin_auth import (
 from werkzeug.security import check_password_hash, generate_password_hash
 from receipts import generate_receipt_pdf
 from water_bill import generate_water_bill_pdf
+from mpesa import (
+    get_mpesa_config, register_c2b_urls, simulate_c2b_payment,
+)
 from statement import generate_statement_pdf
 
 
@@ -1288,6 +1291,127 @@ def public_receipt_pdf(token):
 
 
 # ═══════════════════════════════════════════════
+#  HELPERS — FIFO payment allocation (shared by admin + M-Pesa)
+# ═══════════════════════════════════════════════
+
+def _apply_fifo_payment(consumer, amount: float, method: str,
+                        reference: str, recorded_by: str):
+    """
+    Apply a payment to a consumer's bills using FIFO (oldest unpaid first).
+    Excess becomes prepayment credit on the newest reading.
+    Creates a PaymentLog and receipt snapshot. Returns the PaymentLog.
+    """
+    readings = (MeterReading.query
+                .filter_by(consumer_id=consumer.id)
+                .order_by(MeterReading.reading_date.asc(),
+                          MeterReading.id.asc())
+                .all())
+    if not readings:
+        raise ValueError("Consumer has no readings on file yet.")
+
+    previous_balance = round(sum(max(r.balance, 0.0) for r in readings), 2)
+
+    remaining = amount
+    allocations = []
+    for r in readings:
+        owed = round((r.amount_kes or 0.0) - (r.amount_paid or 0.0), 2)
+        if owed <= 0:
+            continue
+        apply = round(min(remaining, owed), 2)
+        if apply <= 0:
+            break
+        r.amount_paid = round((r.amount_paid or 0.0) + apply, 2)
+        allocations.append({
+            "reading_id": r.id,
+            "reading_date": _fmt_date(r.reading_date),
+            "reading_m3": f"{r.reading_m3:.2f}",
+            "amount_kes": _fmt_money(r.amount_kes),
+            "applied": _fmt_money(apply),
+            "new_balance": _fmt_money(r.amount_kes - r.amount_paid),
+            "note": "",
+        })
+        remaining = round(remaining - apply, 2)
+        if remaining <= 0:
+            break
+
+    if remaining > 0:
+        newest = readings[-1]
+        newest.amount_paid = round((newest.amount_paid or 0.0) + remaining, 2)
+        allocations.append({
+            "reading_id": newest.id,
+            "reading_date": _fmt_date(newest.reading_date),
+            "reading_m3": f"{newest.reading_m3:.2f}",
+            "amount_kes": _fmt_money(newest.amount_kes),
+            "applied": _fmt_money(remaining),
+            "new_balance": _fmt_money(newest.amount_kes - newest.amount_paid),
+            "note": "(Prepayment credit)",
+        })
+        remaining = 0
+
+    remaining_balance = round(sum(max(r.balance, 0.0) for r in readings), 2)
+    prepaid_credit = round(sum(max(-r.balance, 0.0) for r in readings), 2)
+    info = get_consumer_status(list(reversed(readings)))
+    newest = readings[-1]
+
+    log = PaymentLog(
+        consumer_id=consumer.id,
+        amount_kes=amount,
+        method=method,
+        reference=reference or None,
+        recorded_by=recorded_by[:60],
+    )
+    db.session.add(log)
+    db.session.flush()
+
+    receipt_no = f"{log.id:06d}"
+    created = log.created_at or datetime.utcnow()
+
+    snapshot = {
+        "receipt_no": receipt_no,
+        "receipt_date": created.strftime("%d %b %Y"),
+        "receipt_time": created.strftime("%H:%M"),
+        "cust_name": consumer.cust_name,
+        "acc_name": consumer.acc_name,
+        "meter_acc_no": consumer.meter_acc_no,
+        "contact": consumer.contact or "—",
+        "email": consumer.email or "—",
+        "address": consumer.address or "—",
+        "amount_kes": _fmt_money(amount),
+        "method": method.capitalize(),
+        "reference": reference or "—",
+        "recorded_by": recorded_by[:60],
+        "previous_balance": _fmt_money(previous_balance),
+        "remaining_balance": _fmt_money(remaining_balance),
+        "prepaid_credit": _fmt_money(prepaid_credit),
+        "status_label": info["label"],
+        "last_reading_date": _fmt_date(newest.reading_date),
+        "last_reading_m3": f"{newest.reading_m3:.2f}",
+        "allocations": allocations,
+    }
+    log.receipt_json = json.dumps(snapshot)
+
+    # Statement snapshot (last 5 readings, newest first)
+    touched_ids = {a["reading_id"] for a in allocations}
+    applied_by_id = {a["reading_id"]: a["applied"] for a in allocations}
+    statement = []
+    for r in reversed(readings[-5:]):
+        statement.append({
+            "reading_id": r.id,
+            "reading_date": _fmt_date(r.reading_date),
+            "reading_m3": f"{r.reading_m3:.2f}",
+            "amount_kes": _fmt_money(r.amount_kes),
+            "paid": _fmt_money(r.amount_paid),
+            "applied": applied_by_id.get(r.id, "0.00"),
+            "new_balance": _fmt_money(r.amount_kes - r.amount_paid),
+            "touched": r.id in touched_ids,
+        })
+    snapshot["statement"] = statement
+    log.receipt_json = json.dumps(snapshot)
+
+    return log
+
+
+# ═══════════════════════════════════════════════
 #  ADMIN — PAYMENTS
 # ═══════════════════════════════════════════════
 
@@ -1626,6 +1750,244 @@ def admin_recompute_amounts():
     db.session.commit()
     return jsonify({"ok": True, "readings_scanned": scanned,
                     "readings_updated": updated}), 200
+
+
+# ═══════════════════════════════════════════════
+#  M-PESA C2B — PUBLIC CALLBACKS
+# ═══════════════════════════════════════════════
+
+def _normalize_msisdn(msisdn: str) -> list:
+    """Return possible local formats for a Kenyan MSISDN."""
+    digits = "".join(c for c in (msisdn or "") if c.isdigit())
+    if not digits:
+        return []
+    variants = {digits}
+    if digits.startswith("254") and len(digits) == 12:
+        local = "0" + digits[3:]
+        variants.add(local)
+        variants.add("+" + digits)
+    elif digits.startswith("0") and len(digits) == 10:
+        variants.add("254" + digits[1:])
+        variants.add("+254" + digits[1:])
+    return list(variants)
+
+
+@app.route("/api/mpesa/c2b/validation", methods=["POST"])
+def mpesa_c2b_validation():
+    """
+    Safaricom calls this BEFORE processing a payment.
+    We always accept (ResponseCode=0) — bill matching happens post-payment.
+    """
+    return jsonify({"ResultCode": 0, "ResultDesc": "Accepted"}), 200
+
+
+@app.route("/api/mpesa/c2b/confirmation", methods=["POST"])
+def mpesa_c2b_confirmation():
+    """
+    Safaricom calls this AFTER a payment is processed.
+    Public endpoint (Safaricom cannot authenticate). Idempotent on TransID.
+    """
+    data = request.get_json(silent=True) or {}
+    trans_id = (data.get("TransID") or "").strip()
+    if not trans_id:
+        return jsonify({"ResultCode": 1, "ResultDesc": "Missing TransID"}), 400
+
+    # Idempotency: if we've seen this TransID, silently accept.
+    if MpesaLog.query.filter_by(trans_id=trans_id).first():
+        return jsonify({"ResultCode": 0, "ResultDesc": "Already processed"}), 200
+
+    try:
+        amount = float(data.get("TransAmount") or 0)
+    except (ValueError, TypeError):
+        amount = 0.0
+
+    bill_ref = (data.get("BillRefNumber") or "").strip()
+    msisdn = (data.get("MSISDN") or "").strip()
+
+    log = MpesaLog(
+        trans_id=trans_id,
+        trans_time=str(data.get("TransTime") or ""),
+        trans_amount=amount,
+        business_shortcode=str(data.get("BusinessShortCode") or ""),
+        bill_ref_number=bill_ref,
+        msisdn=msisdn,
+        first_name=data.get("FirstName"),
+        middle_name=data.get("MiddleName"),
+        last_name=data.get("LastName"),
+        raw_payload=json.dumps(data),
+        status="received",
+    )
+    db.session.add(log)
+    db.session.flush()
+
+    # ── Matching: bill_ref → meter_acc_no, then msisdn → contact ──
+    consumer = None
+    if bill_ref:
+        consumer = Consumer.query.filter_by(meter_acc_no=bill_ref).first()
+    if not consumer and msisdn:
+        variants = _normalize_msisdn(msisdn)
+        if variants:
+            consumer = Consumer.query.filter(
+                Consumer.contact.in_(variants)
+            ).first()
+
+    if not consumer:
+        log.status = "unmatched"
+        db.session.commit()
+        return jsonify({"ResultCode": 0, "ResultDesc": "Accepted"}), 200
+
+    if not consumer.is_active:
+        log.status = "unmatched"
+        log.consumer_id = consumer.id
+        db.session.commit()
+        return jsonify({"ResultCode": 0, "ResultDesc": "Accepted"}), 200
+
+    try:
+        payment = _apply_fifo_payment(
+            consumer, amount, method="mpesa",
+            reference=trans_id, recorded_by="M-Pesa C2B",
+        )
+        log.status = "matched"
+        log.consumer_id = consumer.id
+        log.payment_log_id = payment.id
+        db.session.commit()
+    except Exception as e:
+        app.logger.exception("[M-Pesa] FIFO failed")
+        log.status = "unmatched"
+        log.consumer_id = consumer.id
+        db.session.commit()
+        return jsonify({"ResultCode": 0, "ResultDesc": "Accepted"}), 200
+
+    # SMS confirmation (best-effort)
+    try:
+        msg = (f"Payment received: KES {amount:,.2f} for {consumer.meter_acc_no}. "
+               f"Ref {trans_id}. Thank you.")
+        send_sms(consumer.contact, msg)
+    except Exception as e:
+        app.logger.warning(f"[M-Pesa SMS] {e}")
+
+    return jsonify({"ResultCode": 0, "ResultDesc": "Accepted"}), 200
+
+
+# ═══════════════════════════════════════════════
+#  M-PESA C2B — ADMIN (register URLs, simulate, list)
+# ═══════════════════════════════════════════════
+
+@app.route("/api/admin/mpesa/config", methods=["GET"])
+def admin_mpesa_config():
+    u = _require_admin()
+    if u: return u
+    return jsonify(get_mpesa_config())
+
+
+@app.route("/api/admin/mpesa/register", methods=["POST"])
+def admin_mpesa_register():
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("mpesa_register", 5, 60):
+        return _too_many(60)
+
+    base = request.host_url.rstrip("/")
+    conf = f"{base}/api/mpesa/c2b/confirmation"
+    val  = f"{base}/api/mpesa/c2b/validation"
+
+    result = register_c2b_urls(conf, val)
+    if not result.get("ok"):
+        return jsonify({"ok": False, "error": result.get("error")}), 502
+    return jsonify({
+        "ok": True,
+        "confirmation_url": conf,
+        "validation_url": val,
+        "response": result.get("response"),
+    })
+
+
+@app.route("/api/admin/mpesa/simulate", methods=["POST"])
+def admin_mpesa_simulate():
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("mpesa_simulate", 10, 60):
+        return _too_many(60)
+
+    data = request.get_json(silent=True) or {}
+    try:
+        amount = int(data.get("amount", 10))
+    except (ValueError, TypeError):
+        return jsonify({"error": "amount must be an integer"}), 400
+
+    msisdn = str(data.get("msisdn") or "254708374149")
+    bill_ref = str(data.get("bill_ref_number") or "")
+
+    result = simulate_c2b_payment(amount, msisdn, bill_ref)
+    if not result.get("ok"):
+        return jsonify({"ok": False, "error": result.get("error")}), 502
+    return jsonify({"ok": True, "response": result.get("response")})
+
+
+@app.route("/api/admin/mpesa/payments", methods=["GET"])
+def admin_mpesa_payments():
+    u = _require_admin()
+    if u: return u
+    logs = (MpesaLog.query
+            .order_by(MpesaLog.received_at.desc())
+            .limit(50)
+            .all())
+    return jsonify({
+        "payments": [{
+            "id": l.id,
+            "trans_id": l.trans_id,
+            "trans_time": l.trans_time,
+            "amount": l.trans_amount,
+            "bill_ref": l.bill_ref_number,
+            "msisdn": l.msisdn,
+            "first_name": l.first_name,
+            "status": l.status,
+            "consumer_id": l.consumer_id,
+            "payment_log_id": l.payment_log_id,
+            "received_at": l.received_at.isoformat() if l.received_at else None,
+        } for l in logs],
+    })
+
+
+@app.route("/api/admin/mpesa/assign", methods=["POST"])
+def admin_mpesa_assign():
+    """Manually assign an unmatched M-Pesa payment to a consumer."""
+    u = _require_admin()
+    if u: return u
+
+    data = request.get_json(silent=True) or {}
+    log_id = data.get("log_id")
+    consumer_id = data.get("consumer_id")
+    if not log_id or not consumer_id:
+        return jsonify({"error": "log_id and consumer_id required"}), 400
+
+    log = MpesaLog.query.get(log_id)
+    if not log:
+        return jsonify({"error": "M-Pesa log not found"}), 404
+    if log.status == "matched":
+        return jsonify({"error": "Already assigned"}), 409
+
+    consumer = Consumer.query.get(consumer_id)
+    if not consumer:
+        return jsonify({"error": "Consumer not found"}), 404
+
+    admin = _current_admin()
+    recorded_by = (admin.username if admin else "admin")[:60]
+
+    try:
+        payment = _apply_fifo_payment(
+            consumer, log.trans_amount, method="mpesa",
+            reference=log.trans_id,
+            recorded_by=f"{recorded_by} (manual)",
+        )
+        log.status = "matched"
+        log.consumer_id = consumer.id
+        log.payment_log_id = payment.id
+        db.session.commit()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({"ok": True, "payment_id": payment.id})
 
 
 # ═══════════════════════════════════════════════
