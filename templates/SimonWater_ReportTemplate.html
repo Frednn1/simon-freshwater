@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Simon Fresh Water — Monthly Billing Report (Template)</title>
+<style>
+  @page { size: A4 landscape; margin: 6mm 8mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    color: #1c2b36;
+    background: #fff;
+    font-size: 8pt;
+    line-height: 1.3;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+  .report { max-width: 282mm; margin: 0 auto; }
+
+  /* Header */
+  .r-header {
+    background: linear-gradient(135deg, #0a2540 0%, #0d47a1 55%, #1976d2 100%);
+    color: #fff;
+    border-radius: 10px 10px 0 0;
+    padding: 10px 18px;
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 12px;
+  }
+  .r-brand { display: flex; align-items: center; gap: 10px; }
+  .r-drop { width: 32px; height: 32px; background: rgba(255,255,255,.15);
+            border-radius: 50%; display: flex; align-items: center;
+            justify-content: center; font-size: 14pt; }
+  .r-brand h1 { font-size: 12pt; letter-spacing: .4px; }
+  .r-brand p  { font-size: 7pt; opacity: .88; }
+  .r-tag { text-align: right; font-size: 7pt; letter-spacing: 1.5px;
+           text-transform: uppercase; opacity: .95; }
+  .r-tag strong { display: block; font-size: 11pt; letter-spacing: 1.5px;
+                  margin-top: 2px; }
+
+  /* Meta band */
+  .r-meta {
+    background: #e3f2fd;
+    border-left: 4px solid #1976d2; border-right: 4px solid #1976d2;
+    padding: 6px 18px;
+    display: flex; justify-content: space-between; gap: 14px;
+    font-size: 8pt;
+  }
+  .r-meta .cell { flex: 1; }
+  .r-meta .label { font-size: 6.5pt; text-transform: uppercase;
+                   letter-spacing: .6px; color: #455a64; font-weight: 700; }
+  .r-meta .value { font-size: 9pt; font-weight: 700; color: #0d47a1;
+                   font-family: 'Courier New', monospace; }
+
+  /* Body */
+  .r-body {
+    border: 2px solid #90caf9; border-top: none;
+    padding: 8px 18px 12px;
+  }
+
+  .r-title {
+    font-size: 7pt; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1.2px; color: #0d47a1;
+    padding-bottom: 3px; margin-bottom: 6px;
+    border-bottom: 2px solid #e3f2fd;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .r-title::before {
+    content: ''; width: 7px; height: 7px;
+    background: #1976d2; border-radius: 2px;
+  }
+
+  /* Summary strip */
+  .r-summary {
+    display: grid; grid-template-columns: repeat(5, 1fr);
+    gap: 5px; margin-bottom: 8px;
+  }
+  .r-summary .cell {
+    background: #f5faff; border: 1px solid #bbdefb;
+    border-radius: 5px; padding: 5px 8px;
+  }
+  .r-summary .label {
+    font-size: 6pt; text-transform: uppercase; letter-spacing: .5px;
+    color: #455a64; font-weight: 700;
+  }
+  .r-summary .value {
+    font-size: 9pt; font-weight: 700; color: #0d47a1;
+    font-family: 'Courier New', monospace;
+  }
+
+  /* Data table */
+  table.r-data {
+    width: 100%; border-collapse: collapse; font-size: 7pt;
+    table-layout: fixed;
+  }
+  table.r-data thead th {
+    background: #0d47a1; color: #fff;
+    font-size: 6pt; text-transform: uppercase; letter-spacing: .4px;
+    padding: 4px 5px; text-align: left; font-weight: 700;
+  }
+  table.r-data thead th.right { text-align: right; }
+  table.r-data tbody td {
+    padding: 3px 5px;
+    border-bottom: 1px solid #e3f2fd;
+    font-family: 'Courier New', monospace;
+    color: #1c2b36;
+    overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  table.r-data tbody tr:nth-child(even) td { background: #f8fbff; }
+  table.r-data tbody td.right { text-align: right; }
+  table.r-data tbody td.name { font-family: 'Segoe UI', Arial, sans-serif; }
+
+  /* Column widths (8 columns) */
+  table.r-data th:nth-child(1), td:nth-child(1) { width: 4%; }
+  table.r-data th:nth-child(2), td:nth-child(2) { width: 20%; }
+  table.r-data th:nth-child(3), td:nth-child(3) { width: 12%; }
+  table.r-data th:nth-child(4), td:nth-child(4) { width: 8%; }
+  table.r-data th:nth-child(5), td:nth-child(5) { width: 10%; }
+  table.r-data th:nth-child(6), td:nth-child(6) { width: 12%; }
+  table.r-data th:nth-child(7), td:nth-child(7) { width: 12%; }
+  table.r-data th:nth-child(8), td:nth-child(8) { width: 22%; }
+
+  .r-status {
+    display: inline-block; padding: 1px 5px; border-radius: 3px;
+    font-size: 6pt; font-weight: 700; letter-spacing: .3px;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #eef1f5; color: #455a64;
+  }
+  .r-status.due       { background: #fff8e1; color: #f57c00; }
+  .r-status.overdue   { background: #fdecea; color: #c62828; }
+  .r-status.cleared   { background: #e8f5e9; color: #2e7d32; }
+  .r-status.prepaid   { background: #e0f7fa; color: #00acc1; }
+
+  /* Totals row */
+  .r-totals {
+    background: #0d47a1; color: #fff;
+    padding: 6px 10px; display: flex; justify-content: flex-end;
+    gap: 16px; font-size: 8pt; font-weight: 700;
+    margin-top: -1px; border-radius: 0 0 5px 5px;
+    font-family: 'Courier New', monospace;
+  }
+
+  /* Footer */
+  .r-footer {
+    background: linear-gradient(135deg, #0a2540, #0d47a1);
+    color: #fff; border-radius: 0 0 10px 10px;
+    padding: 8px 18px; text-align: center; margin-top: 8px;
+  }
+  .r-footer .thanks { font-size: 8.5pt; font-weight: 600; }
+  .r-footer .contact { font-size: 6.5pt; opacity: .75;
+                       border-top: 1px solid rgba(255,255,255,.2);
+                       padding-top: 4px; margin-top: 4px;
+                       letter-spacing: .4px; }
+
+  .print-hint {
+    max-width: 282mm; margin: 10px auto; padding: 9px 14px;
+    background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 6px;
+    font-size: 9pt; color: #1b5e20; text-align: center;
+  }
+  .print-hint strong { color: #2e7d32; }
+  @media print { .print-hint { display: none !important; } }
+
+  .ph { color: #1976d2; font-family: 'Courier New', monospace;
+        font-weight: 700; background: #e3f2fd; padding: 0 2px;
+        border-radius: 2px; font-size: 6.5pt; }
+</style>
+</head>
+<body>
+
+  <div class="print-hint">
+    <strong>Print to PDF:</strong> Chrome ⋮ → Share → Print → Destination <strong>Save as PDF</strong>
+    → <strong>A4 Landscape</strong> → Default margins → Background graphics <strong>ON</strong> → Save
+  </div>
+
+  <div class="report">
+
+    <div class="r-header">
+      <div class="r-brand">
+        <div class="r-drop">💧</div>
+        <div>
+          <h1>SIMON FRESH WATER</h1>
+          <p>Kikuyu, Kenya · Monthly Billing Report</p>
+        </div>
+      </div>
+      <div class="r-tag">
+        Report No.
+        <strong>{{report_no}}</strong>
+      </div>
+    </div>
+
+    <div class="r-meta">
+      <div class="cell">
+        <div class="label">Period</div>
+        <div class="value">{{report_month}} {{report_year}}</div>
+      </div>
+      <div class="cell">
+        <div class="label">Generated</div>
+        <div class="value">{{generated_date}}</div>
+      </div>
+      <div class="cell">
+        <div class="label">Total Consumers</div>
+        <div class="value">{{total_consumers}}</div>
+      </div>
+      <div class="cell">
+        <div class="label">Report No.</div>
+        <div class="value">{{report_no}}</div>
+      </div>
+    </div>
+
+    <div class="r-body">
+
+      <div class="r-title">Summary</div>
+      <div class="r-summary">
+        <div class="cell">
+          <div class="label">Active Consumers</div>
+          <div class="value">{{active_consumers}}</div>
+        </div>
+        <div class="cell">
+          <div class="label">Total Consumption</div>
+          <div class="value">{{total_consumption}} M³</div>
+        </div>
+        <div class="cell">
+          <div class="label">Total Billed</div>
+          <div class="value">KES {{total_billed}}</div>
+        </div>
+        <div class="cell">
+          <div class="label">Total Paid</div>
+          <div class="value">KES {{total_paid}}</div>
+        </div>
+        <div class="cell">
+          <div class="label">Outstanding</div>
+          <div class="value">KES {{total_outstanding}}</div>
+        </div>
+      </div>
+
+      <div class="r-title">Consumer Accounts</div>
+      <table class="r-data">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Customer Name</th>
+            <th>Meter No.</th>
+            <th class="right">Readings</th>
+            <th class="right">Consump. M³</th>
+            <th class="right">Billed (KES)</th>
+            <th class="right">Paid (KES)</th>
+            <th class="right">Balance / Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>1</td><td class="name">{{r1_name}}</td><td>{{r1_meter}}</td><td class="right">{{r1_readings}}</td><td class="right">{{r1_consumption}}</td><td class="right">{{r1_billed}}</td><td class="right">{{r1_paid}}</td><td class="right">{{r1_bal}}</td></tr>
+          <tr><td>2</td><td class="name">{{r2_name}}</td><td>{{r2_meter}}</td><td class="right">{{r2_readings}}</td><td class="right">{{r2_consumption}}</td><td class="right">{{r2_billed}}</td><td class="right">{{r2_paid}}</td><td class="right">{{r2_bal}}</td></tr>
+          <tr><td>3</td><td class="name">{{r3_name}}</td><td>{{r3_meter}}</td><td class="right">{{r3_readings}}</td><td class="right">{{r3_consumption}}</td><td class="right">{{r3_billed}}</td><td class="right">{{r3_paid}}</td><td class="right">{{r3_bal}}</td></tr>
+          <tr><td>4</td><td class="name">{{r4_name}}</td><td>{{r4_meter}}</td><td class="right">{{r4_readings}}</td><td class="right">{{r4_consumption}}</td><td class="right">{{r4_billed}}</td><td class="right">{{r4_paid}}</td><td class="right">{{r4_bal}}</td></tr>
+          <tr><td>5</td><td class="name">{{r5_name}}</td><td>{{r5_meter}}</td><td class="right">{{r5_readings}}</td><td class="right">{{r5_consumption}}</td><td class="right">{{r5_billed}}</td><td class="right">{{r5_paid}}</td><td class="right">{{r5_bal}}</td></tr>
+          <tr><td>6</td><td class="name">{{r6_name}}</td><td>{{r6_meter}}</td><td class="right">{{r6_readings}}</td><td class="right">{{r6_consumption}}</td><td class="right">{{r6_billed}}</td><td class="right">{{r6_paid}}</td><td class="right">{{r6_bal}}</td></tr>
+          <tr><td>7</td><td class="name">{{r7_name}}</td><td>{{r7_meter}}</td><td class="right">{{r7_readings}}</td><td class="right">{{r7_consumption}}</td><td class="right">{{r7_billed}}</td><td class="right">{{r7_paid}}</td><td class="right">{{r7_bal}}</td></tr>
+          <tr><td>8</td><td class="name">{{r8_name}}</td><td>{{r8_meter}}</td><td class="right">{{r8_readings}}</td><td class="right">{{r8_consumption}}</td><td class="right">{{r8_billed}}</td><td class="right">{{r8_paid}}</td><td class="right">{{r8_bal}}</td></tr>
+          <tr><td>9</td><td class="name">{{r9_name}}</td><td>{{r9_meter}}</td><td class="right">{{r9_readings}}</td><td class="right">{{r9_consumption}}</td><td class="right">{{r9_billed}}</td><td class="right">{{r9_paid}}</td><td class="right">{{r9_bal}}</td></tr>
+          <tr><td>10</td><td class="name">{{r10_name}}</td><td>{{r10_meter}}</td><td class="right">{{r10_readings}}</td><td class="right">{{r10_consumption}}</td><td class="right">{{r10_billed}}</td><td class="right">{{r10_paid}}</td><td class="right">{{r10_bal}}</td></tr>
+          <tr><td>11</td><td class="name">{{r11_name}}</td><td>{{r11_meter}}</td><td class="right">{{r11_readings}}</td><td class="right">{{r11_consumption}}</td><td class="right">{{r11_billed}}</td><td class="right">{{r11_paid}}</td><td class="right">{{r11_bal}}</td></tr>
+          <tr><td>12</td><td class="name">{{r12_name}}</td><td>{{r12_meter}}</td><td class="right">{{r12_readings}}</td><td class="right">{{r12_consumption}}</td><td class="right">{{r12_billed}}</td><td class="right">{{r12_paid}}</td><td class="right">{{r12_bal}}</td></tr>
+          <tr><td>13</td><td class="name">{{r13_name}}</td><td>{{r13_meter}}</td><td class="right">{{r13_readings}}</td><td class="right">{{r13_consumption}}</td><td class="right">{{r13_billed}}</td><td class="right">{{r13_paid}}</td><td class="right">{{r13_bal}}</td></tr>
+          <tr><td>14</td><td class="name">{{r14_name}}</td><td>{{r14_meter}}</td><td class="right">{{r14_readings}}</td><td class="right">{{r14_consumption}}</td><td class="right">{{r14_billed}}</td><td class="right">{{r14_paid}}</td><td class="right">{{r14_bal}}</td></tr>
+          <tr><td>15</td><td class="name">{{r15_name}}</td><td>{{r15_meter}}</td><td class="right">{{r15_readings}}</td><td class="right">{{r15_consumption}}</td><td class="right">{{r15_billed}}</td><td class="right">{{r15_paid}}</td><td class="right">{{r15_bal}}</td></tr>
+        </tbody>
+      </table>
+      <div class="r-totals">
+        <span>Totals:</span>
+        <span>Billed KES {{total_billed}}</span>
+        <span>Paid KES {{total_paid}}</span>
+        <span>Balance KES {{total_outstanding}}</span>
+      </div>
+    </div>
+
+    <div class="r-footer">
+      <div class="thanks">Thank you for choosing Simon Fresh Water.</div>
+      <div class="contact">
+        SIMON FRESH WATER · KIKUYU · +254 700 000 000 · info@simonfreshwater.co.ke
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

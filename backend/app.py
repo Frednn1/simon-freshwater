@@ -347,6 +347,21 @@ def admin_settings_page():
 def admin_mpesa_page():
     return send_from_directory(FRONTEND_DIR, "admin_mpesa.html")
 
+@app.route("/template/report")
+def report_template_view():
+    """Serve the report template HTML for manual Chrome -> Save as PDF."""
+    if not _current_admin():
+        return redirect("/admin/login?next=/template/report")
+    return send_from_directory(
+        TEMPLATES_DIR,
+        "SimonWater_ReportTemplate.html",
+        mimetype="text/html",
+    )
+
+@app.route("/admin/reports")
+def admin_reports_page():
+    return send_from_directory(FRONTEND_DIR, "admin_reports.html")
+
 @app.route("/style.css")
 def styles():
     return send_from_directory(FRONTEND_DIR, "style.css")
