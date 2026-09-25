@@ -35,6 +35,7 @@ from admin_auth import (
 from werkzeug.security import check_password_hash, generate_password_hash
 from receipts import generate_receipt_pdf
 from water_bill import generate_water_bill_pdf
+from report import generate_report_pdf
 from mpesa import (
     get_mpesa_config, register_c2b_urls, simulate_c2b_payment,
 )
@@ -347,6 +348,193 @@ def admin_settings_page():
 def admin_mpesa_page():
     return send_from_directory(FRONTEND_DIR, "admin_mpesa.html")
 
+@app.route("/admin/reports")
+def admin_reports_page():
+    return send_from_directory(FRONTEND_DIR, "admin_reports.html")
+
+
+# ═══════════════════════════════════════════════
+#  ADMIN — MONTHLY BILLING REPORT
+# ═══════════════════════════════════════════════
+
+def _parse_ym_from_request():
+    """Extract (year, month) from query string; default = current month."""
+    today = date.today()
+    try:
+        year = int(request.args.get("year", today.year))
+    except (ValueError, TypeError):
+        year = today.year
+    try:
+        month = int(request.args.get("month", today.month))
+    except (ValueError, TypeError):
+        month = today.month
+    if not (1 <= month <= 12):
+        month = today.month
+    if not (2000 <= year <= 2100):
+        year = today.year
+    return year, month
+
+
+def _build_report_snapshot(year: int, month: int) -> dict:
+    """Collect the report data for the given month from D1."""
+    month_names = ["January","February","March","April","May","June",
+                   "July","August","September","October","November","December"]
+
+    consumers = Consumer.query.order_by(Consumer.cust_name.asc()).all()
+
+    total_consumers = len(consumers)
+    active_consumers = sum(1 for c in consumers if c.is_active)
+    total_consumption = 0.0
+    total_billed = 0.0
+    total_paid = 0.0
+    total_outstanding = 0.0
+
+    # per-consumer data
+    rows = []
+    for c in consumers:
+        if not c.is_active:
+            continue
+
+        all_readings = (MeterReading.query
+                        .filter_by(consumer_id=c.id)
+                        .order_by(MeterReading.reading_date.asc(),
+                                  MeterReading.id.asc())
+                        .all())
+
+        initial = float(c.meter_initial_reading_m3 or 0.0)
+        cons_by_id = {}
+        prev_m3 = None
+        for r in all_readings:
+            cons_by_id[r.id] = compute_consumption(r.reading_m3, prev_m3, initial)
+            prev_m3 = r.reading_m3
+
+        # Readings in the given month
+        month_readings = [r for r in all_readings
+                          if r.reading_date.year == year
+                          and r.reading_date.month == month]
+
+        cnt = len(month_readings)
+        cm3 = round(sum(cons_by_id[r.id] for r in month_readings), 2)
+        amt = round(sum(float(r.amount_kes or 0.0) for r in month_readings), 2)
+
+        # Payments in the given month
+        all_payments = PaymentLog.query.filter_by(consumer_id=c.id).all()
+        month_payments = []
+        for p in all_payments:
+            dt = p.created_at
+            if dt and dt.year == year and dt.month == month:
+                month_payments.append(p)
+        paid = round(sum(float(p.amount_kes or 0.0) for p in month_payments), 2)
+
+        # Overall status + outstanding balance (all-time)
+        info = get_consumer_status(list(reversed(all_readings)))
+        outstanding = float(info.get("total_due", 0.0))
+
+        total_consumption += cm3
+        total_billed += amt
+        total_paid += paid
+        total_outstanding += outstanding
+
+        rows.append({
+            "name": c.cust_name,
+            "meter": c.meter_acc_no,
+            "cnt": cnt,
+            "cm3": f"{cm3:.2f}",
+            "amt": _fmt_money(amt),
+            "paid": _fmt_money(paid),
+            "bal": f"{_fmt_money(outstanding)} · {info['label']}",
+        })
+
+    truncated = len(rows) > 20
+    rows = rows[:20]
+
+    snapshot = {
+        "report_no": f"RPT-{year}{month:02d}",
+        "report_month": month_names[month - 1],
+        "report_year": str(year),
+        "generated_date": date.today().strftime("%d %b %Y"),
+        "total_consumers": str(total_consumers),
+        "active_consumers": str(active_consumers),
+        "total_consumption": f"{total_consumption:.2f}",
+        "total_billed": _fmt_money(total_billed),
+        "total_paid": _fmt_money(total_paid),
+        "total_outstanding": _fmt_money(total_outstanding),
+    }
+
+    # Row placeholders r1_*..r20_*
+    for idx in range(1, 21):
+        row = rows[idx - 1] if idx - 1 < len(rows) else None
+        snapshot[f"r{idx}_name"]  = row["name"]  if row else ""
+        snapshot[f"r{idx}_meter"] = row["meter"] if row else ""
+        snapshot[f"r{idx}_cnt"]   = str(row["cnt"]) if row else ""
+        snapshot[f"r{idx}_cm3"]   = row["cm3"]   if row else ""
+        snapshot[f"r{idx}_amt"]   = row["amt"]   if row else ""
+        snapshot[f"r{idx}_paid"]  = row["paid"]  if row else ""
+        snapshot[f"r{idx}_bal"]   = row["bal"]   if row else ""
+
+    return snapshot, truncated
+
+
+@app.route("/api/admin/report.pdf")
+def download_billing_report():
+    """Generate the monthly billing report PDF (admin-only)."""
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("report", 10, 60):
+        return _too_many(60)
+
+    year, month = _parse_ym_from_request()
+
+    try:
+        snapshot, _truncated = _build_report_snapshot(year, month)
+    except Exception as e:
+        app.logger.exception("[Report] snapshot failed")
+        return jsonify({"error": f"Report data failed: {e}"}), 500
+
+    try:
+        pdf_buf = generate_report_pdf(snapshot)
+    except Exception as e:
+        app.logger.exception("[Report] PDF generation failed")
+        return jsonify({"error": f"PDF generation failed: {e}"}), 500
+
+    filename = f"SimonWater_Report_{year}-{month:02d}.pdf"
+    return send_file(
+        pdf_buf,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+@app.route("/api/admin/report/preview")
+def billing_report_preview():
+    """Return the report data as JSON for the admin preview page."""
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("report_preview", 20, 60):
+        return _too_many(60)
+
+    year, month = _parse_ym_from_request()
+    try:
+        snapshot, truncated = _build_report_snapshot(year, month)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({
+        "year": year,
+        "month": month,
+        "report_no": snapshot["report_no"],
+        "summary": {
+            "total_consumers": snapshot["total_consumers"],
+            "active_consumers": snapshot["active_consumers"],
+            "total_consumption": snapshot["total_consumption"],
+            "total_billed": snapshot["total_billed"],
+            "total_paid": snapshot["total_paid"],
+            "total_outstanding": snapshot["total_outstanding"],
+        },
+        "truncated": truncated,
+    })
+
 @app.route("/template/report")
 def report_template_view():
     """Serve the report template HTML for manual Chrome -> Save as PDF."""
@@ -357,10 +545,6 @@ def report_template_view():
         "SimonWater_ReportTemplate.html",
         mimetype="text/html",
     )
-
-@app.route("/admin/reports")
-def admin_reports_page():
-    return send_from_directory(FRONTEND_DIR, "admin_reports.html")
 
 @app.route("/style.css")
 def styles():
