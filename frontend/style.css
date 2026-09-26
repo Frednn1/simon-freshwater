@@ -1409,3 +1409,39 @@ body {
 
 /* Prevent body scroll when drawer open */
 body.drawer-open { overflow: hidden; }
+
+/* ═══════════════════════════════════════════════
+   MOBILE HEADER — Left-aligned hamburger menu
+   Overrides the earlier mobile column layout.
+   Desktop view remains unchanged.
+   ═══════════════════════════════════════════════ */
+@media (max-width: 600px) {
+  .site-header .header-inner {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    min-height: 46px;
+    gap: 0;
+  }
+
+  /* Hamburger sits at the far left */
+  .menu-toggle {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    margin: 0;
+  }
+
+  /* Brand stays centered; symmetric padding prevents overlap */
+  .site-header .brand {
+    flex: 0 1 auto;
+    justify-content: center;
+    width: auto;
+    padding: 0 50px;
+  }
+  .site-header .brand > div:last-child {
+    text-align: left;
+  }
+}
