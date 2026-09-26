@@ -1081,6 +1081,29 @@ body {
 .tab-reports-icon:hover { background: rgba(255,167,38,.30); }
 .tab-reports-icon .tab-icon { font-size: 1.05rem; margin: 0; }
 
+/* Bulk SMS icon tab */
+.tab-bulk-icon {
+  padding: .5rem;
+  border-radius: 50%;
+  border-color: #ec407a;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  min-height: 38px;
+}
+.tab-bulk-icon:hover { background: rgba(236,64,122,.30); }
+.tab-bulk-icon .tab-icon { font-size: 1.05rem; margin: 0; }
+
+@media (max-width: 600px) {
+  .tab-bulk-icon {
+    min-width: 34px;
+    min-height: 34px;
+    padding: .4rem;
+  }
+  .tab-bulk-icon .tab-icon { font-size: .95rem; }
+}
+
 @media (max-width: 600px) {
   .tab-reports-icon {
     min-width: 34px;

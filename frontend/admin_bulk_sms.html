@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bulk SMS — Simon Fresh Water</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="settings-body">
+  <main class="settings-wrap" style="max-width: 860px;">
+
+    <div class="settings-header">
+      <div class="logo-drop">📢</div>
+      <h1>Simon Fresh Water</h1>
+      <p>Bulk SMS to Overdue Consumers</p>
+    </div>
+
+    <!-- Controls -->
+    <div class="settings-card">
+      <h2>🎯 Filter</h2>
+      <label style="display:flex;align-items:center;gap:.5rem;font-size:.9rem;margin-bottom:.6rem;">
+        <input type="checkbox" id="includeDue">
+        Include <strong>DUE</strong> (not yet overdue) consumers
+      </label>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+        <button id="refreshBtn" class="btn-secondary" type="button">↻ Refresh List</button>
+        <button id="selectAllBtn" class="btn-secondary" type="button">Select All</button>
+        <button id="deselectAllBtn" class="btn-secondary" type="button">Deselect All</button>
+      </div>
+      <div id="listMsg" class="alert hidden" style="margin-top:.75rem;"></div>
+    </div>
+
+    <!-- Consumer list -->
+    <div class="settings-card">
+      <h2>👥 Overdue Consumers <span id="countBadge" style="font-weight:400;color:#90a4ae;font-size:.85rem;"></span></h2>
+      <div id="listWrap">Loading…</div>
+    </div>
+
+    <!-- Send action -->
+    <div class="settings-card">
+      <h2>📤 Send SMS</h2>
+      <p class="form-hint-small" style="margin-bottom:.6rem;">
+        Each recipient gets their own personalised bill-reminder SMS (with their
+        name, meter no., and outstanding balance).
+      </p>
+      <div id="previewBox" style="background:#f5faff;border:1px solid #bbdefb;border-radius:6px;padding:.7rem .9rem;font-size:.82rem;color:#1c2b36;white-space:pre-line;margin-bottom:.8rem;">
+        Select consumers above to preview the message.
+      </div>
+      <button id="sendBtn" class="btn-primary" type="button" disabled>
+        <span class="btn-icon">📢</span> Send SMS to Selected
+      </button>
+      <div id="sendMsg" class="alert hidden" style="margin-top:.75rem;"></div>
+      <div id="sendResults" style="margin-top:.75rem;"></div>
+    </div>
+
+    <div class="settings-back">
+      <a href="/">← Back to Home</a>
+    </div>
+  </main>
+
+  <script>
+    const MAX_BATCH = 30;
+
+    function esc(s) {
+      const d = document.createElement('div');
+      d.textContent = s == null ? '' : String(s);
+      return d.innerHTML;
+    }
+    function fmt(n) {
+      return Number(n).toLocaleString('en-KE', {
+        minimumFractionDigits: 2, maximumFractionDigits: 2,
+      });
+    }
+    function showMsg(el, kind, text) {
+      el.className = 'alert alert-' + kind;
+      el.textContent = text;
+      el.classList.remove('hidden');
+    }
+    function hide(el) { el.classList.add('hidden'); }
+
+    let CONSUMERS = [];
+    let SELECTED = new Set();
+
+    async function loadList() {
+      const wrap = document.getElementById('listWrap');
+      const badge = document.getElementById('countBadge');
+      const msg = document.getElementById('listMsg');
+      hide(msg);
+      wrap.textContent = 'Loading…';
+
+      const includeDue = document.getElementById('includeDue').checked ? '1' : '0';
+      try {
+        const r = await fetch(`/api/admin/bulk_sms/overdue?include_due=${includeDue}`,
+                              { credentials: 'same-origin' });
+        if (r.status === 401) { location.href = '/admin/login?next=/admin/bulk_sms'; return; }
+        const d = await r.json();
+        CONSUMERS = d.consumers || [];
+        SELECTED.clear();
+        badge.textContent = `(${CONSUMERS.length})`;
+
+        if (CONSUMERS.length === 0) {
+          wrap.innerHTML = '<p class="form-hint-small">No consumers match this filter.</p>';
+          updateSendButton();
+          return;
+        }
+
+        wrap.innerHTML = `
+          <div class="table-wrap">
+            <table class="readings-table">
+              <thead>
+                <tr>
+                  <th style="width:36px;"></th>
+                  <th>Customer</th>
+                  <th>Meter No.</th>
+                  <th>Contact</th>
+                  <th>Status</th>
+                  <th class="right">Outstanding (KES)</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${CONSUMERS.map(c => `
+                  <tr>
+                    <td><input type="checkbox" class="row-check" data-id="${c.id}"></td>
+                    <td>${esc(c.cust_name)}</td>
+                    <td>${esc(c.meter_acc_no)}</td>
+                    <td>${esc(c.contact || '—')}</td>
+                    <td>${esc(c.status_label)}</td>
+                    <td class="right">${fmt(c.total_due)}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+
+        wrap.querySelectorAll('.row-check').forEach(cb => {
+          cb.addEventListener('change', (e) => {
+            const id = parseInt(e.currentTarget.getAttribute('data-id'), 10);
+            if (e.currentTarget.checked) {
+              if (SELECTED.size >= MAX_BATCH) {
+                e.currentTarget.checked = false;
+                showMsg(msg, 'error', `Max ${MAX_BATCH} per batch. Deselect one first.`);
+                return;
+              }
+              SELECTED.add(id);
+            } else {
+              SELECTED.delete(id);
+            }
+            updateSendButton();
+          });
+        });
+        updateSendButton();
+      } catch {
+        wrap.textContent = 'Failed to load list.';
+      }
+    }
+
+    function updateSendButton() {
+      const btn = document.getElementById('sendBtn');
+      const preview = document.getElementById('previewBox');
+      const n = SELECTED.size;
+
+      if (n === 0) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="btn-icon">📢</span> Send SMS to Selected';
+        preview.textContent = 'Select consumers above to preview the message.';
+        return;
+      }
+
+      btn.disabled = false;
+      btn.innerHTML = `<span class="btn-icon">📢</span> Send SMS to ${n} selected`;
+
+      // Show one example message
+      const first = CONSUMERS.find(c => SELECTED.has(c.id));
+      if (first) {
+        preview.textContent =
+          `SIMON FRESH WATER - Kikuyu\n` +
+          `Dear ${first.cust_name},\n` +
+          `Your water bill (${first.meter_acc_no}) status: ${first.status_label}. ` +
+          `Outstanding: KES ${fmt(first.total_due)}. ` +
+          `Pay via Paybill <PAYBILL>, Acc ${first.meter_acc_no}. Thank you.`;
+      }
+    }
+
+    async function sendBulk() {
+      const btn = document.getElementById('sendBtn');
+      const msg = document.getElementById('sendMsg');
+      const res = document.getElementById('sendResults');
+      hide(msg);
+      res.innerHTML = '';
+
+      const ids = Array.from(SELECTED);
+      if (ids.length === 0) return;
+      if (!confirm(`Send SMS to ${ids.length} consumer(s)? This action cannot be undone.`)) return;
+
+      btn.disabled = true;
+      btn.innerHTML = '<span class="btn-icon">⏳</span> Sending…';
+
+      try {
+        const r = await fetch('/api/admin/bulk_sms/send', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ consumer_ids: ids }),
+        });
+        const d = await r.json();
+
+        if (r.status === 401) { location.href = '/admin/login?next=/admin/bulk_sms'; return; }
+
+        if (!r.ok || d.error) {
+          showMsg(msg, 'error', '❌ ' + (d.error || 'Send failed.'));
+          btn.disabled = false;
+          updateSendButton();
+          return;
+        }
+
+        const color = d.failed === 0 ? 'success' : 'error';
+        showMsg(msg, color,
+          `✅ Sent ${d.sent} · ❌ Failed ${d.failed}` +
+          (d.skipped_ids ? ` · Skipped ${d.skipped_ids.length}` : ''));
+
+        res.innerHTML = `
+          <div style="border:1px solid #eef1f5;border-radius:6px;background:#fff;max-height:280px;overflow-y:auto;">
+            ${(d.results || []).map(x => `
+              <div style="padding:.5rem .8rem;border-bottom:1px solid #f5f5f5;display:flex;justify-content:space-between;gap:.5rem;font-size:.85rem;">
+                <div>
+                  <strong>${esc(x.cust_name)}</strong>
+                  <span style="color:#90a4ae;">· ${esc(x.meter_acc_no)}</span>
+                </div>
+                <div style="color:${x.ok ? '#2e7d32' : '#c62828'};font-weight:600;">
+                  ${x.ok ? '✓ sent' : '✗ ' + esc(x.error || 'failed')}
+                </div>
+              </div>`).join('')}
+          </div>`;
+        SELECTED.clear();
+        // Deselect UI checkboxes
+        document.querySelectorAll('.row-check').forEach(cb => { cb.checked = false; });
+        updateSendButton();
+      } catch (e) {
+        showMsg(msg, 'error', '❌ Network error.');
+      } finally {
+        btn.disabled = false;
+        updateSendButton();
+      }
+    }
+
+    document.getElementById('refreshBtn').addEventListener('click', loadList);
+    document.getElementById('includeDue').addEventListener('change', loadList);
+
+    document.getElementById('selectAllBtn').addEventListener('click', () => {
+      const boxes = Array.from(document.querySelectorAll('.row-check'));
+      const max = Math.min(boxes.length, MAX_BATCH);
+      boxes.slice(0, max).forEach(cb => {
+        cb.checked = true;
+        SELECTED.add(parseInt(cb.getAttribute('data-id'), 10));
+      });
+      boxes.slice(max).forEach(cb => { cb.checked = false; });
+      updateSendButton();
+    });
+
+    document.getElementById('deselectAllBtn').addEventListener('click', () => {
+      document.querySelectorAll('.row-check').forEach(cb => { cb.checked = false; });
+      SELECTED.clear();
+      updateSendButton();
+    });
+
+    document.getElementById('sendBtn').addEventListener('click', sendBulk);
+
+    // Initial load
+    loadList();
+  </script>
+</body>
+</html>

@@ -36,6 +36,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from receipts import generate_receipt_pdf
 from water_bill import generate_water_bill_pdf
 from report import generate_report_pdf
+from bulk_sms import send_bulk_sms, BULK_SMS_MAX_BATCH
 from mpesa import (
     get_mpesa_config, register_c2b_urls, simulate_c2b_payment,
 )
@@ -351,6 +352,10 @@ def admin_mpesa_page():
 @app.route("/admin/reports")
 def admin_reports_page():
     return send_from_directory(FRONTEND_DIR, "admin_reports.html")
+
+@app.route("/admin/bulk_sms")
+def admin_bulk_sms_page():
+    return send_from_directory(FRONTEND_DIR, "admin_bulk_sms.html")
 
 
 # ═══════════════════════════════════════════════
@@ -1992,6 +1997,108 @@ def admin_recompute_amounts():
     db.session.commit()
     return jsonify({"ok": True, "readings_scanned": scanned,
                     "readings_updated": updated}), 200
+
+
+# ═══════════════════════════════════════════════
+#  ADMIN — BULK SMS
+# ═══════════════════════════════════════════════
+
+@app.route("/api/admin/bulk_sms/overdue", methods=["GET"])
+def admin_bulk_sms_overdue():
+    """
+    List consumers with outstanding balances.
+    Query params:
+      include_due=1  → also include DUE (default: only OVERDUE + OVERDUE_APPROACHING)
+    """
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("bulk_sms_list", 20, 60):
+        return _too_many(60)
+
+    include_due = request.args.get("include_due") == "1"
+
+    allowed = {"OVERDUE", "OVERDUE_APPROACHING"}
+    if include_due:
+        allowed.add("DUE")
+
+    consumers = (Consumer.query
+                 .filter_by(is_active=True)
+                 .order_by(Consumer.cust_name.asc())
+                 .all())
+
+    out = []
+    for c in consumers:
+        readings = _all_readings(c.id)
+        info = get_consumer_status(readings)
+        if info["status"] not in allowed:
+            continue
+        out.append({
+            "id": c.id,
+            "cust_name": c.cust_name,
+            "meter_acc_no": c.meter_acc_no,
+            "contact": c.contact or "",
+            "status": info["status"],
+            "status_label": info["label"],
+            "total_due": round(float(info.get("total_due", 0.0)), 2),
+        })
+
+    return jsonify({"consumers": out, "count": len(out)})
+
+
+@app.route("/api/admin/bulk_sms/send", methods=["POST"])
+def admin_bulk_sms_send():
+    """
+    Send the bill-reminder SMS to a selected list of consumer IDs.
+    Body:
+      {"consumer_ids": [1, 2, 3]}
+    Hard cap: BULK_SMS_MAX_BATCH (default 30) per call.
+    """
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("bulk_sms_send", 3, 300):
+        return _too_many(300)
+
+    data = request.get_json(silent=True) or {}
+    ids = data.get("consumer_ids") or []
+
+    if not isinstance(ids, list) or not ids:
+        return jsonify({"error": "consumer_ids must be a non-empty list"}), 400
+    if len(ids) > BULK_SMS_MAX_BATCH:
+        return jsonify({
+            "error": f"Too many recipients. Max {BULK_SMS_MAX_BATCH} per batch."
+        }), 400
+
+    # Fetch consumers + compute info
+    items = []
+    missing = []
+    for cid in ids:
+        c = Consumer.query.get(cid)
+        if not c or not c.is_active:
+            missing.append(cid)
+            continue
+        readings = _all_readings(c.id)
+        info = get_consumer_status(readings)
+        if info["status"] not in ("DUE", "OVERDUE", "OVERDUE_APPROACHING"):
+            missing.append(cid)
+            continue
+        items.append({"consumer": c, "info": info})
+
+    if not items:
+        return jsonify({"error": "No eligible consumers in the selection."}), 400
+
+    admin = _current_admin()
+    operator = (admin.username if admin else "admin")[:60]
+
+    try:
+        result = send_bulk_sms(items, operator=operator)
+    except Exception as e:
+        app.logger.exception("[BulkSMS] failed")
+        return jsonify({"error": f"Send failed: {e}"}), 500
+
+    if missing:
+        result["skipped_ids"] = missing
+
+    return jsonify(result), 200
 
 
 # ═══════════════════════════════════════════════

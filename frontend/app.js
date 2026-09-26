@@ -121,6 +121,10 @@ function renderAuthTab() {
   if (reportsTab) {
     reportsTab.classList.toggle('hidden', !AUTH_STATE.authenticated);
   }
+  const bulkSmsTab = document.getElementById('bulkSmsTab');
+  if (bulkSmsTab) {
+    bulkSmsTab.classList.toggle('hidden', !AUTH_STATE.authenticated);
+  }
 
   if (AUTH_STATE.authenticated) {
     btn.classList.remove('tab-login');
