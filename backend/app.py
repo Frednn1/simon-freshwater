@@ -525,6 +525,22 @@ def billing_report_preview():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+    # Extract the 20 row entries from the snapshot back into a list
+    rows = []
+    for idx in range(1, 21):
+        name = snapshot.get(f"r{idx}_name") or ""
+        if not name:
+            continue
+        rows.append({
+            "name":  name,
+            "meter": snapshot.get(f"r{idx}_meter") or "",
+            "cnt":   snapshot.get(f"r{idx}_cnt") or "",
+            "cm3":   snapshot.get(f"r{idx}_cm3") or "",
+            "amt":   snapshot.get(f"r{idx}_amt") or "",
+            "paid":  snapshot.get(f"r{idx}_paid") or "",
+            "bal":   snapshot.get(f"r{idx}_bal") or "",
+        })
+
     return jsonify({
         "year": year,
         "month": month,
@@ -537,6 +553,7 @@ def billing_report_preview():
             "total_paid": snapshot["total_paid"],
             "total_outstanding": snapshot["total_outstanding"],
         },
+        "rows": rows,
         "truncated": truncated,
     })
 

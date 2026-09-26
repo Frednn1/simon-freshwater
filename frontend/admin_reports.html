@@ -76,6 +76,11 @@
       <p id="truncatedNote" style="display:none;margin-top:.75rem;font-size:.82rem;color:#c62828;">
         ⚠️ More than 20 consumers have activity this month — the PDF shows the first 20 by name.
       </p>
+
+      <h3 style="margin-top:1.4rem;font-size:.95rem;color:#0d47a1;">Preview (rows in the PDF)</h3>
+      <div id="previewTableWrap" class="table-wrap" style="margin-top:.5rem;">
+        <p class="form-hint-small">Click <strong>Load Preview</strong> to see the consumer rows.</p>
+      </div>
     </div>
 
     <!-- Download -->
@@ -144,6 +149,43 @@
         document.getElementById('sOutstanding').textContent     = 'KES ' + s.total_outstanding;
         document.getElementById('reportNo').textContent         = '(' + esc(d.report_no) + ')';
         document.getElementById('truncatedNote').style.display  = d.truncated ? 'block' : 'none';
+
+        /* Preview table of the report rows */
+        const wrap = document.getElementById('previewTableWrap');
+        const rows = d.rows || [];
+        if (rows.length === 0) {
+          wrap.innerHTML = '<p class="form-hint-small">No consumers with activity in this period.</p>';
+        } else {
+          wrap.innerHTML = `
+            <table class="readings-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Customer</th>
+                  <th>Meter No.</th>
+                  <th class="right">Rds</th>
+                  <th class="right">M³</th>
+                  <th class="right">Billed (KES)</th>
+                  <th class="right">Paid (KES)</th>
+                  <th class="right">Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.map((r, i) => `
+                  <tr>
+                    <td>${i + 1}</td>
+                    <td>${esc(r.name)}</td>
+                    <td>${esc(r.meter)}</td>
+                    <td class="right">${esc(r.cnt)}</td>
+                    <td class="right">${esc(r.cm3)}</td>
+                    <td class="right">${esc(r.amt)}</td>
+                    <td class="right">${esc(r.paid)}</td>
+                    <td class="right">${esc(r.bal)}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>`;
+        }
+
         card.style.display = 'block';
       } catch { show(msg, 'error', '❌ Network error.'); }
     }

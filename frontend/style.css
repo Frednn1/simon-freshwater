@@ -1218,3 +1218,14 @@ body {
 .report-summary-item.report-summary-outstanding .report-summary-value {
   color: #c62828;
 }
+
+/* ═══════════════════════════════════════════════
+   REPORTS PAGE — Preview table adjustments
+   ═══════════════════════════════════════════════ */
+#previewTableWrap .readings-table {
+  font-size: .82rem;
+}
+#previewTableWrap .readings-table th,
+#previewTableWrap .readings-table td {
+  padding: .5rem .55rem;
+}
