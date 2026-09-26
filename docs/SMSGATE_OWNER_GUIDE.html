@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SMSGate Setup Guide — Simon Fresh Water</title>
+<style>
+  @page { size: A4; margin: 12mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    color: #1c2b36;
+    background: #fff;
+    font-size: 10.5pt;
+    line-height: 1.5;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+  .doc { max-width: 180mm; margin: 0 auto; }
+
+  .header {
+    background: linear-gradient(135deg, #0a2540, #0d47a1);
+    color: #fff;
+    padding: 20px 22px;
+    border-radius: 12px 12px 0 0;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .header .drop {
+    width: 44px; height: 44px;
+    background: rgba(255,255,255,.15);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+  }
+  .header h1 { font-size: 15pt; letter-spacing: .4px; }
+  .header p  { font-size: 9.5pt; opacity: .9; margin-top: 2px; }
+
+  .intro {
+    background: #e3f2fd;
+    border-left: 4px solid #1976d2;
+    padding: 12px 18px;
+    font-size: 10pt;
+    color: #0a2540;
+  }
+
+  .body {
+    border: 2px solid #90caf9;
+    border-top: none;
+    padding: 16px 22px 20px;
+    border-radius: 0 0 12px 12px;
+  }
+
+  h2 {
+    font-size: 11pt;
+    color: #0d47a1;
+    margin: 16px 0 6px;
+    padding-bottom: 4px;
+    border-bottom: 2px solid #e3f2fd;
+    display: flex; align-items: center; gap: 8px;
+  }
+  h2 .num {
+    width: 22px; height: 22px;
+    background: #1976d2;
+    color: #fff;
+    border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 9.5pt;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  h3 {
+    font-size: 10pt;
+    color: #0d47a1;
+    margin: 10px 0 4px;
+  }
+  p { margin-bottom: 6px; }
+  ul, ol { margin: 4px 0 8px 20px; }
+  li { margin-bottom: 3px; }
+  strong { color: #0a2540; }
+  code {
+    background: #f5faff;
+    border: 1px solid #bbdefb;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+    font-size: 9.5pt;
+    color: #0d47a1;
+  }
+  .note {
+    background: #fff8e1;
+    border-left: 4px solid #f57c00;
+    padding: 8px 12px;
+    font-size: 9.5pt;
+    margin: 8px 0;
+    border-radius: 0 4px 4px 0;
+  }
+  .warn {
+    background: #fdecea;
+    border-left: 4px solid #c62828;
+    padding: 8px 12px;
+    font-size: 9.5pt;
+    margin: 8px 0;
+    border-radius: 0 4px 4px 0;
+  }
+  .success {
+    background: #e8f5e9;
+    border-left: 4px solid #2e7d32;
+    padding: 8px 12px;
+    font-size: 9.5pt;
+    margin: 8px 0;
+    border-radius: 0 4px 4px 0;
+  }
+
+  .credentials-box {
+    background: #f5faff;
+    border: 2px dashed #1976d2;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin: 10px 0;
+    font-family: 'Courier New', monospace;
+    font-size: 9.5pt;
+  }
+  .credentials-box .row {
+    display: flex;
+    padding: 5px 0;
+    border-bottom: 1px solid #e3f2fd;
+  }
+  .credentials-box .row:last-child { border-bottom: none; }
+  .credentials-box .label {
+    flex: 0 0 150px;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-weight: 700;
+    color: #455a64;
+    font-size: 9pt;
+  }
+  .credentials-box .fill {
+    flex: 1;
+    border-bottom: 1px dashed #90caf9;
+    min-height: 20px;
+    padding-left: 6px;
+  }
+
+  .checklist {
+    background: #f5faff;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-top: 10px;
+  }
+  .checklist label {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 10pt;
+  }
+  .checklist input[type="checkbox"] {
+    margin-top: 3px;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+  }
+
+  .footer {
+    background: linear-gradient(135deg, #0a2540, #0d47a1);
+    color: #fff;
+    text-align: center;
+    padding: 10px 20px;
+    border-radius: 12px;
+    margin-top: 12px;
+    font-size: 8.5pt;
+    opacity: .95;
+  }
+
+  .print-hint {
+    max-width: 180mm; margin: 10px auto; padding: 8px 14px;
+    background: #e8f5e9; border: 1px solid #a5d6a7; border-radius: 6px;
+    font-size: 9pt; color: #1b5e20; text-align: center;
+  }
+  @media print { .print-hint { display: none !important; } }
+</style>
+</head>
+<body>
+
+  <div class="print-hint">
+    <strong>Save as PDF:</strong> Chrome ⋮ → Share → Print → Destination <strong>Save as PDF</strong> → A4 → Background graphics <strong>ON</strong> → Save
+  </div>
+
+  <div class="doc">
+
+    <div class="header">
+      <div class="drop">💧</div>
+      <div>
+        <h1>SIMON FRESH WATER — SMS Gateway Setup</h1>
+        <p>One-time setup guide for the business owner · Kikuyu, Kenya</p>
+      </div>
+    </div>
+
+    <div class="intro">
+      Simon Fresh Water sends automatic SMS messages to consumers — bill reminders,
+      payment confirmations, and admin login codes. These messages go out through your
+      own phone using the free <strong>SMSGate</strong> app. Once set up, your phone becomes
+      the business SMS gateway: every consumer sees the business number as the sender,
+      and you control the SMS airtime yourself.
+    </div>
+
+    <div class="body">
+
+      <h2><span class="num">1</span> What You Need</h2>
+      <ul>
+        <li><strong>An Android phone</strong> — any model, old or new. It will stay at the office, plugged in and switched on, 24/7.</li>
+        <li><strong>A dedicated SIM card</strong> — ideally the business number you want consumers to see (e.g. <code>0791 XXX XXX</code>). This SIM must not be registered on WhatsApp.</li>
+        <li><strong>Airtime on the SIM</strong> — start with <strong>KES 500</strong> and top up monthly. Each SMS costs roughly KES 1–2.</li>
+        <li><strong>Wi-Fi or mobile data</strong> — for the SMSGate app to talk to the cloud server.</li>
+        <li><strong>5 minutes</strong> of your time.</li>
+      </ul>
+
+      <div class="note">
+        <strong>💡 Tip:</strong> Use a <em>cheap Android phone</em> dedicated to this task, not your daily phone.
+        That way you can leave it at the office permanently without disrupting your day.
+      </div>
+
+      <h2><span class="num">2</span> Install the SMSGate App</h2>
+      <ol>
+        <li>On the dedicated Android phone, open the browser and go to:<br>
+            <code>https://github.com/capcom6/android-sms-gateway/releases</code></li>
+        <li>Download the latest <strong>release APK</strong> (file ending in <code>.apk</code>).</li>
+        <li>Tap the downloaded file → allow "Install from unknown sources" if asked.</li>
+        <li>Open the SMSGate app after install.</li>
+        <li>When the app asks for permissions, tap <strong>Allow</strong> for:
+          <ul>
+            <li><strong>SEND_SMS</strong> — required to actually send messages</li>
+            <li><strong>READ_PHONE_STATE</strong> — required to know the SIM status</li>
+            <li><strong>READ_SMS</strong> and <strong>RECEIVE_SMS</strong> — optional but recommended</li>
+          </ul>
+        </li>
+      </ol>
+
+      <h2><span class="num">3</span> Enable Cloud Server Mode</h2>
+      <ol>
+        <li>On the SMSGate home screen, tap <strong>Cloud Server</strong> (or switch to it).</li>
+        <li>Wait a few seconds — the app auto-registers with the Simon Fresh Water account.</li>
+        <li>The app will display three important values. <strong>Write them down exactly</strong> in the spaces provided below:</li>
+      </ol>
+
+      <div class="credentials-box">
+        <div class="row"><span class="label">Username</span><span class="fill"></span></div>
+        <div class="row"><span class="label">Password</span><span class="fill"></span></div>
+        <div class="row"><span class="label">Device ID</span><span class="fill"></span></div>
+        <div class="row"><span class="label">SIM Phone Number</span><span class="fill"></span></div>
+      </div>
+
+      <div class="note">
+        <strong>If the app does not show credentials:</strong> tap <strong>☰ Menu</strong> → <strong>Settings</strong> →
+        <strong>Cloud Server</strong>. The credentials are shown there.
+      </div>
+
+      <h2><span class="num">4</span> Send the Credentials to Your Developer</h2>
+      <p>Copy the four values from Step 3 into a WhatsApp message or email to your developer:</p>
+      <ul>
+        <li>Username</li>
+        <li>Password</li>
+        <li>Device ID</li>
+        <li>SIM Phone Number</li>
+      </ul>
+      <p>The developer will update the server with these values. From that moment, every SMS sent by
+      Simon Fresh Water goes out from <strong>your phone</strong> and appears to consumers as coming
+      from <strong>your business number</strong>.</p>
+
+      <div class="warn">
+        <strong>⚠️ Important:</strong> Never share these credentials with anyone except your developer.
+        Anyone with these credentials can send SMS through your phone.
+      </div>
+
+      <h2><span class="num">5</span> Optimise Your Phone for Reliability</h2>
+      <p>The phone must stay responsive at all times. Complete these settings:</p>
+
+      <h3>5a. Battery optimisation</h3>
+      <ol>
+        <li>Open <strong>Settings</strong> on the phone → <strong>Apps</strong> → <strong>SMSGate</strong>.</li>
+        <li>Tap <strong>Battery</strong> → select <strong>Unrestricted</strong> (or <strong>Don't optimise</strong>).</li>
+        <li>On some phones: <strong>Settings → Battery → Battery optimisation</strong> → find SMSGate → <strong>Don't optimise</strong>.</li>
+      </ol>
+
+      <h3>5b. Auto-start on boot</h3>
+      <ol>
+        <li>Inside the SMSGate app → <strong>Settings</strong> → <strong>System</strong>.</li>
+        <li>Enable <strong>Start on boot</strong>.</li>
+        <li>Enable <strong>Foreground service</strong> (keeps the app running even when the screen is off).</li>
+      </ol>
+
+      <h3>5c. Physical setup</h3>
+      <ul>
+        <li>Keep the phone <strong>plugged into a charger</strong> at all times.</li>
+        <li>Place it in a <strong>dry, ventilated spot</strong> at the office.</li>
+        <li>Keep it <strong>connected to Wi-Fi</strong> (or leave mobile data on).</li>
+        <li><strong>Do not</strong> turn the phone off, restart it, or let the battery drain.</li>
+      </ul>
+
+      <h2><span class="num">6</span> Monthly SIM Top-Up</h2>
+      <p>Every month, top up the SIM with enough airtime for the SMS volume. Estimate:</p>
+      <ul>
+        <li><strong>20 consumers</strong> × 2 reminders = 40 SMS ≈ KES 80/month</li>
+        <li><strong>100 consumers</strong> × 2 reminders = 200 SMS ≈ KES 400/month</li>
+        <li><strong>500 consumers</strong> × 2 reminders = 1,000 SMS ≈ KES 2,000/month</li>
+      </ul>
+      <p>Use M-Pesa to top up the SIM directly. Set a monthly reminder on your main phone.</p>
+
+      <div class="success">
+        <strong>✅ You're done!</strong> Once the developer confirms setup, your phone will
+        silently send every SMS that Simon Fresh Water needs.
+      </div>
+
+      <h2><span class="num">7</span> What to Do If Something Goes Wrong</h2>
+
+      <h3>SMS not being delivered</h3>
+      <ol>
+        <li>Check the SIM has airtime (dial <code>*334#</code> on that phone).</li>
+        <li>Check the phone has network signal.</li>
+        <li>Check the phone has internet (Wi-Fi or data).</li>
+        <li>Open the SMSGate app → <strong>Messages</strong> tab → look for the queued messages and their status.</li>
+      </ol>
+
+      <h3>App keeps stopping</h3>
+      <ol>
+        <li>Confirm battery optimisation is <strong>off</strong> (see Step 5a).</li>
+        <li>Open the app once a week — sometimes Android kills background apps that aren't opened for a long time.</li>
+      </ol>
+
+      <h3>I lost the phone</h3>
+      <ol>
+        <li>Tell your developer immediately.</li>
+        <li>They will temporarily disable SMS from the server.</li>
+        <li>Set up SMSGate on a new phone following this guide from Step 1.</li>
+      </ol>
+
+      <h3>I forgot the credentials</h3>
+      <ol>
+        <li>Open the SMSGate app → <strong>Settings</strong> → <strong>Cloud Server</strong>.</li>
+        <li>The credentials are always visible in the app.</li>
+      </ol>
+
+      <h2><span class="num">8</span> Final Checklist</h2>
+      <div class="checklist">
+        <label><input type="checkbox"> Dedicated Android phone obtained</label>
+        <label><input type="checkbox"> Dedicated SIM installed (NOT registered on WhatsApp)</label>
+        <label><input type="checkbox"> SMSGate app installed and permissions granted</label>
+        <label><input type="checkbox"> Cloud Server mode enabled — Username, Password, Device ID written down</label>
+        <label><input type="checkbox"> Credentials sent to developer</label>
+        <label><input type="checkbox"> Battery optimisation disabled for SMSGate</label>
+        <label><input type="checkbox"> "Start on boot" and "Foreground service" enabled in the app</label>
+        <label><input type="checkbox"> Phone permanently plugged in at the office</label>
+        <label><input type="checkbox"> Phone connected to Wi-Fi or mobile data</label>
+        <label><input type="checkbox"> SIM loaded with at least KES 500 airtime</label>
+        <label><input type="checkbox"> Monthly top-up reminder set on your personal phone</label>
+        <label><input type="checkbox"> Developer confirmed sending works end-to-end</label>
+      </div>
+
+    </div>
+
+    <div class="footer">
+      Simon Fresh Water · Kikuyu, Kenya · SMS Gateway Setup Guide · Version 1.0
+    </div>
+
+  </div>
+
+</body>
+</html>

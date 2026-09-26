@@ -578,6 +578,15 @@ def appjs():
     return send_from_directory(FRONTEND_DIR, "app.js")
 
 
+# ─── Public documentation (guides, onboarding PDFs, etc.) ───
+DOCS_DIR = os.path.join(REPO_DIR, "docs")
+
+@app.route("/docs/<path:filename>")
+def serve_docs_file(filename):
+    """Serve a file from the repository's docs/ folder."""
+    return send_from_directory(DOCS_DIR, filename)
+
+
 @app.route("/template/statement")
 def statement_template_view():
     """
