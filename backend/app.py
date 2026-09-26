@@ -512,6 +512,16 @@ def download_billing_report():
     )
 
 
+_MONTH_NAMES = ["January","February","March","April","May","June",
+                "July","August","September","October","November","December"]
+
+def _month_name(m: int) -> str:
+    """Return month name for 1-12 (safe fallback if out of range)."""
+    if 1 <= m <= 12:
+        return _MONTH_NAMES[m - 1]
+    return ""
+
+
 @app.route("/api/admin/report/preview")
 def billing_report_preview():
     """Return the report data as JSON for the admin preview page."""
@@ -521,12 +531,62 @@ def billing_report_preview():
         return _too_many(60)
 
     year, month = _parse_ym_from_request()
+
+    # ─── Future-period guard ───
+    today = date.today()
+    is_future = (year > today.year) or (year == today.year and month > today.month)
+
+    if is_future:
+        month_name = _month_name(month)
+        return jsonify({
+            "year": year,
+            "month": month,
+            "report_no": f"RPT-{year}{month:02d}",
+            "status": "future_period",
+            "message": (
+                f"No data available for the selected period. "
+                f"{month_name} {year} is in the future — a report can "
+                f"only cover months that have already passed."
+            ),
+            "summary": None,
+            "rows": [],
+            "truncated": False,
+        })
+
     try:
         snapshot, truncated = _build_report_snapshot(year, month)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-    # Extract the 20 row entries from the snapshot back into a list
+    # ─── No-data guard ───
+    month_has_readings = (MeterReading.query
+                          .filter(db.extract('year', MeterReading.reading_date) == year)
+                          .filter(db.extract('month', MeterReading.reading_date) == month)
+                          .first())
+    month_has_payments = None
+    for p in PaymentLog.query.all():
+        if p.created_at and p.created_at.year == year and p.created_at.month == month:
+            month_has_payments = p
+            break
+
+    if not month_has_readings and not month_has_payments:
+        month_name = _month_name(month)
+        return jsonify({
+            "year": year,
+            "month": month,
+            "report_no": snapshot["report_no"],
+            "status": "no_data",
+            "message": (
+                f"No data available for the selected period "
+                f"({month_name} {year}). No meter readings or "
+                f"payments were recorded in this month."
+            ),
+            "summary": None,
+            "rows": [],
+            "truncated": False,
+        })
+
+    # ─── Normal response ───
     rows = []
     for idx in range(1, 21):
         name = snapshot.get(f"r{idx}_name") or ""
@@ -535,7 +595,6 @@ def billing_report_preview():
         rows.append({
             "name":  name,
             "meter": snapshot.get(f"r{idx}_meter") or "",
-            "cnt":   snapshot.get(f"r{idx}_cnt") or "",
             "cm3":   snapshot.get(f"r{idx}_cm3") or "",
             "amt":   snapshot.get(f"r{idx}_amt") or "",
             "paid":  snapshot.get(f"r{idx}_paid") or "",
@@ -546,6 +605,7 @@ def billing_report_preview():
         "year": year,
         "month": month,
         "report_no": snapshot["report_no"],
+        "status": "ok",
         "summary": {
             "total_consumers": snapshot["total_consumers"],
             "active_consumers": snapshot["active_consumers"],

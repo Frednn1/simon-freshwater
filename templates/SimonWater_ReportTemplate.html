@@ -108,13 +108,12 @@
 
   /* 8-column widths */
   table.r-data th:nth-child(1), td:nth-child(1) { width: 4%; }
-  table.r-data th:nth-child(2), td:nth-child(2) { width: 20%; }
-  table.r-data th:nth-child(3), td:nth-child(3) { width: 13%; }
-  table.r-data th:nth-child(4), td:nth-child(4) { width: 8%; }
-  table.r-data th:nth-child(5), td:nth-child(5) { width: 11%; }
-  table.r-data th:nth-child(6), td:nth-child(6) { width: 13%; }
-  table.r-data th:nth-child(7), td:nth-child(7) { width: 13%; }
-  table.r-data th:nth-child(8), td:nth-child(8) { width: 18%; }
+  table.r-data th:nth-child(2), td:nth-child(2) { width: 22%; }
+  table.r-data th:nth-child(3), td:nth-child(3) { width: 14%; }
+  table.r-data th:nth-child(4), td:nth-child(4) { width: 12%; }
+  table.r-data th:nth-child(5), td:nth-child(5) { width: 14%; }
+  table.r-data th:nth-child(6), td:nth-child(6) { width: 14%; }
+  table.r-data th:nth-child(7), td:nth-child(7) { width: 20%; }
 
   .r-totals {
     background: #0d47a1; color: #fff;
@@ -226,7 +225,6 @@
             <th>#</th>
             <th>Customer</th>
             <th>Meter No.</th>
-            <th class="right">Rds</th>
             <th class="right">M³</th>
             <th class="right">Billed</th>
             <th class="right">Paid</th>
@@ -234,26 +232,26 @@
           </tr>
         </thead>
         <tbody>
-          <tr><td>1</td><td class="name">{{r1_name}}</td><td>{{r1_meter}}</td><td class="right">{{r1_cnt}}</td><td class="right">{{r1_cm3}}</td><td class="right">{{r1_amt}}</td><td class="right">{{r1_paid}}</td><td class="right">{{r1_bal}}</td></tr>
-          <tr><td>2</td><td class="name">{{r2_name}}</td><td>{{r2_meter}}</td><td class="right">{{r2_cnt}}</td><td class="right">{{r2_cm3}}</td><td class="right">{{r2_amt}}</td><td class="right">{{r2_paid}}</td><td class="right">{{r2_bal}}</td></tr>
-          <tr><td>3</td><td class="name">{{r3_name}}</td><td>{{r3_meter}}</td><td class="right">{{r3_cnt}}</td><td class="right">{{r3_cm3}}</td><td class="right">{{r3_amt}}</td><td class="right">{{r3_paid}}</td><td class="right">{{r3_bal}}</td></tr>
-          <tr><td>4</td><td class="name">{{r4_name}}</td><td>{{r4_meter}}</td><td class="right">{{r4_cnt}}</td><td class="right">{{r4_cm3}}</td><td class="right">{{r4_amt}}</td><td class="right">{{r4_paid}}</td><td class="right">{{r4_bal}}</td></tr>
-          <tr><td>5</td><td class="name">{{r5_name}}</td><td>{{r5_meter}}</td><td class="right">{{r5_cnt}}</td><td class="right">{{r5_cm3}}</td><td class="right">{{r5_amt}}</td><td class="right">{{r5_paid}}</td><td class="right">{{r5_bal}}</td></tr>
-          <tr><td>6</td><td class="name">{{r6_name}}</td><td>{{r6_meter}}</td><td class="right">{{r6_cnt}}</td><td class="right">{{r6_cm3}}</td><td class="right">{{r6_amt}}</td><td class="right">{{r6_paid}}</td><td class="right">{{r6_bal}}</td></tr>
-          <tr><td>7</td><td class="name">{{r7_name}}</td><td>{{r7_meter}}</td><td class="right">{{r7_cnt}}</td><td class="right">{{r7_cm3}}</td><td class="right">{{r7_amt}}</td><td class="right">{{r7_paid}}</td><td class="right">{{r7_bal}}</td></tr>
-          <tr><td>8</td><td class="name">{{r8_name}}</td><td>{{r8_meter}}</td><td class="right">{{r8_cnt}}</td><td class="right">{{r8_cm3}}</td><td class="right">{{r8_amt}}</td><td class="right">{{r8_paid}}</td><td class="right">{{r8_bal}}</td></tr>
-          <tr><td>9</td><td class="name">{{r9_name}}</td><td>{{r9_meter}}</td><td class="right">{{r9_cnt}}</td><td class="right">{{r9_cm3}}</td><td class="right">{{r9_amt}}</td><td class="right">{{r9_paid}}</td><td class="right">{{r9_bal}}</td></tr>
-          <tr><td>10</td><td class="name">{{r10_name}}</td><td>{{r10_meter}}</td><td class="right">{{r10_cnt}}</td><td class="right">{{r10_cm3}}</td><td class="right">{{r10_amt}}</td><td class="right">{{r10_paid}}</td><td class="right">{{r10_bal}}</td></tr>
-          <tr><td>11</td><td class="name">{{r11_name}}</td><td>{{r11_meter}}</td><td class="right">{{r11_cnt}}</td><td class="right">{{r11_cm3}}</td><td class="right">{{r11_amt}}</td><td class="right">{{r11_paid}}</td><td class="right">{{r11_bal}}</td></tr>
-          <tr><td>12</td><td class="name">{{r12_name}}</td><td>{{r12_meter}}</td><td class="right">{{r12_cnt}}</td><td class="right">{{r12_cm3}}</td><td class="right">{{r12_amt}}</td><td class="right">{{r12_paid}}</td><td class="right">{{r12_bal}}</td></tr>
-          <tr><td>13</td><td class="name">{{r13_name}}</td><td>{{r13_meter}}</td><td class="right">{{r13_cnt}}</td><td class="right">{{r13_cm3}}</td><td class="right">{{r13_amt}}</td><td class="right">{{r13_paid}}</td><td class="right">{{r13_bal}}</td></tr>
-          <tr><td>14</td><td class="name">{{r14_name}}</td><td>{{r14_meter}}</td><td class="right">{{r14_cnt}}</td><td class="right">{{r14_cm3}}</td><td class="right">{{r14_amt}}</td><td class="right">{{r14_paid}}</td><td class="right">{{r14_bal}}</td></tr>
-          <tr><td>15</td><td class="name">{{r15_name}}</td><td>{{r15_meter}}</td><td class="right">{{r15_cnt}}</td><td class="right">{{r15_cm3}}</td><td class="right">{{r15_amt}}</td><td class="right">{{r15_paid}}</td><td class="right">{{r15_bal}}</td></tr>
-          <tr><td>16</td><td class="name">{{r16_name}}</td><td>{{r16_meter}}</td><td class="right">{{r16_cnt}}</td><td class="right">{{r16_cm3}}</td><td class="right">{{r16_amt}}</td><td class="right">{{r16_paid}}</td><td class="right">{{r16_bal}}</td></tr>
-          <tr><td>17</td><td class="name">{{r17_name}}</td><td>{{r17_meter}}</td><td class="right">{{r17_cnt}}</td><td class="right">{{r17_cm3}}</td><td class="right">{{r17_amt}}</td><td class="right">{{r17_paid}}</td><td class="right">{{r17_bal}}</td></tr>
-          <tr><td>18</td><td class="name">{{r18_name}}</td><td>{{r18_meter}}</td><td class="right">{{r18_cnt}}</td><td class="right">{{r18_cm3}}</td><td class="right">{{r18_amt}}</td><td class="right">{{r18_paid}}</td><td class="right">{{r18_bal}}</td></tr>
-          <tr><td>19</td><td class="name">{{r19_name}}</td><td>{{r19_meter}}</td><td class="right">{{r19_cnt}}</td><td class="right">{{r19_cm3}}</td><td class="right">{{r19_amt}}</td><td class="right">{{r19_paid}}</td><td class="right">{{r19_bal}}</td></tr>
-          <tr><td>20</td><td class="name">{{r20_name}}</td><td>{{r20_meter}}</td><td class="right">{{r20_cnt}}</td><td class="right">{{r20_cm3}}</td><td class="right">{{r20_amt}}</td><td class="right">{{r20_paid}}</td><td class="right">{{r20_bal}}</td></tr>
+          <tr><td>1</td><td class="name">{{r1_name}}</td><td>{{r1_meter}}</td><td class="right">{{r1_cm3}}</td><td class="right">{{r1_amt}}</td><td class="right">{{r1_paid}}</td><td class="right">{{r1_bal}}</td></tr>
+          <tr><td>2</td><td class="name">{{r2_name}}</td><td>{{r2_meter}}</td><td class="right">{{r2_cm3}}</td><td class="right">{{r2_amt}}</td><td class="right">{{r2_paid}}</td><td class="right">{{r2_bal}}</td></tr>
+          <tr><td>3</td><td class="name">{{r3_name}}</td><td>{{r3_meter}}</td><td class="right">{{r3_cm3}}</td><td class="right">{{r3_amt}}</td><td class="right">{{r3_paid}}</td><td class="right">{{r3_bal}}</td></tr>
+          <tr><td>4</td><td class="name">{{r4_name}}</td><td>{{r4_meter}}</td><td class="right">{{r4_cm3}}</td><td class="right">{{r4_amt}}</td><td class="right">{{r4_paid}}</td><td class="right">{{r4_bal}}</td></tr>
+          <tr><td>5</td><td class="name">{{r5_name}}</td><td>{{r5_meter}}</td><td class="right">{{r5_cm3}}</td><td class="right">{{r5_amt}}</td><td class="right">{{r5_paid}}</td><td class="right">{{r5_bal}}</td></tr>
+          <tr><td>6</td><td class="name">{{r6_name}}</td><td>{{r6_meter}}</td><td class="right">{{r6_cm3}}</td><td class="right">{{r6_amt}}</td><td class="right">{{r6_paid}}</td><td class="right">{{r6_bal}}</td></tr>
+          <tr><td>7</td><td class="name">{{r7_name}}</td><td>{{r7_meter}}</td><td class="right">{{r7_cm3}}</td><td class="right">{{r7_amt}}</td><td class="right">{{r7_paid}}</td><td class="right">{{r7_bal}}</td></tr>
+          <tr><td>8</td><td class="name">{{r8_name}}</td><td>{{r8_meter}}</td><td class="right">{{r8_cm3}}</td><td class="right">{{r8_amt}}</td><td class="right">{{r8_paid}}</td><td class="right">{{r8_bal}}</td></tr>
+          <tr><td>9</td><td class="name">{{r9_name}}</td><td>{{r9_meter}}</td><td class="right">{{r9_cm3}}</td><td class="right">{{r9_amt}}</td><td class="right">{{r9_paid}}</td><td class="right">{{r9_bal}}</td></tr>
+          <tr><td>10</td><td class="name">{{r10_name}}</td><td>{{r10_meter}}</td><td class="right">{{r10_cm3}}</td><td class="right">{{r10_amt}}</td><td class="right">{{r10_paid}}</td><td class="right">{{r10_bal}}</td></tr>
+          <tr><td>11</td><td class="name">{{r11_name}}</td><td>{{r11_meter}}</td><td class="right">{{r11_cm3}}</td><td class="right">{{r11_amt}}</td><td class="right">{{r11_paid}}</td><td class="right">{{r11_bal}}</td></tr>
+          <tr><td>12</td><td class="name">{{r12_name}}</td><td>{{r12_meter}}</td><td class="right">{{r12_cm3}}</td><td class="right">{{r12_amt}}</td><td class="right">{{r12_paid}}</td><td class="right">{{r12_bal}}</td></tr>
+          <tr><td>13</td><td class="name">{{r13_name}}</td><td>{{r13_meter}}</td><td class="right">{{r13_cm3}}</td><td class="right">{{r13_amt}}</td><td class="right">{{r13_paid}}</td><td class="right">{{r13_bal}}</td></tr>
+          <tr><td>14</td><td class="name">{{r14_name}}</td><td>{{r14_meter}}</td><td class="right">{{r14_cm3}}</td><td class="right">{{r14_amt}}</td><td class="right">{{r14_paid}}</td><td class="right">{{r14_bal}}</td></tr>
+          <tr><td>15</td><td class="name">{{r15_name}}</td><td>{{r15_meter}}</td><td class="right">{{r15_cm3}}</td><td class="right">{{r15_amt}}</td><td class="right">{{r15_paid}}</td><td class="right">{{r15_bal}}</td></tr>
+          <tr><td>16</td><td class="name">{{r16_name}}</td><td>{{r16_meter}}</td><td class="right">{{r16_cm3}}</td><td class="right">{{r16_amt}}</td><td class="right">{{r16_paid}}</td><td class="right">{{r16_bal}}</td></tr>
+          <tr><td>17</td><td class="name">{{r17_name}}</td><td>{{r17_meter}}</td><td class="right">{{r17_cm3}}</td><td class="right">{{r17_amt}}</td><td class="right">{{r17_paid}}</td><td class="right">{{r17_bal}}</td></tr>
+          <tr><td>18</td><td class="name">{{r18_name}}</td><td>{{r18_meter}}</td><td class="right">{{r18_cm3}}</td><td class="right">{{r18_amt}}</td><td class="right">{{r18_paid}}</td><td class="right">{{r18_bal}}</td></tr>
+          <tr><td>19</td><td class="name">{{r19_name}}</td><td>{{r19_meter}}</td><td class="right">{{r19_cm3}}</td><td class="right">{{r19_amt}}</td><td class="right">{{r19_paid}}</td><td class="right">{{r19_bal}}</td></tr>
+          <tr><td>20</td><td class="name">{{r20_name}}</td><td>{{r20_meter}}</td><td class="right">{{r20_cm3}}</td><td class="right">{{r20_amt}}</td><td class="right">{{r20_paid}}</td><td class="right">{{r20_bal}}</td></tr>
         </tbody>
       </table>
       <div class="r-totals">

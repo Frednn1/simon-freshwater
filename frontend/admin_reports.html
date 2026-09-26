@@ -44,6 +44,9 @@
       <button id="previewBtn" class="btn-secondary" type="button" style="width:100%;">🔍 Load Preview</button>
     </div>
 
+    <!-- Period notice (no data / future period) -->
+    <div id="periodNotice" class="hidden"></div>
+
     <!-- Summary preview -->
     <div class="settings-card" id="summaryCard" style="display:none;">
       <h2>📋 Report Summary <span id="reportNo" style="font-weight:400;color:#90a4ae;font-size:.85rem;"></span></h2>
@@ -140,10 +143,27 @@
           show(msg, 'error', '❌ ' + (d.error || 'Preview failed.'));
           return;
         }
+        /* ── Handle no-data / future-period ── */
+        const notice = document.getElementById('periodNotice');
+        if (d.status === 'no_data' || d.status === 'future_period') {
+          if (notice) {
+            notice.className = 'period-notice period-notice-info';
+            notice.innerHTML =
+              '<span class="period-notice-icon">' +
+              (d.status === 'future_period' ? '\u{1F4C5}' : '\u{1F4ED}') +
+              '</span>' +
+              '<span class="period-notice-text">' + esc(d.message) + '</span>';
+            notice.classList.remove('hidden');
+          }
+          card.style.display = 'none';
+          return;
+        }
+        if (notice) { notice.classList.add('hidden'); notice.innerHTML = ''; }
+
         const s = d.summary;
         document.getElementById('sTotalConsumers').textContent  = s.total_consumers;
         document.getElementById('sActiveConsumers').textContent = s.active_consumers;
-        document.getElementById('sConsumption').textContent     = s.total_consumption + ' M³';
+        document.getElementById('sConsumption').textContent     = s.total_consumption;
         document.getElementById('sBilled').textContent          = 'KES ' + s.total_billed;
         document.getElementById('sPaid').textContent            = 'KES ' + s.total_paid;
         document.getElementById('sOutstanding').textContent     = 'KES ' + s.total_outstanding;
@@ -163,7 +183,6 @@
                   <th>#</th>
                   <th>Customer</th>
                   <th>Meter No.</th>
-                  <th class="right">Rds</th>
                   <th class="right">M³</th>
                   <th class="right">Billed (KES)</th>
                   <th class="right">Paid (KES)</th>
@@ -176,7 +195,6 @@
                     <td>${i + 1}</td>
                     <td>${esc(r.name)}</td>
                     <td>${esc(r.meter)}</td>
-                    <td class="right">${esc(r.cnt)}</td>
                     <td class="right">${esc(r.cm3)}</td>
                     <td class="right">${esc(r.amt)}</td>
                     <td class="right">${esc(r.paid)}</td>
