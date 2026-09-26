@@ -195,6 +195,15 @@
   }
   .print-hint strong { color: #2e7d32; }
   @media print { .print-hint { display: none !important; } }
+
+  .brand-logo {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+    display: inline-block;
+    vertical-align: middle;
+    flex-shrink: 0;
+  }
 </style>
 </head>
 <body>
@@ -207,7 +216,7 @@
   <div class="statement">
     <div class="statement-header">
       <div class="brand">
-        <div class="drop">💧</div>
+        <img class="brand-logo" src="/images/SimonW_Logo.png" alt="Simon Fresh Water">
         <div class="brand-text">
           <h1>SIMON FRESH WATER</h1>
           <p>Kikuyu, Kenya · Water Utility Services</p>

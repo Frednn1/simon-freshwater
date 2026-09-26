@@ -1554,3 +1554,36 @@ body.drawer-open { overflow: hidden; }
     transform: none;
   }
 }
+
+/* ═══════════════════════════════════════════════
+   BRAND LOGO (replaces the old droplet emoji)
+   ═══════════════════════════════════════════════ */
+.brand-logo {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* Larger variant on standalone auth / settings pages */
+.auth-brand .brand-logo,
+.settings-header .brand-logo {
+  width: 60px;
+  height: 60px;
+  margin-bottom: .4rem;
+}
+
+/* Drawer brand (mobile menu) */
+.drawer-brand .brand-logo {
+  width: 42px;
+  height: 42px;
+}
+
+/* Smaller on very small screens */
+@media (max-width: 600px) {
+  .brand-logo { width: 34px; height: 34px; }
+  .auth-brand .brand-logo,
+  .settings-header .brand-logo { width: 52px; height: 52px; }
+}
