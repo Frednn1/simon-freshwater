@@ -11,7 +11,7 @@ import hashlib
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from models import db, AdminUser, PasswordResetToken
+from models import db, AdminUser, PasswordResetToken, AdminOTP
 from notifications import send_sms
 
 
@@ -161,3 +161,116 @@ def confirm_password_reset(reset_token, otp, new_password):
     tok.used = True
     db.session.commit()
     return {"ok": True, "message": "Password updated. You can now log in."}
+
+
+# ═══════════════════════════════════════════════
+#  2FA — LOGIN OTP
+# ═══════════════════════════════════════════════
+
+LOGIN_OTP_TTL_MIN    = 5       # minutes
+LOGIN_OTP_MAX_TRIES  = 5       # verification attempts per OTP
+LOGIN_OTP_MAX_SENDS  = 3       # OTP sends per phone per 10 min
+LOGIN_OTP_RESEND_GAP = 30      # seconds between resends
+
+
+def _hash_otp(o: str) -> str:
+    return hashlib.sha256(o.encode()).hexdigest()
+
+
+def generate_login_otp(admin) -> dict:
+    """
+    Create and send a 6-digit OTP to the admin's phone.
+    Enforces: max 3 sends per phone per 10 minutes, 30-second cooldown.
+    Returns {ok, message?, error?}.
+    """
+    from datetime import datetime, timedelta
+    from notifications import send_sms
+
+    now = datetime.utcnow()
+
+    # Cooldown check — most recent non-expired OTP
+    recent = (AdminOTP.query
+              .filter_by(admin_id=admin.id, used=False)
+              .filter(AdminOTP.expires_at > now)
+              .order_by(AdminOTP.created_at.desc())
+              .first())
+    if recent:
+        elapsed = (now - recent.created_at).total_seconds()
+        if elapsed < LOGIN_OTP_RESEND_GAP:
+            wait = int(LOGIN_OTP_RESEND_GAP - elapsed) + 1
+            return {"ok": False, "error": f"Please wait {wait}s before requesting a new code."}
+        recent.used = True   # invalidate the old OTP
+        db.session.commit()
+
+    # Rate limit: max N sends per phone per 10 min
+    cutoff = now - timedelta(minutes=10)
+    sends_last_10min = (AdminOTP.query
+                        .filter_by(admin_id=admin.id)
+                        .filter(AdminOTP.created_at >= cutoff)
+                        .count())
+    if sends_last_10min >= LOGIN_OTP_MAX_SENDS:
+        return {"ok": False,
+                "error": "Too many codes requested. Please try again in a few minutes."}
+
+    # Generate and store
+    otp = f"{secrets.randbelow(10 ** 6):06d}"
+    record = AdminOTP(
+        admin_id=admin.id,
+        otp_hash=_hash_otp(otp),
+        phone=admin.phone,
+        expires_at=now + timedelta(minutes=LOGIN_OTP_TTL_MIN),
+        attempts=0,
+        used=False,
+    )
+    db.session.add(record)
+    db.session.commit()
+
+    # Send SMS (best-effort)
+    body = f"Your Simon Fresh Water login code: {otp}  (valid {LOGIN_OTP_TTL_MIN} min)"
+    sms_result = send_sms(admin.phone, body)
+    if not sms_result.get("ok"):
+        return {"ok": False,
+                "error": f"Could not send SMS: {sms_result.get('error', 'unknown')}"}
+
+    return {"ok": True,
+            "message": f"Verification code sent to phone ending ...{admin.phone[-4:]}"}
+
+
+def verify_login_otp(admin, otp: str) -> dict:
+    """
+    Verify an OTP for the admin. Increments attempt counter on failure.
+    On success, marks the OTP used and returns {ok: True}.
+    """
+    from datetime import datetime
+
+    otp = (otp or "").strip()
+    if not otp:
+        return {"ok": False, "error": "Please enter the 6-digit code."}
+
+    now = datetime.utcnow()
+    record = (AdminOTP.query
+              .filter_by(admin_id=admin.id, used=False)
+              .filter(AdminOTP.expires_at > now)
+              .order_by(AdminOTP.created_at.desc())
+              .first())
+
+    if not record:
+        return {"ok": False, "error": "No active code. Please request a new one."}
+
+    if record.attempts >= LOGIN_OTP_MAX_TRIES:
+        record.used = True
+        db.session.commit()
+        return {"ok": False, "error": "Too many incorrect attempts. Please request a new code."}
+
+    record.attempts += 1
+
+    # Constant-time comparison
+    if not secrets.compare_digest(record.otp_hash, _hash_otp(otp)):
+        db.session.commit()
+        left = LOGIN_OTP_MAX_TRIES - record.attempts
+        return {"ok": False,
+                "error": f"Incorrect code. {left} attempt(s) left."}
+
+    record.used = True
+    db.session.commit()
+    return {"ok": True}

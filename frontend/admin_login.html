@@ -15,17 +15,40 @@
         <p>Admin Sign In</p>
       </div>
 
-      <form id="loginForm" class="auth-form">
-        <div class="form-row">
-          <label for="username">Username</label>
-          <input type="text" id="username" autocomplete="username" required>
-        </div>
-        <div class="form-row">
-          <label for="password">Password</label>
-          <input type="password" id="password" autocomplete="current-password" required>
-        </div>
-        <button type="submit" class="btn-primary btn-full" id="loginBtn">Sign In</button>
-      </form>
+      <!-- STEP 1: password -->
+      <div id="step1">
+        <form id="loginForm" class="auth-form">
+          <div class="form-row">
+            <label for="username">Username</label>
+            <input type="text" id="username" autocomplete="username" required>
+          </div>
+          <div class="form-row">
+            <label for="password">Password</label>
+            <input type="password" id="password" autocomplete="current-password" required>
+          </div>
+          <button type="submit" class="btn-primary btn-full" id="loginBtn">Sign In</button>
+        </form>
+      </div>
+
+      <!-- STEP 2: OTP (hidden unless 2FA is required) -->
+      <div id="step2" class="hidden">
+        <p class="form-hint-small" id="otpMessage">
+          A 6-digit verification code was sent to your phone.
+        </p>
+        <form id="otpForm" class="auth-form">
+          <div class="form-row">
+            <label for="otpCode">Verification Code</label>
+            <input type="text" id="otpCode" inputmode="numeric" maxlength="6"
+                   pattern="[0-9]{6}" autocomplete="one-time-code" required>
+          </div>
+          <button type="submit" class="btn-primary btn-full" id="otpBtn">Verify &amp; Sign In</button>
+        </form>
+        <p style="text-align:center;margin-top:.75rem;">
+          <a href="#" id="resendOtp" class="auth-link" style="font-size:.82rem;">Resend code</a>
+          &nbsp;·&nbsp;
+          <a href="#" id="backToLogin" class="auth-link" style="font-size:.82rem;">Back</a>
+        </p>
+      </div>
 
       <div id="loginMsg" class="alert hidden"></div>
 
@@ -40,14 +63,25 @@
     const params = new URLSearchParams(location.search);
     const NEXT = params.get('next') || '/';
 
-    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    const loginForm = document.getElementById('loginForm');
+    const otpForm   = document.getElementById('otpForm');
+    const msg       = document.getElementById('loginMsg');
+    const step1     = document.getElementById('step1');
+    const step2     = document.getElementById('step2');
+
+    function showMsg(kind, text) {
+      msg.className = 'alert alert-' + kind;
+      msg.textContent = text;
+      msg.classList.remove('hidden');
+    }
+    function hideMsg() { msg.classList.add('hidden'); }
+
+    // ── Step 1: password ──
+    loginForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('loginBtn');
-      const msg = document.getElementById('loginMsg');
-      btn.disabled = true;
-      btn.textContent = 'Signing in…';
-      msg.classList.add('hidden');
-
+      btn.disabled = true; btn.textContent = 'Signing in…';
+      hideMsg();
       try {
         const r = await fetch('/api/admin/login', {
           method: 'POST',
@@ -57,26 +91,80 @@
             password: document.getElementById('password').value,
           }),
         });
-        const data = await r.json();
-        if (r.ok && data.ok) {
-          msg.className = 'alert alert-success';
-          msg.textContent = '✅ Signed in. Redirecting…';
-          msg.classList.remove('hidden');
-          setTimeout(() => { location.href = NEXT; }, 600);
+        const d = await r.json();
+        if (r.ok && d.ok && d.requires_2fa) {
+          // 2FA required — show OTP step
+          step1.classList.add('hidden');
+          step2.classList.remove('hidden');
+          if (d.message) document.getElementById('otpMessage').textContent = d.message;
+          document.getElementById('otpCode').focus();
+        } else if (r.ok && d.ok) {
+          // Regular login (no 2FA)
+          showMsg('success', '✅ Signed in. Redirecting…');
+          setTimeout(() => { location.href = NEXT; }, 500);
         } else {
-          msg.className = 'alert alert-error';
-          msg.textContent = data.error || 'Login failed.';
-          msg.classList.remove('hidden');
-          btn.disabled = false;
-          btn.textContent = 'Sign In';
+          showMsg('error', d.error || 'Login failed.');
+          btn.disabled = false; btn.textContent = 'Sign In';
         }
       } catch {
-        msg.className = 'alert alert-error';
-        msg.textContent = 'Network error. Please try again.';
-        msg.classList.remove('hidden');
-        btn.disabled = false;
-        btn.textContent = 'Sign In';
+        showMsg('error', 'Network error.');
+        btn.disabled = false; btn.textContent = 'Sign In';
       }
+    });
+
+    // ── Step 2: OTP ──
+    otpForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('otpBtn');
+      btn.disabled = true; btn.textContent = 'Verifying…';
+      hideMsg();
+      try {
+        const r = await fetch('/api/admin/login/verify-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ otp: document.getElementById('otpCode').value.trim() }),
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) {
+          showMsg('success', '✅ Signed in. Redirecting…');
+          setTimeout(() => { location.href = NEXT; }, 500);
+        } else {
+          showMsg('error', d.error || 'Verification failed.');
+          btn.disabled = false; btn.textContent = 'Verify & Sign In';
+        }
+      } catch {
+        showMsg('error', 'Network error.');
+        btn.disabled = false; btn.textContent = 'Verify & Sign In';
+      }
+    });
+
+    // ── Resend OTP ──
+    document.getElementById('resendOtp').addEventListener('click', async (e) => {
+      e.preventDefault();
+      hideMsg();
+      try {
+        const r = await fetch('/api/admin/login/resend-otp', { method: 'POST' });
+        const d = await r.json();
+        if (r.ok && d.ok) {
+          showMsg('success', d.message || 'Code resent.');
+          document.getElementById('otpMessage').textContent = d.message || 'New code sent.';
+          document.getElementById('otpCode').value = '';
+          document.getElementById('otpCode').focus();
+        } else {
+          showMsg('error', d.error || 'Could not resend.');
+        }
+      } catch { showMsg('error', 'Network error.'); }
+    });
+
+    // ── Back to password step ──
+    document.getElementById('backToLogin').addEventListener('click', (e) => {
+      e.preventDefault();
+      step2.classList.add('hidden');
+      step1.classList.remove('hidden');
+      document.getElementById('otpCode').value = '';
+      hideMsg();
+      const btn = document.getElementById('loginBtn');
+      btn.disabled = false; btn.textContent = 'Sign In';
     });
   </script>
 </body>

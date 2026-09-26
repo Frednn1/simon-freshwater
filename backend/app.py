@@ -31,6 +31,7 @@ from notifications import (
 from admin_auth import (
     create_first_admin, login as admin_login_fn,
     request_password_reset, confirm_password_reset,
+    generate_login_otp, verify_login_otp,
 )
 from werkzeug.security import check_password_hash, generate_password_hash
 from receipts import generate_receipt_pdf
@@ -1249,14 +1250,88 @@ def admin_login_route():
 
     data = request.get_json(silent=True) or {}
     result = admin_login_fn(data.get("username", ""), data.get("password", ""))
-    if result.get("ok"):
+    if not result.get("ok"):
+        return jsonify({"ok": False, "error": result["error"]}), 401
+
+    # ── 2FA branch ──
+    two_fa_on = os.environ.get("ADMIN_2FA_ENABLED", "false").strip().lower() in ("1","true","yes","on")
+    if two_fa_on:
+        admin = AdminUser.query.get(result["admin_id"])
+        if not admin or not admin.phone:
+            return jsonify({"ok": False,
+                            "error": "2FA is enabled but no phone is configured for this admin."}), 500
+
+        send = generate_login_otp(admin)
+        if not send.get("ok"):
+            return jsonify({"ok": False, "error": send.get("error")}), 502
+
+        # Do NOT establish a full session yet — mark as "pending 2FA"
         session.clear()
         session.permanent = True
-        session["admin_id"] = result["admin_id"]
-        session["admin_username"] = result["username"]
+        session["pending_2fa_admin_id"] = admin.id
         session["last_activity"] = datetime.utcnow().isoformat()
-        return jsonify({"ok": True, "username": result["username"]}), 200
-    return jsonify({"ok": False, "error": result["error"]}), 401
+
+        return jsonify({
+            "ok": True,
+            "requires_2fa": True,
+            "message": send.get("message"),
+        }), 200
+
+    # No 2FA — full session immediately (existing behaviour)
+    session.clear()
+    session.permanent = True
+    session["admin_id"] = result["admin_id"]
+    session["admin_username"] = result["username"]
+    session["last_activity"] = datetime.utcnow().isoformat()
+    return jsonify({"ok": True, "username": result["username"]}), 200
+
+
+@app.route("/api/admin/login/verify-otp", methods=["POST"])
+def admin_login_verify_otp():
+    if not _rate_limit("login_verify", 20, 60):
+        return _too_many(60)
+
+    pending_id = session.get("pending_2fa_admin_id")
+    if not pending_id:
+        return jsonify({"ok": False, "error": "No pending login. Please sign in again."}), 401
+
+    admin = AdminUser.query.get(pending_id)
+    if not admin or not admin.is_active:
+        session.clear()
+        return jsonify({"ok": False, "error": "Invalid session."}), 401
+
+    data = request.get_json(silent=True) or {}
+    result = verify_login_otp(admin, data.get("otp", ""))
+    if not result.get("ok"):
+        return jsonify({"ok": False, "error": result.get("error")}), 401
+
+    # Promote the pending session to a full authenticated session
+    session.pop("pending_2fa_admin_id", None)
+    session["admin_id"] = admin.id
+    session["admin_username"] = admin.username
+    session["last_activity"] = datetime.utcnow().isoformat()
+
+    return jsonify({"ok": True, "username": admin.username}), 200
+
+
+@app.route("/api/admin/login/resend-otp", methods=["POST"])
+def admin_login_resend_otp():
+    if not _rate_limit("login_resend", 5, 60):
+        return _too_many(60)
+
+    pending_id = session.get("pending_2fa_admin_id")
+    if not pending_id:
+        return jsonify({"ok": False, "error": "No pending login. Please sign in again."}), 401
+
+    admin = AdminUser.query.get(pending_id)
+    if not admin or not admin.is_active:
+        return jsonify({"ok": False, "error": "Invalid session."}), 401
+
+    send = generate_login_otp(admin)
+    if not send.get("ok"):
+        return jsonify({"ok": False, "error": send.get("error")}), 429
+
+    return jsonify({"ok": True, "message": send.get("message")}), 200
 
 
 @app.route("/api/admin/logout", methods=["POST"])
