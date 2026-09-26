@@ -20,30 +20,64 @@
       <nav class="header-actions desktop-only">
         <button class="tab-btn tab-new" id="openNewCustomerBtn" type="button">
           <span class="tab-icon">＋</span> New Customer
+          <span class="tab-tooltip" role="tooltip">
+            <span class="tab-tooltip-title">New Customer</span>
+            <span class="tab-tooltip-desc">Add a new consumer</span>
+          </span>
         </button>
+
         <button class="tab-btn tab-terminate" id="openTerminateBtn" type="button">
           <span class="tab-icon">⛔</span> Terminate
+          <span class="tab-tooltip" role="tooltip">
+            <span class="tab-tooltip-title">Terminate</span>
+            <span class="tab-tooltip-desc">Deactivate an account</span>
+          </span>
         </button>
+
+        <a class="tab-btn tab-reports-icon hidden" id="reportsTab"
+           href="/admin/reports" aria-label="Monthly Reports">
+          <span class="tab-icon">📊</span>
+          <span class="tab-tooltip" role="tooltip">
+            <span class="tab-tooltip-title">Monthly Reports</span>
+            <span class="tab-tooltip-desc">Download billing PDF</span>
+          </span>
+        </a>
+
+        <a class="tab-btn tab-bulk-icon hidden" id="bulkSmsTab"
+           href="/admin/bulk_sms" aria-label="Bulk SMS">
+          <span class="tab-icon">📢</span>
+          <span class="tab-tooltip" role="tooltip">
+            <span class="tab-tooltip-title">Bulk SMS</span>
+            <span class="tab-tooltip-desc">Remind overdue consumers</span>
+          </span>
+        </a>
+
+        <a class="tab-btn tab-mpesa-icon hidden" id="mpesaTab"
+           href="/admin/mpesa" aria-label="M-Pesa">
+          <span class="tab-icon">📲</span>
+          <span class="tab-tooltip" role="tooltip">
+            <span class="tab-tooltip-title">M-Pesa</span>
+            <span class="tab-tooltip-desc">Payments &amp; callbacks</span>
+          </span>
+        </a>
+
+        <a class="tab-btn tab-settings-icon hidden" id="settingsTab"
+           href="/admin/settings" aria-label="Settings">
+          <span class="tab-icon">⚙️</span>
+          <span class="tab-tooltip" role="tooltip">
+            <span class="tab-tooltip-title">Settings</span>
+            <span class="tab-tooltip-desc">Admin profile &amp; password</span>
+          </span>
+        </a>
+
         <button class="tab-btn tab-auth" id="authTab" type="button">
           <span class="tab-icon" id="authTabIcon">🔐</span>
           <span id="authTabLabel">Login</span>
+          <span class="tab-tooltip" role="tooltip">
+            <span class="tab-tooltip-title" id="authTipTitle">Login</span>
+            <span class="tab-tooltip-desc" id="authTipDesc">Sign in as administrator</span>
+          </span>
         </button>
-        <a class="tab-btn tab-reports-icon hidden" id="reportsTab"
-           href="/admin/reports" aria-label="Reports" title="Monthly Reports">
-          <span class="tab-icon">📊</span>
-        </a>
-        <a class="tab-btn tab-bulk-icon hidden" id="bulkSmsTab"
-           href="/admin/bulk_sms" aria-label="Bulk SMS" title="Bulk SMS to Overdue">
-          <span class="tab-icon">📢</span>
-        </a>
-        <a class="tab-btn tab-mpesa-icon hidden" id="mpesaTab"
-           href="/admin/mpesa" aria-label="M-Pesa" title="M-Pesa">
-          <span class="tab-icon">📲</span>
-        </a>
-        <a class="tab-btn tab-settings-icon hidden" id="settingsTab"
-           href="/admin/settings" aria-label="Settings" title="Settings">
-          <span class="tab-icon">⚙️</span>
-        </a>
       </nav>
       <button class="menu-toggle mobile-only" id="menuToggle"
               type="button" aria-label="Open menu" aria-controls="mobileDrawer"

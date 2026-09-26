@@ -1445,3 +1445,112 @@ body.drawer-open { overflow: hidden; }
     text-align: left;
   }
 }
+
+/* ═══════════════════════════════════════════════
+   DESKTOP TAB TOOLTIPS
+   Hover a header tab → a small card shows its name + purpose.
+   Mobile view is unaffected (tabs are hidden there).
+   ═══════════════════════════════════════════════ */
+@media (min-width: 601px) {
+
+  .header-actions .tab-btn {
+    position: relative;
+  }
+
+  .tab-tooltip {
+    position: absolute;
+    top: calc(100% + 10px);
+    left: 50%;
+    transform: translateX(-50%) translateY(-4px);
+    background: linear-gradient(180deg, #0a2540 0%, #0d47a1 100%);
+    color: #fff;
+    border: 1px solid rgba(100,181,246,.35);
+    border-radius: 9px;
+    padding: .6rem .85rem;
+    box-shadow: 0 10px 28px rgba(10,37,64,.4),
+                0 0 0 1px rgba(255,255,255,.05) inset;
+    min-width: 155px;
+    max-width: 220px;
+    text-align: left;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity .18s ease, transform .18s ease, visibility .18s;
+    z-index: 1000;
+    white-space: normal;
+    line-height: 1.35;
+  }
+
+  /* Small arrow pointing up at the tab */
+  .tab-tooltip::before {
+    content: '';
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-bottom-color: #0a2540;
+    margin-bottom: -1px;
+  }
+
+  .tab-tooltip-title {
+    display: block;
+    font-weight: 700;
+    font-size: .82rem;
+    letter-spacing: .2px;
+    color: #fff;
+    margin-bottom: 3px;
+  }
+
+  .tab-tooltip-desc {
+    display: block;
+    font-size: .72rem;
+    font-weight: 400;
+    color: #b3d4f5;
+    letter-spacing: .1px;
+    line-height: 1.35;
+  }
+
+  /* Show on hover */
+  .header-actions .tab-btn:hover .tab-tooltip,
+  .header-actions .tab-btn:focus-visible .tab-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  /* ─── Edge-aware alignment ───
+     Leftmost tab: tooltip extends to the right
+     Rightmost tabs: tooltip extends to the left */
+  .tab-new .tab-tooltip {
+    left: 0;
+    transform: translateX(0) translateY(-4px);
+  }
+  .tab-new:hover .tab-tooltip,
+  .tab-new:focus-visible .tab-tooltip {
+    transform: translateX(0) translateY(0);
+  }
+  .tab-new .tab-tooltip::before {
+    left: 26px;
+    transform: none;
+  }
+
+  .tab-settings-icon .tab-tooltip,
+  .tab-auth .tab-tooltip {
+    left: auto;
+    right: 0;
+    transform: translateX(0) translateY(-4px);
+  }
+  .tab-settings-icon:hover .tab-tooltip,
+  .tab-settings-icon:focus-visible .tab-tooltip,
+  .tab-auth:hover .tab-tooltip,
+  .tab-auth:focus-visible .tab-tooltip {
+    transform: translateX(0) translateY(0);
+  }
+  .tab-settings-icon .tab-tooltip::before,
+  .tab-auth .tab-tooltip::before {
+    left: auto;
+    right: 22px;
+    transform: none;
+  }
+}

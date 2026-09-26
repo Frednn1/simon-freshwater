@@ -143,6 +143,19 @@ function renderAuthTab() {
     }
   }
 
+  // Update the desktop auth tab's tooltip text to match the current state
+  const authTipTitle = document.getElementById('authTipTitle');
+  const authTipDesc  = document.getElementById('authTipDesc');
+  if (authTipTitle && authTipDesc) {
+    if (AUTH_STATE.authenticated) {
+      authTipTitle.textContent = 'Logout';
+      authTipDesc.textContent  = 'End your admin session';
+    } else {
+      authTipTitle.textContent = 'Login';
+      authTipDesc.textContent  = 'Sign in as administrator';
+    }
+  }
+
   if (AUTH_STATE.authenticated) {
     btn.classList.remove('tab-login');
     btn.classList.add('tab-logout');
