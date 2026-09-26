@@ -1123,3 +1123,27 @@ body {
     font-size: .95rem;
   }
 }
+
+/* ═══════════════════════════════════════════════
+   CONSUMER PAGE — Consumption trend chart
+   ═══════════════════════════════════════════════ */
+.chart-wrap {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: .25rem 0 .75rem;
+}
+#consumptionChart {
+  width: 100%;
+  height: auto;
+  min-height: 200px;
+  max-height: 260px;
+  display: block;
+}
+@media (max-width: 600px) {
+  /* On narrow screens, allow horizontal scroll and give a fixed min width
+     so the 12 bars remain readable instead of squashing to a sliver. */
+  #consumptionChart {
+    min-width: 640px;
+  }
+}

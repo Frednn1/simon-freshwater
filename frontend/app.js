@@ -527,6 +527,9 @@ async function initConsumerPage(consumerId) {
           <td><a href="/bill?id=${r.id}">${esc(r.bill_status)} →</a></td>
         </tr>`).join('');
 
+      /* Consumption trend chart (last 12 readings) */
+      renderConsumptionChart(data.chart_readings || []);
+
       /* Payment card (admins only, active consumers) */
       if (isActive && isAdmin) {
         document.getElementById('paymentCard').classList.remove('hidden');
@@ -965,6 +968,115 @@ async function sendBillWhatsApp(consumerId, btn) {
     msgEl.textContent = '❌ Network error — please try again.';
     msgEl.classList.remove('hidden');
   }
+}
+
+/* ─── Consumption trend chart (pure SVG) ─── */
+function _fmtShortDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso + 'T00:00:00');
+  const day = String(d.getDate()).padStart(2, '0');
+  const mon = ['Jan','Feb','Mar','Apr','May','Jun',
+               'Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()];
+  return `${day} ${mon}`;
+}
+
+function renderConsumptionChart(readings) {
+  const card = document.getElementById('chartCard');
+  const svg  = document.getElementById('consumptionChart');
+  if (!card || !svg) return;
+
+  // Hide when there aren't enough data points for a "trend"
+  if (!readings || readings.length < 2) {
+    card.classList.add('hidden');
+    return;
+  }
+
+  // Chart canvas (viewBox scales to container width)
+  const W = 720, H = 240;
+  const padL = 55, padR = 20, padT = 30, padB = 55;
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+
+  // Oldest → newest (input is newest-first)
+  const data = [...readings].reverse();
+  const n = data.length;
+
+  // Y-axis: nice round upper bound
+  const rawMax = Math.max(1, ...data.map(r => Number(r.consumption_m3 || 0)));
+  const yMax = Math.ceil(rawMax / 5) * 5;
+
+  const barW      = innerW / n;
+  const barGap    = barW * 0.20;
+  const actualBarW = barW - barGap;
+
+  const yScale = (v) => padT + innerH - (v / yMax) * innerH;
+
+  // Grid lines + y-axis labels (25/50/75/100 %)
+  const gridLines = [0.25, 0.5, 0.75, 1].map(frac => {
+    const y = padT + innerH * (1 - frac);
+    const label = Math.round(yMax * frac);
+    return `
+      <line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}"
+            stroke="#e3f2fd" stroke-width="1"/>
+      <text x="${padL - 8}" y="${y + 4}" text-anchor="end"
+            font-size="10" fill="#455a64"
+            font-family="'Segoe UI', Arial, sans-serif">
+        ${label}
+      </text>`;
+  }).join('');
+
+  // Bars
+  const bars = data.map((r, i) => {
+    const cons = Number(r.consumption_m3 || 0);
+    const x = padL + i * barW + barGap / 2;
+    const y = yScale(cons);
+    const h = Math.max(padT + innerH - y, 0);
+    const isLatest = (i === n - 1);
+    const fill = isLatest ? '#f57c00' : 'url(#barGrad)';
+    const valueLabel = cons > 0 ? cons.toFixed(1) : '';
+    const dateLabel = _fmtShortDate(r.reading_date);
+    return `
+      <rect x="${x}" y="${y}" width="${actualBarW}" height="${h}"
+            fill="${fill}" rx="3" ry="3"/>
+      ${valueLabel ? `<text x="${x + actualBarW / 2}" y="${y - 5}"
+                           text-anchor="middle" font-size="10"
+                           fill="#0d47a1" font-weight="700"
+                           font-family="'Courier New', monospace">
+                        ${valueLabel}</text>` : ''}
+      <text x="${x + actualBarW / 2}" y="${H - padB + 16}"
+            text-anchor="middle" font-size="9" fill="#455a64"
+            font-family="'Segoe UI', Arial, sans-serif">
+        ${dateLabel}
+      </text>`;
+  }).join('');
+
+  // Axis line
+  const axisLine = `<line x1="${padL}" y1="${padT + innerH}"
+                          x2="${W - padR}" y2="${padT + innerH}"
+                          stroke="#90caf9" stroke-width="1.5"/>`;
+
+  // Rotated Y-axis label
+  const yLabel = `<text x="14" y="${padT + innerH / 2}"
+                        text-anchor="middle" font-size="10"
+                        fill="#455a64" font-weight="600"
+                        transform="rotate(-90 14 ${padT + innerH / 2})"
+                        font-family="'Segoe UI', Arial, sans-serif">
+                    M³ Consumed
+                  </text>`;
+
+  const defs = `
+    <defs>
+      <linearGradient id="barGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%"   stop-color="#1976d2"/>
+        <stop offset="100%" stop-color="#64b5f6"/>
+      </linearGradient>
+    </defs>`;
+
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  svg.innerHTML = defs + gridLines + axisLine + yLabel + bars;
+
+  card.classList.remove('hidden');
 }
 
 function wireNotifyButtons(consumerId) {

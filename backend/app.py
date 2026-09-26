@@ -661,6 +661,7 @@ def get_consumer_details(consumer_id):
         prev_m3 = r.reading_m3
 
     latest5 = list(reversed(all_r))[:5]
+    latest12 = list(reversed(all_r))[:12]   # for the trend chart
     info = get_consumer_status(latest5)
 
     last_sms = (NotificationLog.query
@@ -705,6 +706,11 @@ def get_consumer_details(consumer_id):
             "amount_kes": r.amount_kes, "amount_paid": r.amount_paid,
             "balance": r.balance, "bill_status": get_reading_bill_status(r),
         } for r in latest5],
+        "chart_readings": [{
+            "reading_m3": r.reading_m3,
+            "consumption_m3": cons_by_id.get(r.id, 0.0),
+            "reading_date": r.reading_date.isoformat(),
+        } for r in latest12],
         "payments": payments_out,
         "overall_status": info,
         "available_channels": get_available_channels(),

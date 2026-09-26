@@ -226,6 +226,17 @@
       </div>
     </section>
 
+    <section id="chartCard" class="card hidden">
+      <h3>📈 Consumption Trend <span style="font-weight:400;color:#90a4ae;font-size:.85rem;">(last 12 readings)</span></h3>
+      <p class="form-hint">
+        M³ consumed between consecutive meter readings — the newest is highlighted.
+      </p>
+      <div class="chart-wrap">
+        <svg id="consumptionChart" xmlns="http://www.w3.org/2000/svg"
+             role="img" aria-label="Consumption trend chart"></svg>
+      </div>
+    </section>
+
     <section id="adminActions" class="admin-actions hidden">
       <button id="reactivateBtn" class="btn-admin btn-reactivate" type="button">
         <span class="btn-icon">♻️</span> Reactivate
