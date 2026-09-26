@@ -246,6 +246,58 @@
     padding-top: 6px;
   }
 
+  /* ─── How to Pay via M-Pesa ─── */
+  .pay-section { margin-top: 12px; page-break-inside: avoid; }
+  .pay-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5px 16px;
+    margin-top: 4px;
+  }
+  .pay-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 9pt;
+    color: #1c2b36;
+    line-height: 1.35;
+  }
+  .pay-step .num {
+    flex-shrink: 0;
+    width: 18px; height: 18px;
+    background: #1976d2;
+    color: #fff;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 8pt;
+    font-weight: 700;
+    margin-top: 1px;
+  }
+  .pay-step strong {
+    color: #0d47a1;
+    font-family: 'Courier New', monospace;
+    font-weight: 700;
+  }
+  .pay-note {
+    margin-top: 9px;
+    padding: 7px 12px;
+    background: #e8f5e9;
+    border-left: 4px solid #2e7d32;
+    border-radius: 0 6px 6px 0;
+    font-size: 9pt;
+    color: #1b5e20;
+    font-weight: 600;
+  }
+  .pay-settle {
+    margin-top: 6px;
+    font-size: 8.5pt;
+    color: #455a64;
+    font-style: italic;
+    text-align: center;
+  }
+
   .print-hint {
     max-width: 190mm;
     margin: 10px auto;
@@ -344,6 +396,25 @@
             <span class="value">KES <span class="ph">{{balance}}</span></span>
           </div>
         </div>
+      </div>
+
+      <div class="section pay-section">
+        <div class="section-title">How to Pay via M-Pesa</div>
+        <div class="pay-grid">
+          <div class="pay-step"><span class="num">1</span><span>Open M-Pesa on your phone</span></div>
+          <div class="pay-step"><span class="num">2</span><span>Select <strong>Lipa na M-Pesa</strong> → <strong>Pay Bill</strong></span></div>
+          <div class="pay-step"><span class="num">3</span><span>Business Number: <strong>247247</strong></span></div>
+          <div class="pay-step"><span class="num">4</span><span>Account No.: <strong><span class="ph">{{meter_acc_no}}</span></strong></span></div>
+          <div class="pay-step"><span class="num">5</span><span>Amount: as shown above</span></div>
+          <div class="pay-step"><span class="num">6</span><span>Enter your M-Pesa PIN → confirm</span></div>
+        </div>
+        <div class="pay-note">
+          ✓ Your bill clears automatically within seconds of payment.
+        </div>
+        <p class="pay-settle">
+          Please settle any outstanding balance to continue enjoying
+          uninterrupted water service.
+        </p>
       </div>
 
     </div>

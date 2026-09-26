@@ -4,12 +4,6 @@
 
 const API = window.location.origin;
 
-/* Public config — paybill number etc. Loaded once at startup. */
-window.PUBLIC_CONFIG = { paybill: "" };
-fetch(`${API}/api/public/config`)
-  .then(r => r.json())
-  .then(d => { window.PUBLIC_CONFIG = d; window.PAYBILL_NO = d.paybill || ""; })
-  .catch(() => {});
 
 /* ─── Helpers ─── */
 function esc(s) {
@@ -1253,11 +1247,6 @@ async function initBillPage(readingId) {
       document.getElementById('bBalance').textContent = 'KES ' + fmt(r.balance);
       document.getElementById('billStatusBadge').textContent = r.bill_status;
 
-      // Populate the "Pay via M-Pesa" section
-      const pbNo = document.getElementById('paybillNo');
-      const pbAcct = document.getElementById('paybillAcct');
-      if (pbNo) pbNo.textContent = window.PAYBILL_NO || 'Ask admin';
-      if (pbAcct) pbAcct.textContent = r.meter_acc_no || c.meter_acc_no || '—';
 
       /* Show Download action only when an admin is signed in */
       if (AUTH_STATE.authenticated) {
