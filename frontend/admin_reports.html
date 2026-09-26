@@ -47,13 +47,31 @@
     <!-- Summary preview -->
     <div class="settings-card" id="summaryCard" style="display:none;">
       <h2>📋 Report Summary <span id="reportNo" style="font-weight:400;color:#90a4ae;font-size:.85rem;"></span></h2>
-      <div class="info-grid" style="grid-template-columns:1fr 1fr;gap:.6rem 1rem;">
-        <div><span class="info-label">Total Consumers</span><span class="info-value" id="sTotalConsumers">—</span></div>
-        <div><span class="info-label">Active Consumers</span><span class="info-value" id="sActiveConsumers">—</span></div>
-        <div><span class="info-label">Consumption (M³)</span><span class="info-value" id="sConsumption">—</span></div>
-        <div><span class="info-label">Billed</span><span class="info-value" id="sBilled">—</span></div>
-        <div><span class="info-label">Paid</span><span class="info-value" id="sPaid">—</span></div>
-        <div><span class="info-label">Outstanding</span><span class="info-value" id="sOutstanding">—</span></div>
+      <div class="report-summary-grid">
+        <div class="report-summary-item">
+          <span class="report-summary-label">Total Consumers</span>
+          <span class="report-summary-value" id="sTotalConsumers">—</span>
+        </div>
+        <div class="report-summary-item">
+          <span class="report-summary-label">Active Consumers</span>
+          <span class="report-summary-value" id="sActiveConsumers">—</span>
+        </div>
+        <div class="report-summary-item">
+          <span class="report-summary-label">Consumption (M³)</span>
+          <span class="report-summary-value" id="sConsumption">—</span>
+        </div>
+        <div class="report-summary-item">
+          <span class="report-summary-label">Total Billed</span>
+          <span class="report-summary-value" id="sBilled">—</span>
+        </div>
+        <div class="report-summary-item">
+          <span class="report-summary-label">Total Paid</span>
+          <span class="report-summary-value" id="sPaid">—</span>
+        </div>
+        <div class="report-summary-item report-summary-outstanding">
+          <span class="report-summary-label">Outstanding</span>
+          <span class="report-summary-value" id="sOutstanding">—</span>
+        </div>
       </div>
       <p id="truncatedNote" style="display:none;margin-top:.75rem;font-size:.82rem;color:#c62828;">
         ⚠️ More than 20 consumers have activity this month — the PDF shows the first 20 by name.
