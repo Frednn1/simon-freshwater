@@ -126,6 +126,23 @@ function renderAuthTab() {
     bulkSmsTab.classList.toggle('hidden', !AUTH_STATE.authenticated);
   }
 
+  // Drawer mirrors of the auth-only tabs
+  ['drawerReports', 'drawerBulkSms', 'drawerMpesa', 'drawerSettings'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('hidden', !AUTH_STATE.authenticated);
+  });
+  const dAuthIcon  = document.getElementById('drawerAuthIcon');
+  const dAuthLabel = document.getElementById('drawerAuthLabel');
+  if (dAuthIcon && dAuthLabel) {
+    if (AUTH_STATE.authenticated) {
+      dAuthIcon.textContent = '🚪';
+      dAuthLabel.textContent = 'Logout';
+    } else {
+      dAuthIcon.textContent = '🔐';
+      dAuthLabel.textContent = 'Login';
+    }
+  }
+
   if (AUTH_STATE.authenticated) {
     btn.classList.remove('tab-login');
     btn.classList.add('tab-logout');
@@ -149,6 +166,74 @@ function renderAuthTab() {
 }
 
 /* ═══════════════════════════════════════════════
+   MOBILE DRAWER
+   ═══════════════════════════════════════════════ */
+function openDrawer() {
+  const drawer = document.getElementById('mobileDrawer');
+  const backdrop = document.getElementById('drawerBackdrop');
+  const toggle = document.getElementById('menuToggle');
+  if (!drawer || !backdrop) return;
+  drawer.classList.add('open');
+  backdrop.classList.add('visible');
+  backdrop.setAttribute('aria-hidden', 'false');
+  drawer.setAttribute('aria-hidden', 'false');
+  if (toggle) toggle.setAttribute('aria-expanded', 'true');
+  document.body.classList.add('drawer-open');
+}
+
+function closeDrawer() {
+  const drawer = document.getElementById('mobileDrawer');
+  const backdrop = document.getElementById('drawerBackdrop');
+  const toggle = document.getElementById('menuToggle');
+  if (!drawer || !backdrop) return;
+  drawer.classList.remove('open');
+  backdrop.classList.remove('visible');
+  backdrop.setAttribute('aria-hidden', 'true');
+  drawer.setAttribute('aria-hidden', 'true');
+  if (toggle) toggle.setAttribute('aria-expanded', 'false');
+  document.body.classList.remove('drawer-open');
+}
+
+function initMobileDrawer() {
+  const toggle   = document.getElementById('menuToggle');
+  const backdrop = document.getElementById('drawerBackdrop');
+  const closeBtn = document.getElementById('drawerClose');
+  const dNew     = document.getElementById('drawerNewCustomer');
+  const dTerm    = document.getElementById('drawerTerminate');
+  const dAuth    = document.getElementById('drawerAuth');
+
+  if (toggle)   toggle.addEventListener('click', openDrawer);
+  if (backdrop) backdrop.addEventListener('click', closeDrawer);
+  if (closeBtn) closeBtn.addEventListener('click', closeDrawer);
+
+  // Wire drawer versions of the actions to the same handlers
+  if (dNew) {
+    dNew.addEventListener('click', () => { closeDrawer(); openNewCustomerModal(); });
+  }
+  if (dTerm) {
+    dTerm.addEventListener('click', () => { closeDrawer(); openTerminateModal(); });
+  }
+  if (dAuth) {
+    dAuth.addEventListener('click', () => {
+      closeDrawer();
+      // Reuse the header auth button logic
+      const headerAuth = document.getElementById('authTab');
+      if (headerAuth) headerAuth.click();
+    });
+  }
+
+  // Close drawer on any navigation link inside it
+  document.querySelectorAll('#mobileDrawer a.drawer-item').forEach(a => {
+    a.addEventListener('click', () => closeDrawer());
+  });
+
+  // Escape key closes
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeDrawer();
+  });
+}
+
+/* ═══════════════════════════════════════════════
    HOME PAGE
    ═══════════════════════════════════════════════ */
 async function initHomePage() {
@@ -162,6 +247,7 @@ async function initHomePage() {
   await refreshAuth();
   renderAuthTab();
   startSessionIdleWatch();
+  initMobileDrawer();
 
   let debounce;
 

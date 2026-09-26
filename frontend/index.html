@@ -17,7 +17,7 @@
           <p class="tagline">Kikuyu, Kenya &middot; Utility Billing Portal</p>
         </div>
       </div>
-      <nav class="header-actions">
+      <nav class="header-actions desktop-only">
         <button class="tab-btn tab-new" id="openNewCustomerBtn" type="button">
           <span class="tab-icon">＋</span> New Customer
         </button>
@@ -45,8 +45,59 @@
           <span class="tab-icon">⚙️</span>
         </a>
       </nav>
+      <button class="menu-toggle mobile-only" id="menuToggle"
+              type="button" aria-label="Open menu" aria-controls="mobileDrawer"
+              aria-expanded="false">
+        <span class="menu-toggle-icon">☰</span>
+      </button>
     </div>
   </header>
+
+  <!-- ═══ Mobile Drawer ═══ -->
+  <div class="drawer-backdrop" id="drawerBackdrop" aria-hidden="true"></div>
+  <aside class="drawer" id="mobileDrawer" aria-hidden="true" aria-label="Main menu">
+    <div class="drawer-header">
+      <div class="drawer-brand">
+        <div class="logo-drop">💧</div>
+        <div>
+          <h2>Simon Fresh Water</h2>
+          <p>Kikuyu, Kenya</p>
+        </div>
+      </div>
+      <button class="drawer-close" id="drawerClose" type="button" aria-label="Close menu">×</button>
+    </div>
+
+    <nav class="drawer-nav">
+      <button class="drawer-item" id="drawerNewCustomer" type="button">
+        <span class="drawer-item-icon">＋</span>
+        <span class="drawer-item-label">New Customer</span>
+      </button>
+      <button class="drawer-item" id="drawerTerminate" type="button">
+        <span class="drawer-item-icon">⛔</span>
+        <span class="drawer-item-label">Terminate</span>
+      </button>
+      <a class="drawer-item hidden" id="drawerReports" href="/admin/reports">
+        <span class="drawer-item-icon">📊</span>
+        <span class="drawer-item-label">Reports</span>
+      </a>
+      <a class="drawer-item hidden" id="drawerBulkSms" href="/admin/bulk_sms">
+        <span class="drawer-item-icon">📢</span>
+        <span class="drawer-item-label">Bulk SMS</span>
+      </a>
+      <a class="drawer-item hidden" id="drawerMpesa" href="/admin/mpesa">
+        <span class="drawer-item-icon">📲</span>
+        <span class="drawer-item-label">M-Pesa</span>
+      </a>
+      <a class="drawer-item hidden" id="drawerSettings" href="/admin/settings">
+        <span class="drawer-item-icon">⚙️</span>
+        <span class="drawer-item-label">Settings</span>
+      </a>
+      <button class="drawer-item drawer-item-auth" id="drawerAuth" type="button">
+        <span class="drawer-item-icon" id="drawerAuthIcon">🔐</span>
+        <span class="drawer-item-label" id="drawerAuthLabel">Login</span>
+      </button>
+    </nav>
+  </aside>
 
   <main class="home-main">
     <section class="hero">
