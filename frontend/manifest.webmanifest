@@ -1,0 +1,24 @@
+{
+  "name": "Simon Fresh Water",
+  "short_name": "SimonW",
+  "description": "Simon Fresh Water utility billing portal — Kikuyu, Kenya",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0a2540",
+  "theme_color": "#0d47a1",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

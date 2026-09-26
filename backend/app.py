@@ -645,6 +645,55 @@ def report_template_view():
 def styles():
     return send_from_directory(FRONTEND_DIR, "style.css")
 
+
+# ─── Favicons & PWA assets ───
+@app.route("/favicon.ico")
+def favicon_ico():
+    return send_from_directory(FRONTEND_DIR, "favicon.ico",
+                                mimetype="image/x-icon")
+
+
+@app.route("/favicon-32x32.png")
+def favicon_32():
+    return send_from_directory(FRONTEND_DIR, "favicon-32x32.png",
+                                mimetype="image/png")
+
+
+@app.route("/favicon-16x16.png")
+def favicon_16():
+    return send_from_directory(FRONTEND_DIR, "favicon-16x16.png",
+                                mimetype="image/png")
+
+
+@app.route("/apple-touch-icon.png")
+def apple_touch_icon():
+    return send_from_directory(FRONTEND_DIR, "apple-touch-icon.png",
+                                mimetype="image/png")
+
+
+@app.route("/icon-192.png")
+def icon_192():
+    return send_from_directory(FRONTEND_DIR, "icon-192.png",
+                                mimetype="image/png")
+
+
+@app.route("/icon-512.png")
+def icon_512():
+    return send_from_directory(FRONTEND_DIR, "icon-512.png",
+                                mimetype="image/png")
+
+
+@app.route("/manifest.webmanifest")
+def manifest():
+    return send_from_directory(FRONTEND_DIR, "manifest.webmanifest",
+                                mimetype="application/manifest+json")
+
+
+@app.route("/images/<path:filename>")
+def images(filename):
+    """Serve files from frontend/images/ (logo, etc.)."""
+    return send_from_directory(os.path.join(FRONTEND_DIR, "images"), filename)
+
 @app.route("/app.js")
 def appjs():
     return send_from_directory(FRONTEND_DIR, "app.js")
