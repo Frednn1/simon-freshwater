@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Simon Fresh Water — Water Bill (Template)</title>
+<style>
+  @page { size: A4; margin: 8mm 10mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    color: #1c2b36;
+    background: #fff;
+    font-size: 10pt;
+    line-height: 1.4;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+  .bill { max-width: 190mm; margin: 0 auto; }
+
+  /* Brand logo */
+  .brand-logo {
+    width: 44px;
+    height: 44px;
+    object-fit: contain;
+    display: inline-block;
+    vertical-align: middle;
+    flex-shrink: 0;
+  }
+
+  /* Header */
+  .bill-header {
+    background: linear-gradient(135deg, #0a2540 0%, #0d47a1 55%, #1976d2 100%);
+    color: #fff;
+    border-radius: 10px 10px 0 0;
+    padding: 12px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+  .bill-brand { display: flex; align-items: center; gap: 12px; }
+  .bill-brand .brand-text h1 {
+    font-size: 14pt;
+    letter-spacing: .4px;
+    margin-bottom: 2px;
+  }
+  .bill-brand .brand-text p {
+    font-size: 8pt;
+    opacity: .88;
+    letter-spacing: .2px;
+  }
+  .bill-tag {
+    text-align: right;
+    font-size: 8pt;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    opacity: .95;
+  }
+  .bill-tag strong {
+    display: block;
+    font-size: 12pt;
+    letter-spacing: 1.5px;
+    margin-top: 2px;
+  }
+
+  /* Meta band */
+  .bill-meta {
+    background: #e3f2fd;
+    border-left: 4px solid #1976d2;
+    border-right: 4px solid #1976d2;
+    padding: 8px 20px;
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    font-size: 9pt;
+  }
+  .bill-meta .cell { flex: 1; }
+  .bill-meta .label {
+    font-size: 7pt;
+    text-transform: uppercase;
+    letter-spacing: .8px;
+    color: #455a64;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+  .bill-meta .value {
+    font-size: 10pt;
+    font-weight: 700;
+    color: #0d47a1;
+    font-family: 'Courier New', monospace;
+  }
+
+  /* Body */
+  .bill-body {
+    border: 2px solid #90caf9;
+    border-top: none;
+    padding: 16px 20px;
+  }
+
+  .section { margin-bottom: 14px; page-break-inside: avoid; }
+  .section-title {
+    font-size: 8pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: #0d47a1;
+    padding-bottom: 4px;
+    margin-bottom: 8px;
+    border-bottom: 2px solid #e3f2fd;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .section-title::before {
+    content: '';
+    display: inline-block;
+    width: 7px; height: 7px;
+    background: #1976d2;
+    border-radius: 2px;
+  }
+
+  /* Two-column grid */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; }
+  .field { display: flex; flex-direction: column; }
+  .field .label {
+    font-size: 7pt;
+    text-transform: uppercase;
+    letter-spacing: .6px;
+    color: #455a64;
+    font-weight: 700;
+    margin-bottom: 2px;
+  }
+  .field .value {
+    font-size: 10pt;
+    color: #1c2b36;
+    font-weight: 500;
+    padding: 2px 0;
+    min-height: 16px;
+    word-break: break-word;
+  }
+
+  /* Placeholder chips — visible in the template preview */
+  .ph {
+    color: #1976d2;
+    font-family: 'Courier New', monospace;
+    font-weight: 700;
+    background: #e3f2fd;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 9pt;
+    letter-spacing: .2px;
+  }
+
+  /* Reading cards */
+  .reading-strip {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 6px;
+  }
+  .reading-card {
+    background: #f5faff;
+    border: 1px solid #bbdefb;
+    border-left: 4px solid #1976d2;
+    border-radius: 8px;
+    padding: 10px 14px;
+  }
+  .reading-card .label {
+    font-size: 7.5pt;
+    text-transform: uppercase;
+    letter-spacing: .6px;
+    color: #455a64;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .reading-card .value {
+    font-size: 15pt;
+    font-weight: 800;
+    color: #0d47a1;
+    font-family: 'Courier New', monospace;
+  }
+
+  /* Charges box */
+  .charges-box {
+    background: linear-gradient(135deg, #f5faff, #e3f2fd);
+    border: 2px solid #90caf9;
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-top: 4px;
+  }
+  .charges-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    font-size: 10pt;
+    border-bottom: 1px dashed #cfd8dc;
+  }
+  .charges-row:last-child {
+    border-bottom: none;
+    padding-top: 8px;
+    margin-top: 4px;
+    border-top: 2px solid #1976d2;
+  }
+  .charges-row .label { color: #455a64; font-weight: 600; }
+  .charges-row .value {
+    font-family: 'Courier New', monospace;
+    font-weight: 700;
+    color: #1c2b36;
+    font-size: 11pt;
+  }
+  .charges-row.total .label { color: #0d47a1; font-size: 11pt; font-weight: 700; }
+  .charges-row.total .value {
+    color: #0d47a1;
+    font-size: 14pt;
+    font-weight: 800;
+  }
+
+  /* Footer */
+  .bill-footer {
+    background: linear-gradient(135deg, #0a2540, #0d47a1);
+    color: #fff;
+    border-radius: 0 0 10px 10px;
+    padding: 10px 20px;
+    text-align: center;
+    margin-top: 12px;
+  }
+  .bill-footer .thanks {
+    font-size: 10pt;
+    font-weight: 600;
+    letter-spacing: .3px;
+    margin-bottom: 3px;
+  }
+  .bill-footer .slogan {
+    font-size: 8.5pt;
+    opacity: .88;
+    font-style: italic;
+    margin-bottom: 6px;
+  }
+  .bill-footer .contact {
+    font-size: 7.5pt;
+    opacity: .75;
+    letter-spacing: .4px;
+    border-top: 1px solid rgba(255,255,255,.2);
+    padding-top: 6px;
+  }
+
+  .print-hint {
+    max-width: 190mm;
+    margin: 10px auto;
+    padding: 9px 14px;
+    background: #e8f5e9;
+    border: 1px solid #a5d6a7;
+    border-radius: 6px;
+    font-size: 9pt;
+    color: #1b5e20;
+    text-align: center;
+  }
+  .print-hint strong { color: #2e7d32; }
+  @media print { .print-hint { display: none !important; } }
+</style>
+</head>
+<body>
+
+  <div class="print-hint">
+    <strong>Print to PDF:</strong> Chrome ⋮ → Share → Print → Destination <strong>Save as PDF</strong>
+    → <strong>A4 Portrait</strong> → Default margins → Background graphics <strong>ON</strong> → Save
+  </div>
+
+  <div class="bill">
+
+    <div class="bill-header">
+      <div class="bill-brand">
+        <img class="brand-logo" src="/images/SimonW_Logo.png" alt="Simon Fresh Water">
+        <div class="brand-text">
+          <h1>SIMON FRESH WATER</h1>
+          <p>Pure, Reliable &amp; Sustainable Water Supply</p>
+        </div>
+      </div>
+      <div class="bill-tag">
+        Water Statement
+        <strong>WATER BILL</strong>
+      </div>
+    </div>
+
+    <div class="bill-meta">
+      <div class="cell">
+        <div class="label">Bill No.</div>
+        <div class="value">{{bill_no}}</div>
+      </div>
+      <div class="cell">
+        <div class="label">Bill Date</div>
+        <div class="value">{{date}}</div>
+      </div>
+      <div class="cell">
+        <div class="label">Status</div>
+        <div class="value">{{STATUS_LABEL}}</div>
+      </div>
+    </div>
+
+    <div class="bill-body">
+
+      <div class="section">
+        <div class="section-title">Customer Information</div>
+        <div class="grid-2">
+          <div class="field">
+            <span class="label">Customer Name</span>
+            <span class="value"><span class="ph">{{cust_name}}</span></span>
+          </div>
+          <div class="field">
+            <span class="label">Meter Acc. No.</span>
+            <span class="value"><span class="ph">{{meter_acc_no}}</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Meter Reading</div>
+        <div class="reading-strip">
+          <div class="reading-card">
+            <div class="label">Current Reading (M³)</div>
+            <div class="value"><span class="ph">{{reading_m3}}</span> m³</div>
+          </div>
+          <div class="reading-card">
+            <div class="label">Total Consumption (M³)</div>
+            <div class="value"><span class="ph">{{consumption_m3}}</span> m³</div>
+          </div>
+        </div>
+        <p style="font-size:8pt; color:#455a64; margin-top:8px; font-style:italic;">
+          Consumption Breakdown: M³ consumed since the previous meter reading.
+        </p>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Charges</div>
+        <div class="charges-box">
+          <div class="charges-row">
+            <span class="label">Current Water Charges</span>
+            <span class="value">KES <span class="ph">{{amount_kes}}</span></span>
+          </div>
+          <div class="charges-row total">
+            <span class="label">Previous Outstanding Balance</span>
+            <span class="value">KES <span class="ph">{{balance}}</span></span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="bill-footer">
+      <div class="thanks">Thank you for choosing Simon Fresh Water.</div>
+      <div class="slogan">Your water is life — let's keep it flowing. 💧</div>
+      <div class="contact">
+        SIMON FRESH WATER · KIKUYU · +254 700 000 000 · info@simonfreshwater.co.ke
+      </div>
+    </div>
+
+  </div>
+
+</body>
+</html>

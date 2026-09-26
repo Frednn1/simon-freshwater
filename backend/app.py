@@ -618,6 +618,18 @@ def billing_report_preview():
         "truncated": truncated,
     })
 
+@app.route("/template/waterbill")
+def waterbill_template_view():
+    """Serve the water bill template HTML for manual Chrome -> Save as PDF."""
+    if not _current_admin():
+        return redirect("/admin/login?next=/template/waterbill")
+    return send_from_directory(
+        TEMPLATES_DIR,
+        "water_bill_template.html",
+        mimetype="text/html",
+    )
+
+
 @app.route("/template/report")
 def report_template_view():
     """Serve the report template HTML for manual Chrome -> Save as PDF."""
