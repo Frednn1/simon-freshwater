@@ -1309,6 +1309,9 @@ def notify_consumer(consumer_id):
         return jsonify({"error": "No outstanding balance — nothing to notify.",
                         "status": info["status"]}), 400
 
+    # Total M3 consumed across all readings whose bill is not yet fully paid
+    info["consumption_m3"] = _total_uncleared_consumption(consumer)
+
     cutoff = datetime.utcnow() - timedelta(seconds=NOTIFY_COOLDOWN_SECONDS)
     recent = (NotificationLog.query
               .filter_by(consumer_id=consumer.id, channel=channel, status="sent")

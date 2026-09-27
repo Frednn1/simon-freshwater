@@ -183,21 +183,43 @@ def send_whatsapp(to_phone: str, message: str) -> dict:
 # ─── Message builder ───
 def build_bill_message(consumer, status_info: dict, channel: str = "sms") -> dict:
     """
-    Return {'body': ...} for both SMS and WhatsApp. The message body is
-    identical across channels — only the transport differs.
+    Return {'body': ...} formatted for the given channel.
+
+    SMS   → multi-line, structured layout (pure ASCII for reliable delivery).
+    Other → compact single-paragraph text (used for WhatsApp text fallback;
+            the primary WhatsApp bill is delivered as a PDF document).
     """
-    amount = status_info.get("total_due", 0.0)
-    label = status_info.get("label", "Due")
+    amount  = status_info.get("total_due", 0.0)
+    label   = status_info.get("label", "Due")
+    cons    = status_info.get("consumption_m3", 0.0)
     paybill = os.environ.get("PAYBILL", "XXXXXX")
 
-    body = (
-        f"SIMON FRESH WATER - Kikuyu\n"
-        f"Dear {consumer.cust_name},\n"
-        f"Your water bill ({consumer.meter_acc_no}) status: {label}. "
-        f"Outstanding: KES {amount:,.2f}. "
-        f"Pay via Paybill {paybill}, Acc {consumer.meter_acc_no}. "
-        f"Thank you."
-    )
+    if channel == "sms":
+        body = (
+            f"SIMON FRESH WATER - Kikuyu\n"
+            f"--------------------------\n"
+            f"Dear {consumer.cust_name},\n"
+            f"\n"
+            f"Account     : {consumer.meter_acc_no}\n"
+            f"Status      : {label}\n"
+            f"Consumption : {cons:.2f} M3\n"
+            f"Outstanding : KES {amount:,.2f}\n"
+            f"\n"
+            f"Pay via Paybill {paybill}\n"
+            f"Account No  : {consumer.meter_acc_no}\n"
+            f"\n"
+            f"Thank you."
+        )
+    else:
+        # WhatsApp text (fallback) — compact format
+        body = (
+            f"SIMON FRESH WATER - Kikuyu\n"
+            f"Dear {consumer.cust_name},\n"
+            f"Your water bill ({consumer.meter_acc_no}) status: {label}. "
+            f"Outstanding: KES {amount:,.2f}. "
+            f"Pay via Paybill {paybill}, Acc {consumer.meter_acc_no}. "
+            f"Thank you."
+        )
     return {"body": body}
 
 
