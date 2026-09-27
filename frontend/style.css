@@ -1686,3 +1686,26 @@ body.drawer-open { overflow: hidden; }
   .legal-doc h1 { font-size: 1.35rem; }
   .legal-doc h2 { font-size: 1rem; }
 }
+
+/* ═══════════════════════════════════════════════
+   HOME LINK ON BRAND — plain, invisible button
+   Makes the header clickable without changing its look:
+   no underline, no colour change, no outline.
+   ═══════════════════════════════════════════════ */
+.brand-link {
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+.brand-link:hover,
+.brand-link:focus,
+.brand-link:visited,
+.brand-link:active {
+  text-decoration: none;
+  color: inherit;
+  outline: none;
+}
