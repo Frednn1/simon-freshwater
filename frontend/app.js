@@ -1238,8 +1238,11 @@ async function initBillPage(readingId) {
       document.getElementById('bMeterAcc').textContent = c.meter_acc_no;
       document.getElementById('bContact').textContent = c.contact;
       document.getElementById('bAddress').textContent = c.address || '—';
+      document.getElementById('bBillMonth').textContent = r.bill_month || '—';
       document.getElementById('bDate').textContent = fmtDate(r.reading_date);
       document.getElementById('bM3').textContent = Number(r.reading_m3).toFixed(2) + ' M³';
+      document.getElementById('bPrevious').textContent =
+        Number(r.previous_reading_m3 || 0).toFixed(2) + ' M³';
       document.getElementById('bConsumption').textContent =
         Number(r.consumption_m3 || 0).toFixed(2) + ' M³';
       document.getElementById('bAmount').textContent = 'KES ' + fmt(r.amount_kes);
