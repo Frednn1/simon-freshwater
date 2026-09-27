@@ -1587,3 +1587,102 @@ body.drawer-open { overflow: hidden; }
   .auth-brand .brand-logo,
   .settings-header .brand-logo { width: 52px; height: 52px; }
 }
+
+/* ═══════════════════════════════════════════════
+   LEGAL PAGES — Privacy Policy & Terms of Use
+   ═══════════════════════════════════════════════ */
+.legal-main {
+  flex: 1;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 2rem 1.2rem 3rem;
+  width: 100%;
+}
+.legal-doc {
+  background: #fff;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 2rem 1.8rem;
+  line-height: 1.7;
+  color: var(--grey-900);
+  font-size: .95rem;
+}
+.legal-doc h1 {
+  font-size: 1.6rem;
+  color: var(--blue-900);
+  margin-bottom: .35rem;
+}
+.legal-meta {
+  font-size: .8rem;
+  color: var(--grey-700);
+  margin-bottom: 1.4rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid var(--blue-50);
+}
+.legal-doc h2 {
+  font-size: 1.05rem;
+  color: var(--blue-700);
+  margin-top: 1.6rem;
+  margin-bottom: .6rem;
+  padding-bottom: .3rem;
+  border-bottom: 1px solid var(--grey-100);
+}
+.legal-doc p {
+  margin-bottom: .9rem;
+}
+.legal-doc ul {
+  margin: .5rem 0 1rem 1.4rem;
+}
+.legal-doc li {
+  margin-bottom: .35rem;
+}
+.legal-contact {
+  background: var(--blue-50);
+  border-left: 4px solid var(--blue-500);
+  padding: .9rem 1.1rem;
+  border-radius: 0 8px 8px 0;
+  font-size: .9rem;
+  line-height: 1.6;
+}
+
+/* ─── Footer legal links ───
+   No underline, standard blue, hover changes color */
+.footer-small .legal-link,
+.legal-link {
+  color: #1976d2;
+  text-decoration: none;
+  font-weight: 600;
+  transition: color .18s ease;
+}
+.footer-small .legal-link:hover,
+.footer-small .legal-link:focus-visible,
+.legal-link:hover,
+.legal-link:focus-visible {
+  color: #64b5f6;
+  text-decoration: none;
+}
+.footer-small .legal-link:active,
+.legal-link:active {
+  color: #0d47a1;
+  text-decoration: none;
+}
+
+/* Inline links inside the legal doc */
+.legal-inline {
+  color: #1976d2;
+  text-decoration: none;
+  font-weight: 600;
+  transition: color .18s ease;
+}
+.legal-inline:hover {
+  color: #64b5f6;
+}
+.legal-inline:active {
+  color: #0d47a1;
+}
+
+@media (max-width: 600px) {
+  .legal-doc { padding: 1.4rem 1.1rem; }
+  .legal-doc h1 { font-size: 1.35rem; }
+  .legal-doc h2 { font-size: 1rem; }
+}

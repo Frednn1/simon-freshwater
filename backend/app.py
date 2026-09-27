@@ -330,6 +330,16 @@ def consumer_page():
 def bill_page():
     return send_from_directory(FRONTEND_DIR, "bill.html")
 
+@app.route("/privacy")
+def privacy_page():
+    return send_from_directory(FRONTEND_DIR, "privacy.html")
+
+
+@app.route("/terms")
+def terms_page():
+    return send_from_directory(FRONTEND_DIR, "terms.html")
+
+
 @app.route("/admin/login")
 def admin_login_page():
     return send_from_directory(FRONTEND_DIR, "admin_login.html")
