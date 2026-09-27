@@ -897,10 +897,19 @@ def get_reading_bill(reading_id):
                   .order_by(MeterReading.reading_date.desc(),
                             MeterReading.id.desc()))
     prev = prev_query.first()
-    prev_m3 = prev.reading_m3 if prev else None
+
+    # Previous (MTR) Reading:
+    #   - if a previous reading exists → its cumulative reading_m3
+    #   - otherwise (first-ever reading) → the meter's initial value
+    if prev is not None:
+        prev_reading_m3 = float(prev.reading_m3)
+        prev_m3_for_calc = prev_reading_m3
+    else:
+        prev_reading_m3 = float(consumer.meter_initial_reading_m3 or 0.0)
+        prev_m3_for_calc = None   # compute_consumption treats None as first-reading
 
     consumption = compute_consumption(
-        reading.reading_m3, prev_m3,
+        reading.reading_m3, prev_m3_for_calc,
         float(consumer.meter_initial_reading_m3 or 0.0),
     )
 
@@ -911,10 +920,14 @@ def get_reading_bill(reading_id):
             "address": consumer.address,
         },
         "reading": {
-            "id": reading.id, "reading_m3": reading.reading_m3,
+            "id": reading.id,
+            "reading_m3": reading.reading_m3,
+            "previous_reading_m3": prev_reading_m3,
             "consumption_m3": consumption,
             "reading_date": reading.reading_date.isoformat(),
-            "amount_kes": reading.amount_kes, "amount_paid": reading.amount_paid,
+            "bill_month": reading.reading_date.strftime("%B %Y"),
+            "amount_kes": reading.amount_kes,
+            "amount_paid": reading.amount_paid,
             "balance": reading.balance,
             "bill_status": get_reading_bill_status(reading),
         },
