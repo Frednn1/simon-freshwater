@@ -977,6 +977,13 @@ def download_water_bill(reading_id):
     current_charges = float(reading.amount_kes or 0.0)
     total_outstanding = round(sum(max(r.balance, 0.0) for r in readings_desc), 2)
 
+    # Payment Carried Forward for this specific reading
+    sum_paid_all      = sum(float(r.amount_paid or 0.0) for r in readings_desc)
+    sum_older_charges = sum(float(r.amount_kes or 0.0) for r in older_readings)
+    pcf_raw = max(0.0, sum_paid_all - sum_older_charges)
+    pcf     = round(min(pcf_raw, current_charges), 2)
+    is_cleared = reading.balance <= 0
+
     snapshot = {
         "bill_no":              f"{reading.id:06d}",
         "date":                 reading.reading_date.strftime("%d %b %Y"),
@@ -986,6 +993,7 @@ def download_water_bill(reading_id):
         "reading_m3":           f"{reading.reading_m3:.2f}",
         "previous_reading":     f"{previous_m3:.2f}",
         "amount_kes":           _fmt_money(current_charges),
+        "payment_carried_forward": "" if is_cleared else f"KES {_fmt_money(pcf)}",
         "previous_outstanding": _fmt_money(prev_outstanding),
         "total_outstanding":    _fmt_money(total_outstanding),
         "status_label":         get_reading_bill_status(reading).upper(),
@@ -1207,6 +1215,13 @@ def send_whatsapp_bill(consumer_id):
     current_charges = float(reading.amount_kes or 0.0)
     total_outstanding = round(sum(max(r.balance, 0.0) for r in readings_desc), 2)
 
+    # Payment Carried Forward for this specific reading
+    sum_paid_all      = sum(float(r.amount_paid or 0.0) for r in readings_desc)
+    sum_older_charges = sum(float(r.amount_kes or 0.0) for r in older_readings)
+    pcf_raw = max(0.0, sum_paid_all - sum_older_charges)
+    pcf     = round(min(pcf_raw, current_charges), 2)
+    is_cleared = reading.balance <= 0
+
     snapshot = {
         "bill_no":              f"{reading.id:06d}",
         "date":                 reading.reading_date.strftime("%d %b %Y"),
@@ -1216,6 +1231,7 @@ def send_whatsapp_bill(consumer_id):
         "reading_m3":           f"{reading.reading_m3:.2f}",
         "previous_reading":     f"{previous_m3:.2f}",
         "amount_kes":           _fmt_money(current_charges),
+        "payment_carried_forward": "" if is_cleared else f"KES {_fmt_money(pcf)}",
         "previous_outstanding": _fmt_money(prev_outstanding),
         "total_outstanding":    _fmt_money(total_outstanding),
         "status_label":         get_reading_bill_status(reading).upper(),
@@ -1373,6 +1389,15 @@ def notify_consumer(consumer_id):
         info["previous_outstanding"]  = previous_outstanding
         info["total_outstanding"]     = round(sum(max(r.balance, 0.0) for r in readings_desc), 2)
         info["bill_month"]            = latest.reading_date.strftime("%B %Y")
+
+        # Payment Carried Forward:
+        #   surplus from prior payments that flowed INTO the current bill
+        sum_paid_all     = sum(float(r.amount_paid or 0.0) for r in readings_desc)
+        sum_older_charges = sum(float(r.amount_kes or 0.0) for r in readings_desc[1:])
+        pcf_raw = max(0.0, sum_paid_all - sum_older_charges)
+        pcf     = round(min(pcf_raw, float(latest.amount_kes or 0.0)), 2)
+        info["payment_carried_forward"] = pcf
+        info["is_current_cleared"]      = latest.balance <= 0
 
     cutoff = datetime.utcnow() - timedelta(seconds=NOTIFY_COOLDOWN_SECONDS)
     recent = (NotificationLog.query

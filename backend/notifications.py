@@ -202,6 +202,15 @@ def build_bill_message(consumer, status_info: dict, channel: str = "sms") -> dic
         total_outstanding = status_info.get("total_outstanding", 0.0)
 
         bill_month = status_info.get("bill_month", "")
+        pcf        = status_info.get("payment_carried_forward", 0.0)
+        is_cleared = status_info.get("is_current_cleared", False)
+
+        # Show the PCF row only when the current bill is NOT cleared.
+        # Not cleared + no carry → "KES 0.00".
+        # Cleared → row omitted entirely.
+        pcf_line = ""
+        if not is_cleared:
+            pcf_line = f"{'Payment Carried Fwd':<23}: KES {pcf:,.2f}\n"
 
         body = (
             f"SIMON FRESH WATER - Gikambura\n"
@@ -209,13 +218,14 @@ def build_bill_message(consumer, status_info: dict, channel: str = "sms") -> dic
             f"--------------------------\n"
             f"Dear {consumer.cust_name},\n"
             f"\n"
-            f"{'Account':<18}: {consumer.meter_acc_no}\n"
-            f"{'Status':<18}: {label}\n"
-            f"{'Current (MTR)':<18}: {current_m3:.2f} M3\n"
-            f"{'Previous (MTR)':<18}: {previous_m3:.2f} M3\n"
-            f"{'Current Charges':<18}: KES {current_charges:,.2f}\n"
-            f"{'Prev Outstanding':<18}: KES {prev_outstanding:,.2f}\n"
-            f"{'Total Outstanding':<18}: KES {total_outstanding:,.2f}\n"
+            f"{'Account':<23}: {consumer.meter_acc_no}\n"
+            f"{'Status':<23}: {label}\n"
+            f"{'Current (MTR)':<23}: {current_m3:.2f} M3\n"
+            f"{'Previous (MTR)':<23}: {previous_m3:.2f} M3\n"
+            f"{'Current Charges':<23}: KES {current_charges:,.2f}\n"
+            f"{pcf_line}"
+            f"{'Prev Outstanding':<23}: KES {prev_outstanding:,.2f}\n"
+            f"{'Total Outstanding':<23}: KES {total_outstanding:,.2f}\n"
             f"\n"
             f"Pay via Paybill {paybill}\n"
             f"Account No        : {consumer.meter_acc_no}\n"
