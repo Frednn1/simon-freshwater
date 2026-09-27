@@ -196,7 +196,7 @@ def build_bill_message(consumer, status_info: dict, channel: str = "sms") -> dic
 
     if channel == "sms":
         body = (
-            f"SIMON FRESH WATER - Kikuyu\n"
+            f"SIMON FRESH WATER - Gikambura\n"
             f"--------------------------\n"
             f"Dear {consumer.cust_name},\n"
             f"\n"
@@ -208,6 +208,9 @@ def build_bill_message(consumer, status_info: dict, channel: str = "sms") -> dic
             f"Pay via Paybill {paybill}\n"
             f"Account No  : {consumer.meter_acc_no}\n"
             f"\n"
+            f"--------------------------\n"
+            f"Please settle any outstanding balance to\n"
+            f"continue enjoying uninterrupted water service.\n"
             f"Thank you."
         )
     else:
