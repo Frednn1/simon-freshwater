@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Simon Fresh Water — Site Navigation Guide</title>
+<style>
+  @page { size: A4; margin: 12mm 12mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    color: #1c2b36;
+    background: #fff;
+    font-size: 10.5pt;
+    line-height: 1.5;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+  .guide { max-width: 180mm; margin: 0 auto; }
+
+  /* Header */
+  .g-header {
+    background: linear-gradient(135deg, #0a2540 0%, #0d47a1 55%, #1976d2 100%);
+    color: #fff;
+    border-radius: 12px 12px 0 0;
+    padding: 22px 26px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  .g-header img.brand-logo {
+    width: 56px; height: 56px; object-fit: contain;
+    flex-shrink: 0;
+  }
+  .g-header .title h1 {
+    font-size: 17pt;
+    letter-spacing: .4px;
+    margin-bottom: 3px;
+  }
+  .g-header .title p {
+    font-size: 9.5pt;
+    opacity: .88;
+  }
+
+  /* Intro */
+  .g-intro {
+    background: #e3f2fd;
+    border-left: 4px solid #1976d2;
+    padding: 14px 20px;
+    font-size: 10pt;
+    color: #0a2540;
+  }
+
+  /* Body container */
+  .g-body {
+    border: 2px solid #90caf9;
+    border-top: none;
+    padding: 18px 26px 24px;
+    border-radius: 0 0 12px 12px;
+  }
+
+  /* Table of contents */
+  .toc {
+    background: #f5faff;
+    border: 1px solid #bbdefb;
+    border-radius: 10px;
+    padding: 14px 20px;
+    margin-bottom: 22px;
+  }
+  .toc h2 {
+    font-size: 10pt;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #0d47a1;
+    margin-bottom: 8px;
+  }
+  .toc ol {
+    margin-left: 20px;
+    font-size: 9.5pt;
+    line-height: 1.7;
+    color: #0d47a1;
+  }
+  .toc li span { color: #455a64; }
+
+  /* Step sections */
+  .step {
+    margin-bottom: 22px;
+    page-break-inside: avoid;
+  }
+  .step-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 6px;
+    margin-bottom: 10px;
+    border-bottom: 2px solid #e3f2fd;
+  }
+  .step-num {
+    width: 30px; height: 30px;
+    background: linear-gradient(135deg, #1976d2, #0d47a1);
+    color: #fff;
+    border-radius: 8px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 11pt;
+    font-weight: 800;
+    flex-shrink: 0;
+  }
+  .step-header .icon {
+    font-size: 15pt;
+    line-height: 1;
+  }
+  .step-header h2 {
+    font-size: 12pt;
+    color: #0a2540;
+    letter-spacing: .2px;
+  }
+
+  .step p {
+    margin-bottom: 8px;
+    color: #1c2b36;
+  }
+  .step ul, .step ol {
+    margin-left: 22px;
+    margin-bottom: 8px;
+  }
+  .step li {
+    margin-bottom: 4px;
+  }
+  .step strong { color: #0a2540; }
+
+  /* Field list — what data is collected */
+  .fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 16px;
+    margin: 8px 0;
+  }
+  .field-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #f5faff;
+    border-left: 3px solid #1976d2;
+    padding: 6px 12px;
+    border-radius: 0 6px 6px 0;
+    font-size: 9.5pt;
+  }
+  .field-item .fname {
+    font-weight: 700;
+    color: #0d47a1;
+    min-width: 105px;
+  }
+  .field-item .fdesc { color: #455a64; font-size: 9pt; }
+
+  /* Notes */
+  .note {
+    background: #fff8e1;
+    border-left: 4px solid #f57c00;
+    padding: 9px 14px;
+    border-radius: 0 6px 6px 0;
+    font-size: 9.5pt;
+    margin: 10px 0;
+    line-height: 1.5;
+  }
+  .note strong { color: #e65100; }
+
+  .tip {
+    background: #e8f5e9;
+    border-left: 4px solid #2e7d32;
+    padding: 9px 14px;
+    border-radius: 0 6px 6px 0;
+    font-size: 9.5pt;
+    margin: 10px 0;
+    line-height: 1.5;
+  }
+  .tip strong { color: #1b5e20; }
+
+  /* Consent callout */
+  .consent {
+    background: #e3f2fd;
+    border: 2px solid #1976d2;
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin: 12px 0;
+    font-size: 9.5pt;
+    line-height: 1.55;
+  }
+  .consent h3 {
+    font-size: 10pt;
+    color: #0d47a1;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: .8px;
+  }
+
+  /* Status pills */
+  .pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 50px;
+    font-size: 8.5pt;
+    font-weight: 700;
+    letter-spacing: .3px;
+  }
+  .pill.cleared { background: #e8f5e9; color: #2e7d32; }
+  .pill.due     { background: #fff8e1; color: #f57c00; }
+  .pill.overdue { background: #fdecea; color: #c62828; }
+  .pill.prepaid { background: #e0f7fa; color: #00acc1; }
+
+  /* Footer */
+  .g-footer {
+    background: linear-gradient(135deg, #0a2540, #0d47a1);
+    color: #fff;
+    text-align: center;
+    padding: 12px 20px;
+    border-radius: 12px;
+    margin-top: 14px;
+    font-size: 8.5pt;
+  }
+  .g-footer .thanks {
+    font-size: 10pt;
+    font-weight: 600;
+    margin-bottom: 3px;
+  }
+  .g-footer .contact {
+    font-size: 8pt;
+    opacity: .8;
+    margin-top: 4px;
+    letter-spacing: .3px;
+  }
+
+  /* Print hint (hidden on print) */
+  .print-hint {
+    max-width: 180mm;
+    margin: 10px auto;
+    padding: 9px 14px;
+    background: #e8f5e9;
+    border: 1px solid #a5d6a7;
+    border-radius: 6px;
+    font-size: 9pt;
+    color: #1b5e20;
+    text-align: center;
+  }
+  .print-hint strong { color: #2e7d32; }
+  @media print { .print-hint { display: none !important; } }
+
+  @media (max-width: 600px) {
+    .fields { grid-template-columns: 1fr; }
+    .g-header { padding: 16px 18px; }
+    .g-header .title h1 { font-size: 14pt; }
+    .g-header img.brand-logo { width: 44px; height: 44px; }
+    .g-body { padding: 14px 16px 18px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="print-hint">
+  <strong>Print to PDF:</strong> Chrome ⋮ → Share → Print → Destination <strong>Save as PDF</strong>
+  → A4 → Default margins → Background graphics <strong>ON</strong> → Save
+</div>
+
+<div class="guide">
+
+  <!-- Header -->
+  <div class="g-header">
+    <img class="brand-logo" src="/images/SimonW_Logo.png" alt="Simon Fresh Water">
+    <div class="title">
+      <h1>Simon Fresh Water — Admin Billing Portal</h1>
+      <p>Site Navigation Guide · Kikuyu, Kenya</p>
+    </div>
+  </div>
+
+  <!-- Intro -->
+  <div class="g-intro">
+    This guide walks administrators through every part of the Simon Fresh Water billing portal —
+    from adding a new customer to generating monthly reports. Every screen, tab, and action is
+    explained in plain language so anyone can run day-to-day operations confidently.
+  </div>
+
+  <!-- Body -->
+  <div class="g-body">
+
+    <!-- Table of contents -->
+    <div class="toc">
+      <h2>Contents</h2>
+      <ol>
+        <li>Signing In <span>· secure access to the portal</span></li>
+        <li>Home Page <span>· search &amp; account lookup</span></li>
+        <li>New Customer <span>· register a consumer</span></li>
+        <li>Terminate Customer <span>· deactivate an account</span></li>
+        <li>Consumer Page <span>· readings, payments, statements</span></li>
+        <li>Water Bill <span>· per-reading breakdown</span></li>
+        <li>M-Pesa Dashboard <span>· payments &amp; callbacks</span></li>
+        <li>Bulk SMS <span>· remind overdue consumers</span></li>
+        <li>Monthly Reports <span>· download PDF summaries</span></li>
+        <li>Settings <span>· manage your admin profile</span></li>
+        <li>Legal Pages <span>· privacy policy &amp; terms of use</span></li>
+      </ol>
+    </div>
+
+    <!-- 1. Signing In -->
+    <section class="step">
+      <div class="step-header">
+        <span class="step-num">1</span>
+        <span class="icon">🔐</span>
+        <h2>Signing In</h2>
+      </div>
+      <p>
+        From the home page, click the <strong>Login</strong> button in the header
+        (or navigate to <em>/admin/login</em>).
+      </p>
+      <ul>
+        <li>Enter your <strong>username</strong> and <strong>password</strong>, then tap <strong>Sign In</strong>.</li>
+        <li>If two-factor authentication (2FA) is enabled, a <strong>6-digit code</strong> is sent
+            by SMS to your registered phone. Enter the code on the next screen.</li>
+        <li>After successful verification you are redirected back to the home page,
+            now fully authenticated as an administrator.</li>
+      </ul>
+      <div class="tip">
+        <strong>Tip:</strong> Forgot your password? Use the <em>Forgot password?</em> link on the
+        login page. A reset code will be sent to your registered phone.
+      </div>
+    </section>
+
+    <!-- 2. Home Page -->
+    <section class="step">
+      <div class="step-header">
+        <span class="step-num">2</span>
+        <span class="icon">🏠</span>
+        <h2>Home Page — Search &amp; Lookup</h2>
+      </div>
+      <p>
+        The home page is your starting point for account operations. The search bar accepts either:
+      </p>
+      <ul>
+        <li>A <strong>customer name</strong> (e.g. "John Kamau")</li>
+        <li>A <strong>meter account number</strong> (e.g. "MTR-0012")</li>
+      </ul>
+      <p>
+        Results appear as clickable cards showing the customer's name, meter number, and current
+        bill status. Tap any result to open the full consumer page.
+      </p>
+      <div class="note">
+        <strong>Note:</strong> Searching requires you to be logged in. If you're signed out,
+        a polite prompt asks you to log in first.
+      </div>
+    </section>
+
+    <!-- 3. New Customer -->
+    <section class="step">
+      <div class="step-header">
+        <span class="step-num">3</span>
+        <span class="icon">➕</span>
+        <h2>New Customer</h2>
+      </div>
+      <p>
+        <strong>Purpose:</strong> Register a new water consumer and open their billing account.
+      </p>
+      <p>
+        Click the <strong>➕ New Customer</strong> button in the header. A form opens, and you
+        fill in the consumer's details:
+      </p>
+
+      <div class="fields">
+        <div class="field-item"><span class="fname">Customer Name</span><span class="fdesc">Full name of the consumer</span></div>
+        <div class="field-item"><span class="fname">Account Name</span><span class="fdesc">Household / business name</span></div>
+        <div class="field-item"><span class="fname">Meter Acc. No.</span><span class="fdesc">Unique meter account code</span></div>
+        <div class="field-item"><span class="fname">Initial Reading</span><span class="fdesc">Meter's starting value (M³)</span></div>
+        <div class="field-item"><span class="fname">Contact</span><span class="fdesc">Phone number for SMS &amp; WhatsApp</span></div>
+        <div class="field-item"><span class="fname">Email</span><span class="fdesc">Optional email address</span></div>
+        <div class="field-item"><span class="fname">Address</span><span class="fdesc">Physical location text</span></div>
+        <div class="field-item"><span class="fname">Latitude &amp; Longitude</span><span class="fdesc">Optional GPS coordinates</span></div>
+      </div>
+
+      <div class="consent">
+        <h3>✓ Consumer Consent</h3>
+        <p>
+          Before saving, confirm that the consumer has <strong>given consent</strong> for their
+          personal data (name, phone number, email, address, meter readings) to be stored and used
+          for water utility billing purposes. This consent is required under the
+          <strong>Kenya Data Protection Act, 2019</strong>. Consumers will receive SMS/WhatsApp
+          messages for bills, payment reminders, and account notifications.
+        </p>
+      </div>
+
+      <div class="tip">
+        <strong>Tip:</strong> If the meter starts at zero (brand-new installation), leave the
+        Initial Reading as <strong>0</strong>. If the meter already had a value, enter that
+        value so the first bill reflects only the usage since registration.
+      </div>
+    </section>
+
+    <!-- 4. Terminate -->
+    <section class="step">
+      <div class="step-header">
+        <span class="step-num">4</span>
+        <span class="icon">⛔</span>
+        <h2>Terminate Customer</h2>
+      </div>
+      <p>
+        <strong>Purpose:</strong> Deactivate a consumer's account while preserving all historical
+        data (readings, payments, statements).
+      </p>
+      <p>
+        Click the <strong>⛔ Terminate</strong> button in the header. A search box appears —
+        find the consumer by name or meter number, then tap <strong>Terminate</strong>.
+      </p>
+      <ul>
+        <li>Terminated consumers are marked <strong>TERMINATED</strong> in red and can no longer
+            submit meter readings or receive SMS reminders.</li>
+        <li>Their account page shows two options at the bottom:
+          <ul>
+            <li><strong>♻️ Reactivate</strong> — restores the account to active status.</li>
+            <li><strong>🗑️ Permanently Delete</strong> — erases the customer and all related
+                data (irreversible).</li>
+          </ul>
+        </li>
+      </ul>
+      <div class="note">
+        <strong>Note:</strong> Termination is a soft-delete — nothing is lost. Only the permanent
+        delete option removes data from the system.
+      </div>
+    </section>
+
+    <!-- 5. Consumer Page -->
+    <section class="step">
+      <div class="step-header">
+        <span class="step-num">5</span>
+        <span class="icon">👤</span>
+        <h2>Consumer Page</h2>
+      </div>
+      <p>
+        Tap any search result to open the consumer's account page. Everything you need for one
+        consumer is on this page:
+      </p>
+      <ul>
+        <li><strong>Overview card</strong> — customer name, account name, meter number, contact,
+            email, address, and current bill status
+            (<span class="pill cleared">Cleared</span>
+            <span class="pill due">Due</span>
+            <span class="pill overdue">Overdue</span>
+            <span class="pill prepaid">Prepayment</span>).</li>
+        <li><strong>✏️ Edit button</strong> — inline-edit any detail and save changes.</li>
+        <li><strong>📊 Download Statement</strong> — full accounting ledger PDF.</li>
+        <li><strong>Send Bill Reminder</strong> — send an SMS or WhatsApp message with the
+            current outstanding balance.</li>
+        <li><strong>Submit New Meter Reading</strong> — record the current cumulative reading
+            (in M³). The bill is calculated automatically as
+            <em>(current − previous) × KES 90</em>.</li>
+        <li><strong>💰 Record Payment</strong> — record a manual payment. Payments are applied
+            to the oldest unpaid bill first (FIFO); any excess becomes prepayment credit.</li>
+        <li><strong>Last 5 Meter Readings</strong> — clickable table; each reading links to its
+            individual bill.</li>
+        <li><strong>📈 Consumption Trend</strong> — visual chart of the last 12 readings.</li>
+      </ul>
+    </section>
+
+    <!-- 6. Water Bill -->
+    <section class="step">
+      <div class="step-header">
+        <span class="step-num">6</span>
+        <span class="icon">🧾</span>
+        <h2>Water Bill</h2>
+      </div>
+      <p>
+        Click any row in the readings table to view the individual bill for that specific meter
+        reading. The bill shows:
+      </p>
+      <ul>
+        <li>Reading date and cumulative meter value</li>
+        <li><strong>Consumption</strong> for that reading (current − previous)</li>
+        <li>Bill amount (consumption × KES 90)</li>
+        <li>Amount paid and remaining balance</li>
+        <li>Current status of that specific bill</li>
+      </ul>
+      <p>
+        Use the <strong>📄 Download Water Bill (PDF)</strong> button at the bottom to save or
+        print a formal bill.
+      </p>
+    </section>
+
+    <!-- 7. M-Pesa -->
+    <section class="step">
+      <div class="step-header">
+        <span class="step-num">7</span>
+        <span class="icon">📲</span>
+        <h2>M-Pesa Dashboard</h2>
+      </div>
+      <p>
+        <strong>Purpose:</strong> Automatically reconcile consumer M-Pesa payments to the
+        correct account.
+      </p>
+      <p>
+        When a consumer pays to the Simon Fresh Water Paybill (<strong>247247</strong>), Safaricom
+        sends a callback to this portal. The dashboard shows:
+      </p>
+      <ul>
+        <li><strong>Configuration</strong> — current environment (sandbox / production) and Paybill number.</li>
+        <li><strong>Register URLs</strong> — one-time setup that tells Safaricom where to send
+            payment notifications.</li>
+        <li><strong>Recent Payments</strong> — every payment with status
+            <em>matched</em> (auto-assigned to a consumer) or <em>unmatched</em> (needs manual
+            assignment).</li>
+      </ul>
+      <p>
+        For unmatched payments, use the <strong>search box</strong> to find the correct consumer
+        by name, phone, or meter number — then click <strong>Assign</strong>.
+      </p>
+      <div class="tip">
+        <strong>Auto-matching:</strong> Payments are matched to the consumer whose meter number
+        equals the M-Pesa account reference, with a fallback match by phone number.
+      </div>
+    </section>
+
+    <!-- 8. Bulk SMS -->
+    <section class="step">
+      <div class="step-header">
+        <span class="step-num">8</span>
+        <span class="icon">📢</span>
+        <h2>Bulk SMS</h2>
+      </div>
+      <p>
+        <strong>Purpose:</strong> Send bill reminders to multiple consumers with overdue balances
+        in one action.
+      </p>
+      <ul>
+        <li>By default, the list shows only <strong>OVERDUE</strong> and
+            <strong>OVERDUE_APPROACHING</strong> consumers.</li>
+        <li>Tick <strong>Include DUE</strong> to also include recently-overdue consumers.</li>
+        <li>Select up to <strong>30 consumers per batch</strong> (protects the SMS gateway).</li>
+        <li>Click <strong>Send SMS to Selected</strong> — each consumer receives a personalised
+            message with their name, meter number, and outstanding amount.</li>
+      </ul>
+      <div class="tip">
+        <strong>Consent reminder:</strong> These messages go only to consumers who have agreed
+        to receive billing notifications on their registered phone number.
+      </div>
+    </section>
+
+    <!-- 9. Reports -->
+    <section class="step">
+      <div class="step-header">
+        <span class="step-num">9</span>
+        <span class="icon">📊</span>
+        <h2>Monthly Reports</h2>
+      </div>
+      <p>
+        <strong>Purpose:</strong> Generate a formal monthly billing report for any past period.
+      </p>
+      <ol>
+        <li>Select the <strong>Month</strong> and <strong>Year</strong>.</li>
+        <li>The <strong>Preview</strong> table shows the 20 consumer rows that will appear in the PDF.</li>
+        <li>Click <strong>📊 Download Report (PDF)</strong> to save the report.</li>
+      </ol>
+      <p>
+        Each report contains: summary totals, total consumption, amount billed, amount paid,
+        outstanding balance, and per-consumer breakdowns.
+      </p>
+      <div class="note">
+        <strong>Period notes:</strong> If the selected period is in the <em>future</em> or has
+        <em>no recorded activity</em>, the portal displays a polite message instead of an empty
+        report.
+      </div>
+    </section>
+
+    <!-- 10. Settings -->
+    <section class="step">
+      <div class="step-header">
+        <span class="step-num">10</span>
+        <span class="icon">⚙️</span>
+        <h2>Settings</h2>
+      </div>
+      <p>
+        <strong>Purpose:</strong> Manage your administrator account.
+      </p>
+      <ul>
+        <li><strong>Change Username</strong> — must be unique across the system.</li>
+        <li><strong>Change Reset Phone</strong> — the number that receives password-reset codes.</li>
+        <li><strong>Change Password</strong> — requires your current password; you'll be signed
+            out after changing it.</li>
+      </ul>
+      <div class="note">
+        <strong>Security:</strong> After changing your password, all other active sessions end
+        automatically — every device must sign in again with the new password.
+      </div>
+    </section>
+
+    <!-- 11. Legal -->
+    <section class="step">
+      <div class="step-header">
+        <span class="step-num">11</span>
+        <span class="icon">📄</span>
+        <h2>Legal Pages</h2>
+      </div>
+      <p>
+        At the bottom of every page, the footer contains two links:
+      </p>
+      <ul>
+        <li><strong>Privacy Policy</strong> — how consumer data is collected, stored, shared,
+            and protected (in compliance with the Kenya Data Protection Act, 2019).</li>
+        <li><strong>Terms of Use</strong> — the rules governing use of the portal, billing
+            calculations, M-Pesa payments, and account termination.</li>
+      </ul>
+      <p>
+        These pages are publicly accessible from every page of the site.
+      </p>
+    </section>
+
+    <!-- Quick reference -->
+    <section class="step">
+      <div class="step-header">
+        <span class="step-num">★</span>
+        <span class="icon">📋</span>
+        <h2>Quick Reference</h2>
+      </div>
+      <div class="fields">
+        <div class="field-item"><span class="fname">Billing rate</span><span class="fdesc">KES 90 per M³</span></div>
+        <div class="field-item"><span class="fname">Paybill number</span><span class="fdesc">247247</span></div>
+        <div class="field-item"><span class="fname">Payment rule</span><span class="fdesc">FIFO — oldest first</span></div>
+        <div class="field-item"><span class="fname">Overpayment</span><span class="fdesc">Becomes prepayment credit</span></div>
+        <div class="field-item"><span class="fname">Auto-logout</span><span class="fdesc">After 30 min idle</span></div>
+        <div class="field-item"><span class="fname">Bulk SMS limit</span><span class="fdesc">30 per batch</span></div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Footer -->
+  <div class="g-footer">
+    <div class="thanks">Thank you for choosing Simon Fresh Water.</div>
+    <div>Your water is life — let's keep it flowing. 💧</div>
+    <div class="contact">
+      SIMON FRESH WATER · KIKUYU · +254 700 000 000 · info@simonfreshwater.co.ke
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
