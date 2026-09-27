@@ -195,20 +195,34 @@ def build_bill_message(consumer, status_info: dict, channel: str = "sms") -> dic
     paybill = os.environ.get("PAYBILL", "XXXXXX")
 
     if channel == "sms":
+        current_m3        = status_info.get("current_reading_m3", 0.0)
+        previous_m3       = status_info.get("previous_reading_m3", 0.0)
+        current_charges   = status_info.get("current_charges", 0.0)
+        prev_outstanding  = status_info.get("previous_outstanding", 0.0)
+        total_outstanding = status_info.get("total_outstanding", 0.0)
+
+        bill_month = status_info.get("bill_month", "")
+
         body = (
             f"SIMON FRESH WATER - Gikambura\n"
+            f"Water Bill Due: {bill_month}\n"
             f"--------------------------\n"
             f"Dear {consumer.cust_name},\n"
             f"\n"
-            f"Account     : {consumer.meter_acc_no}\n"
-            f"Status      : {label}\n"
-            f"Consumption : {cons:.2f} M3\n"
-            f"Outstanding : KES {amount:,.2f}\n"
+            f"{'Account':<18}: {consumer.meter_acc_no}\n"
+            f"{'Status':<18}: {label}\n"
+            f"{'Current (MTR)':<18}: {current_m3:.2f} M3\n"
+            f"{'Previous (MTR)':<18}: {previous_m3:.2f} M3\n"
+            f"{'Current Charges':<18}: KES {current_charges:,.2f}\n"
+            f"{'Prev Outstanding':<18}: KES {prev_outstanding:,.2f}\n"
+            f"{'Total Outstanding':<18}: KES {total_outstanding:,.2f}\n"
             f"\n"
             f"Pay via Paybill {paybill}\n"
-            f"Account No  : {consumer.meter_acc_no}\n"
+            f"Account No        : {consumer.meter_acc_no}\n"
             f"\n"
             f"--------------------------\n"
+            f"Water charges payable on or before 20 days\n"
+            f"from the meter reading date.\n"
             f"Please settle any outstanding balance to\n"
             f"continue enjoying uninterrupted water service.\n"
             f"Thank you."

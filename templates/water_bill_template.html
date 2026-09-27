@@ -59,9 +59,10 @@
   }
   .bill-tag strong {
     display: block;
-    font-size: 12pt;
-    letter-spacing: 1.5px;
-    margin-top: 2px;
+    font-size: 10.5pt;
+    letter-spacing: .4px;
+    margin-top: 3px;
+    text-transform: none;
   }
 
   /* Meta band */
@@ -290,6 +291,17 @@
     color: #1b5e20;
     font-weight: 600;
   }
+  .pay-deadline {
+    margin-top: 10px;
+    padding: 7px 12px;
+    background: #fff8e1;
+    border-left: 4px solid #f57c00;
+    border-radius: 0 6px 6px 0;
+    font-size: 9pt;
+    color: #e65100;
+    font-weight: 600;
+    text-align: left;
+  }
   .pay-settle {
     margin-top: 6px;
     font-size: 8.5pt;
@@ -332,7 +344,7 @@
       </div>
       <div class="bill-tag">
         Water Statement
-        <strong>WATER BILL</strong>
+        <strong>Water Bill Due: <span class="ph">{{bill_month}}</span></strong>
       </div>
     </div>
 
@@ -375,8 +387,8 @@
             <div class="value"><span class="ph">{{reading_m3}}</span> m³</div>
           </div>
           <div class="reading-card">
-            <div class="label">Total Consumption (M³)</div>
-            <div class="value"><span class="ph">{{consumption_m3}}</span> m³</div>
+            <div class="label">Previous Reading (M³)</div>
+            <div class="value"><span class="ph">{{previous_reading}}</span> m³</div>
           </div>
         </div>
         <p style="font-size:8pt; color:#455a64; margin-top:8px; font-style:italic;">
@@ -391,9 +403,13 @@
             <span class="label">Current Water Charges</span>
             <span class="value">KES <span class="ph">{{amount_kes}}</span></span>
           </div>
-          <div class="charges-row total">
+          <div class="charges-row">
             <span class="label">Previous Outstanding Balance</span>
-            <span class="value">KES <span class="ph">{{balance}}</span></span>
+            <span class="value">KES <span class="ph">{{previous_outstanding}}</span></span>
+          </div>
+          <div class="charges-row total">
+            <span class="label">Total Outstanding Balance</span>
+            <span class="value">KES <span class="ph">{{total_outstanding}}</span></span>
           </div>
         </div>
       </div>
@@ -411,6 +427,10 @@
         <div class="pay-note">
           ✓ Your bill clears automatically within seconds of payment.
         </div>
+        <p class="pay-deadline">
+          💧 Water charges are payable on or before 20 days
+          from the meter reading date.
+        </p>
         <p class="pay-settle">
           Please settle any outstanding balance to continue enjoying
           uninterrupted water service.

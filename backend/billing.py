@@ -1,6 +1,6 @@
 from datetime import date
 
-RATE_PER_M3 = 90.0   # KES 90 per M³
+RATE_PER_M3 = 150.0  # KES 150 per M³
 
 
 def compute_consumption(current_m3: float,

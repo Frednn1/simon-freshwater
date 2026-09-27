@@ -951,16 +951,31 @@ def download_water_bill(reading_id):
     all_r = _all_readings(consumer.id)
     info = get_consumer_status(all_r)
 
+    readings_desc = _all_readings(consumer.id)
+    idx = next((i for i, r in enumerate(readings_desc) if r.id == reading.id), None)
+    older_readings = readings_desc[idx + 1:] if idx is not None else []
+    if older_readings:
+        previous_m3 = older_readings[0].reading_m3
+    else:
+        previous_m3 = float(consumer.meter_initial_reading_m3 or 0.0)
+    prev_outstanding = round(
+        sum(max(r.balance, 0.0) for r in older_readings), 2
+    )
+    current_charges = float(reading.amount_kes or 0.0)
+    total_outstanding = round(current_charges + prev_outstanding, 2)
+
     snapshot = {
-        "bill_no":        f"{reading.id:06d}",
-        "date":           reading.reading_date.strftime("%d %b %Y"),
-        "cust_name":      consumer.cust_name,
-        "meter_acc_no":   consumer.meter_acc_no,
-        "reading_m3":     f"{reading.reading_m3:.2f}",
-        "consumption_m3": f"{_total_uncleared_consumption(consumer):.2f}",
-        "amount_kes":     _fmt_money(reading.amount_kes),
-        "balance":        _fmt_money(info["total_due"]),
-        "status_label":   get_reading_bill_status(reading).upper(),
+        "bill_no":              f"{reading.id:06d}",
+        "date":                 reading.reading_date.strftime("%d %b %Y"),
+        "bill_month":           reading.reading_date.strftime("%B %Y"),
+        "cust_name":            consumer.cust_name,
+        "meter_acc_no":         consumer.meter_acc_no,
+        "reading_m3":           f"{reading.reading_m3:.2f}",
+        "previous_reading":     f"{previous_m3:.2f}",
+        "amount_kes":           _fmt_money(current_charges),
+        "previous_outstanding": _fmt_money(prev_outstanding),
+        "total_outstanding":    _fmt_money(total_outstanding),
+        "status_label":         get_reading_bill_status(reading).upper(),
     }
 
     try:
@@ -1167,16 +1182,30 @@ def send_whatsapp_bill(consumer_id):
     info = get_consumer_status(latest)
 
     # Build water bill snapshot (same shape as /bill.pdf endpoint)
+    readings_desc = _all_readings(consumer.id)
+    older_readings = readings_desc[1:]   # latest is readings_desc[0]
+    previous_m3 = (
+        older_readings[0].reading_m3 if older_readings
+        else float(consumer.meter_initial_reading_m3 or 0.0)
+    )
+    prev_outstanding = round(
+        sum(max(r.balance, 0.0) for r in older_readings), 2
+    )
+    current_charges = float(reading.amount_kes or 0.0)
+    total_outstanding = round(current_charges + prev_outstanding, 2)
+
     snapshot = {
-        "bill_no":        f"{reading.id:06d}",
-        "date":           reading.reading_date.strftime("%d %b %Y"),
-        "cust_name":      consumer.cust_name,
-        "meter_acc_no":   consumer.meter_acc_no,
-        "reading_m3":     f"{reading.reading_m3:.2f}",
-        "consumption_m3": f"{_total_uncleared_consumption(consumer):.2f}",
-        "amount_kes":     _fmt_money(reading.amount_kes),
-        "balance":        _fmt_money(info["total_due"]),
-        "status_label":   get_reading_bill_status(reading).upper(),
+        "bill_no":              f"{reading.id:06d}",
+        "date":                 reading.reading_date.strftime("%d %b %Y"),
+        "bill_month":           reading.reading_date.strftime("%B %Y"),
+        "cust_name":            consumer.cust_name,
+        "meter_acc_no":         consumer.meter_acc_no,
+        "reading_m3":           f"{reading.reading_m3:.2f}",
+        "previous_reading":     f"{previous_m3:.2f}",
+        "amount_kes":           _fmt_money(current_charges),
+        "previous_outstanding": _fmt_money(prev_outstanding),
+        "total_outstanding":    _fmt_money(total_outstanding),
+        "status_label":         get_reading_bill_status(reading).upper(),
     }
 
     try:
@@ -1311,6 +1340,26 @@ def notify_consumer(consumer_id):
 
     # Total M3 consumed across all readings whose bill is not yet fully paid
     info["consumption_m3"] = _total_uncleared_consumption(consumer)
+
+    # ─── Current bill breakdown (for the SMS) ───
+    readings_desc = _all_readings(consumer.id)   # DESC
+    if readings_desc:
+        latest = readings_desc[0]
+        previous = readings_desc[1] if len(readings_desc) > 1 else None
+        previous_m3 = (
+            previous.reading_m3 if previous
+            else float(consumer.meter_initial_reading_m3 or 0.0)
+        )
+        previous_outstanding = round(
+            sum(max(r.balance, 0.0) for r in readings_desc[1:]), 2
+        )
+        current_charges = float(latest.amount_kes or 0.0)
+        info["current_reading_m3"]    = latest.reading_m3
+        info["previous_reading_m3"]   = previous_m3
+        info["current_charges"]       = current_charges
+        info["previous_outstanding"]  = previous_outstanding
+        info["total_outstanding"]     = round(current_charges + previous_outstanding, 2)
+        info["bill_month"]            = latest.reading_date.strftime("%B %Y")
 
     cutoff = datetime.utcnow() - timedelta(seconds=NOTIFY_COOLDOWN_SECONDS)
     recent = (NotificationLog.query
