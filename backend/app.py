@@ -975,7 +975,7 @@ def download_water_bill(reading_id):
         sum(max(r.balance, 0.0) for r in older_readings), 2
     )
     current_charges = float(reading.amount_kes or 0.0)
-    total_outstanding = round(current_charges + prev_outstanding, 2)
+    total_outstanding = round(sum(max(r.balance, 0.0) for r in readings_desc), 2)
 
     snapshot = {
         "bill_no":              f"{reading.id:06d}",
@@ -1205,7 +1205,7 @@ def send_whatsapp_bill(consumer_id):
         sum(max(r.balance, 0.0) for r in older_readings), 2
     )
     current_charges = float(reading.amount_kes or 0.0)
-    total_outstanding = round(current_charges + prev_outstanding, 2)
+    total_outstanding = round(sum(max(r.balance, 0.0) for r in readings_desc), 2)
 
     snapshot = {
         "bill_no":              f"{reading.id:06d}",
@@ -1371,7 +1371,7 @@ def notify_consumer(consumer_id):
         info["previous_reading_m3"]   = previous_m3
         info["current_charges"]       = current_charges
         info["previous_outstanding"]  = previous_outstanding
-        info["total_outstanding"]     = round(current_charges + previous_outstanding, 2)
+        info["total_outstanding"]     = round(sum(max(r.balance, 0.0) for r in readings_desc), 2)
         info["bill_month"]            = latest.reading_date.strftime("%B %Y")
 
     cutoff = datetime.utcnow() - timedelta(seconds=NOTIFY_COOLDOWN_SECONDS)
