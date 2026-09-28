@@ -833,6 +833,12 @@ def health():
     return jsonify({"status": "ok", "time": datetime.utcnow().isoformat()})
 
 
+@app.route("/api/ping")
+def ping():
+    """Ultra-light keep-alive. Returns exactly 2 bytes: OK."""
+    return "OK", 200, {"Content-Type": "text/plain"}
+
+
 # ═══════════════════════════════════════════════
 #  API — SEARCH (admin-only)
 # ═══════════════════════════════════════════════
