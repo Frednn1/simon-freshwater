@@ -584,7 +584,7 @@ def download_billing_report():
     return send_file(
         pdf_buf,
         mimetype="application/pdf",
-        as_attachment=True,
+        as_attachment=False,
         download_name=filename,
     )
 
@@ -1082,7 +1082,7 @@ def download_water_bill(reading_id):
     return send_file(
         pdf_buf,
         mimetype="application/pdf",
-        as_attachment=True,
+        as_attachment=False,
         download_name=filename,
     )
 
@@ -1224,7 +1224,7 @@ def download_statement(consumer_id):
     return send_file(
         pdf_buf,
         mimetype="application/pdf",
-        as_attachment=True,
+        as_attachment=False,
         download_name=filename,
     )
 
@@ -2253,7 +2253,7 @@ def download_receipt(payment_id):
     return send_file(
         pdf_buf,
         mimetype="application/pdf",
-        as_attachment=True,
+        as_attachment=False,
         download_name=filename,
     )
 
@@ -2288,7 +2288,7 @@ def receipt_browser_view(payment_id):
     return send_file(
         pdf_buf,
         mimetype="application/pdf",
-        as_attachment=True,
+        as_attachment=False,
         download_name=filename,
     )
 
