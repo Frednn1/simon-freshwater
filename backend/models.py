@@ -92,6 +92,16 @@ class MpesaLog(db.Model):
                             nullable=False, index=True)
 
 
+class RateLimitBucket(db.Model):
+    """Shared, DB-backed rate-limit counters — one row per (key, window)."""
+    __tablename__ = 'rate_limit_bucket'
+    id = db.Column(db.Integer, primary_key=True)
+    bucket_key = db.Column(db.String(120), unique=True, nullable=False, index=True)
+    count = db.Column(db.Integer, nullable=False, default=1)
+    window_start = db.Column(db.DateTime, nullable=False, index=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
 class AdminUser(db.Model):
     __tablename__ = 'admin_users'
     id = db.Column(db.Integer, primary_key=True)

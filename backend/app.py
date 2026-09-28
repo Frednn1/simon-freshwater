@@ -120,6 +120,7 @@ def _security_headers(resp):
 
 _rate_buckets = {}
 _rate_lock = Lock()
+_rate_db_lock = Lock()
 
 
 def _client_ip():
@@ -158,7 +159,8 @@ def _mpesa_ip_ok() -> bool:
     return _ip_in_allowlist(_client_ip(), allowed)
 
 
-def _rate_limit(scope: str, limit: int, window: int) -> bool:
+def _rate_limit_memory(scope: str, limit: int, window: int) -> bool:
+    """Fast, per-process check. Early exit before hitting the DB."""
     key = f"{scope}:{_client_ip()}"
     now = _time_now()
     with _rate_lock:
@@ -169,6 +171,71 @@ def _rate_limit(scope: str, limit: int, window: int) -> bool:
             return False
         dq.append(now)
     return True
+
+
+def _rate_limit_db(scope: str, limit: int, window: int) -> bool:
+    """
+    Authoritative, cross-worker rate limit backed by Cloudflare D1.
+    Returns True if the request is allowed.
+
+    Fail-open on DB error (never locks users out due to a DB hiccup).
+    """
+    from datetime import datetime, timedelta
+    from models import RateLimitBucket
+
+    key = f"{scope}:{_client_ip()}"
+    now = datetime.utcnow()
+    window_start_cutoff = now - timedelta(seconds=window)
+
+    with _rate_db_lock:
+        try:
+            bucket = RateLimitBucket.query.filter_by(bucket_key=key).first()
+
+            # No bucket → start fresh
+            if bucket is None:
+                bucket = RateLimitBucket(
+                    bucket_key=key,
+                    count=1,
+                    window_start=now,
+                    updated_at=now,
+                )
+                db.session.add(bucket)
+                db.session.commit()
+                return True
+
+            # Window expired → reset
+            if bucket.window_start < window_start_cutoff:
+                bucket.count = 1
+                bucket.window_start = now
+                bucket.updated_at = now
+                db.session.commit()
+                return True
+
+            # Within window — enforce limit
+            if bucket.count >= limit:
+                return False
+
+            bucket.count += 1
+            bucket.updated_at = now
+            db.session.commit()
+            return True
+
+        except Exception as e:
+            app.logger.warning(f"[RateLimit] DB error (fail-open): {e}")
+            db.session.rollback()
+            return True
+
+
+def _rate_limit(scope: str, limit: int, window: int) -> bool:
+    """
+    Hybrid rate limit:
+      1. Fast in-memory check — rejects immediately if this worker
+         already knows the limit is exceeded.
+      2. DB-backed check — authoritative across all workers.
+    """
+    if not _rate_limit_memory(scope, limit, window):
+        return False
+    return _rate_limit_db(scope, limit, window)
 
 
 def _too_many(retry_after: int = 60):
