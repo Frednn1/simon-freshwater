@@ -21,3 +21,6 @@ env/
 Thumbs.db
 .vscode/
 .idea/
+
+# Test artifacts
+payload.json
