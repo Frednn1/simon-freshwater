@@ -1,25 +1,114 @@
 """
 Notification senders.
 
-  SMS       → SMSGate (Android SMS Gateway) via api.sms-gate.app
+  SMS       → SMSGate (Android SMS Gateway) — JWT auth, cloud or private server
   WhatsApp  → Meta WhatsApp Cloud API (graph.facebook.com)
 """
 import os
+import time
+import threading
 import requests
 
 
-# ─── SMS: SMSGate (Android SMS Gateway) ───
+# ─── SMS: SMSGate ───
+# SMSGATE_API_BASE must be the FULL API base, including the /3rdparty/v1 part.
+#   Cloud   : https://api.sms-gate.app/3rdparty/v1
+#   Private : https://your-private-server.com/api/3rdparty/v1
+# Defaults to the cloud server when unset.
+SMSGATE_API_BASE = os.environ.get(
+    "SMSGATE_API_BASE",
+    "https://api.sms-gate.app/3rdparty/v1",
+).rstrip("/")
+
 SMSGATE_USERNAME   = os.environ.get("SMSGATE_USERNAME", "")
 SMSGATE_PASSWORD   = os.environ.get("SMSGATE_PASSWORD", "")
 SMSGATE_DEVICE_ID  = os.environ.get("SMSGATE_DEVICE_ID", "")
 SMSGATE_SIM_NUMBER = os.environ.get("SMSGATE_SIM_NUMBER", "").strip()
-SMSGATE_URL = "https://api.sms-gate.app/3rdparty/v1/messages"
+
+# ─── JWT token cache ───
+_token_lock         = threading.Lock()
+_access_token       = None
+_refresh_token      = None
+_access_expires_at  = 0.0        # unix epoch
+_REFRESH_SAFETY     = 60         # refresh 60 s before expiry
+_jwt_supported      = True       # flipped to False if server lacks JWT
+
+
+def _api(path: str) -> str:
+    return f"{SMSGATE_API_BASE}{path}"
+
+
+def _parse_expiry(expires_at):
+    """Parse expires_at (ISO string or missing) → unix epoch. Fallback now+14m."""
+    if not expires_at:
+        return time.time() + 14 * 60
+    try:
+        from datetime import datetime, timezone
+        s = expires_at.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except Exception:
+        return time.time() + 14 * 60
+
+
+def _fetch_token_pair() -> dict:
+    """Exchange Basic auth for a JWT access + refresh pair."""
+    global _jwt_supported
+    r = requests.post(
+        _api("/auth/token"),
+        auth=(SMSGATE_USERNAME, SMSGATE_PASSWORD),
+        headers={"Content-Type": "application/json"},
+        timeout=15,
+    )
+    if r.status_code in (404, 405):
+        _jwt_supported = False
+        raise RuntimeError("server does not support JWT (endpoint missing)")
+    r.raise_for_status()
+    return r.json()
+
+
+def _refresh_access_token() -> dict:
+    """Rotate the access token using the refresh token."""
+    r = requests.post(
+        _api("/auth/token/refresh"),
+        headers={"Authorization": f"Bearer {_refresh_token}"},
+        timeout=15,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def _get_access_token(force: bool = False) -> str:
+    global _access_token, _refresh_token, _access_expires_at
+    with _token_lock:
+        now = time.time()
+        if (not force and _access_token
+                and now < _access_expires_at - _REFRESH_SAFETY):
+            return _access_token
+
+        if _refresh_token:
+            try:
+                data = _refresh_access_token()
+                _access_token      = data["access_token"]
+                _refresh_token     = data.get("refresh_token", _refresh_token)
+                _access_expires_at = _parse_expiry(data.get("expires_at"))
+                return _access_token
+            except Exception:
+                pass
+
+        data = _fetch_token_pair()
+        _access_token      = data["access_token"]
+        _refresh_token     = data["refresh_token"]
+        _access_expires_at = _parse_expiry(data.get("expires_at"))
+        return _access_token
 
 
 # ─── WhatsApp: Meta Cloud API ───
 WA_PHONE_NUMBER_ID = os.environ.get("WA_PHONE_NUMBER_ID", "")
 WA_ACCESS_TOKEN    = os.environ.get("WA_ACCESS_TOKEN", "")
-WA_TEMPLATE_NAME   = os.environ.get("WA_TEMPLATE_NAME", "")   # optional
+WA_TEMPLATE_NAME   = os.environ.get("WA_TEMPLATE_NAME", "")
 WA_TEMPLATE_LANG   = os.environ.get("WA_TEMPLATE_LANG", "en")
 WA_API_URL = (
     f"https://graph.facebook.com/v21.0/{WA_PHONE_NUMBER_ID}/messages"
@@ -28,13 +117,6 @@ WA_API_URL = (
 
 
 def get_available_channels() -> list:
-    """
-    Return ['sms'] and/or ['whatsapp'] depending on configured providers.
-
-    The WhatsApp channel is additionally gated by the WA_ENABLED environment
-    variable — set it to 'true'/'1'/'yes' to expose the WhatsApp button, or
-    to 'false'/'0'/'no' (or omit it) to hide it entirely.
-    """
     channels = []
     if SMSGATE_USERNAME and SMSGATE_PASSWORD:
         channels.append("sms")
@@ -49,7 +131,6 @@ def get_available_channels() -> list:
 
 # ─── Phone normalisation ───
 def _normalize_phone_ke(phone: str) -> str:
-    """Kenyan local (0712…) → E.164 with + prefix (used for SMSGate)."""
     p = "".join(c for c in (phone or "") if c.isdigit())
     if not p:
         return ""
@@ -63,7 +144,6 @@ def _normalize_phone_ke(phone: str) -> str:
 
 
 def _normalize_phone_wa(phone: str) -> str:
-    """Meta Cloud API expects digits only, including country code, no '+'."""
     p = "".join(c for c in (phone or "") if c.isdigit())
     if not p:
         return ""
@@ -78,9 +158,10 @@ def _normalize_phone_wa(phone: str) -> str:
 
 # ─── SMS sender ───
 def send_sms(to_phone: str, message: str) -> dict:
-    """Send SMS via SMSGate. Returns {ok, provider_id?, error?}."""
+    """Send SMS via SMSGate using JWT auth. Returns {ok, provider_id?, error?}."""
     if not SMSGATE_USERNAME or not SMSGATE_PASSWORD:
-        return {"ok": False, "error": "SMS provider not configured (set SMSGATE_USERNAME & SMSGATE_PASSWORD)"}
+        return {"ok": False,
+                "error": "SMS provider not configured (set SMSGATE_USERNAME & SMSGATE_PASSWORD)"}
 
     recipient = _normalize_phone_ke(to_phone)
     if not recipient:
@@ -89,40 +170,50 @@ def send_sms(to_phone: str, message: str) -> dict:
     payload = {"textMessage": {"text": message}, "phoneNumbers": [recipient]}
     if SMSGATE_DEVICE_ID:
         payload["deviceId"] = SMSGATE_DEVICE_ID
-
-    # Optional: pin the sending SIM slot (1-based). When unset, SMSGate
-    # falls back to its own setting (OS Default / Round Robin / Random).
     if SMSGATE_SIM_NUMBER:
         try:
             payload["simNumber"] = int(SMSGATE_SIM_NUMBER)
         except ValueError:
-            # Ignore invalid values rather than failing the send
             pass
 
-    try:
-        r = requests.post(SMSGATE_URL, json=payload,
-                          auth=(SMSGATE_USERNAME, SMSGATE_PASSWORD), timeout=20)
-        if r.status_code not in (200, 201, 202):
-            return {"ok": False, "error": f"HTTP {r.status_code}: {r.text[:200]}"}
-        body = r.json()
-        return {"ok": True, "provider_id": body.get("id", "")}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    for attempt in (1, 2):
+        try:
+            # If the server lacks JWT support, fall back to Basic auth
+            if not _jwt_supported:
+                r = requests.post(
+                    _api("/messages"),
+                    json=payload,
+                    auth=(SMSGATE_USERNAME, SMSGATE_PASSWORD),
+                    timeout=20,
+                )
+            else:
+                token = _get_access_token(force=(attempt == 2))
+                r = requests.post(
+                    _api("/messages"),
+                    json=payload,
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=20,
+                )
+
+            if r.status_code == 401 and attempt == 1 and _jwt_supported:
+                continue
+
+            if r.status_code not in (200, 201, 202):
+                return {"ok": False,
+                        "error": f"HTTP {r.status_code}: {r.text[:200]}"}
+
+            body = r.json()
+            return {"ok": True, "provider_id": body.get("id", "")}
+
+        except Exception as e:
+            if attempt == 2:
+                return {"ok": False, "error": str(e)}
+
+    return {"ok": False, "error": "send failed after retry"}
 
 
-# ─── WhatsApp sender ───
+# ─── WhatsApp sender (unchanged) ───
 def send_whatsapp(to_phone: str, message: str) -> dict:
-    """
-    Send WhatsApp message via Meta Cloud API.
-
-    Behaviour:
-      • If WA_TEMPLATE_NAME is set → send as template (works anytime).
-      • Otherwise → send as plain text (only deliverable within the 24h
-        customer-service window; Meta will reject it outside that window
-        with a specific error which we return as-is).
-
-    Returns {ok, provider_id?, error?}.
-    """
     if not WA_PHONE_NUMBER_ID or not WA_ACCESS_TOKEN:
         return {"ok": False,
                 "error": "WhatsApp provider not configured (set WA_PHONE_NUMBER_ID & WA_ACCESS_TOKEN)"}
@@ -166,7 +257,6 @@ def send_whatsapp(to_phone: str, message: str) -> dict:
             provider_id = msgs[0].get("id") if msgs else ""
             return {"ok": True, "provider_id": provider_id}
 
-        # Extract a readable error from Meta's response
         try:
             err_body = r.json()
             err = err_body.get("error", {}) or {}
@@ -180,15 +270,8 @@ def send_whatsapp(to_phone: str, message: str) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-# ─── Message builder ───
+# ─── Message builder (unchanged) ───
 def build_bill_message(consumer, status_info: dict, channel: str = "sms") -> dict:
-    """
-    Return {'body': ...} formatted for the given channel.
-
-    SMS   → multi-line, structured layout (pure ASCII for reliable delivery).
-    Other → compact single-paragraph text (used for WhatsApp text fallback;
-            the primary WhatsApp bill is delivered as a PDF document).
-    """
     amount  = status_info.get("total_due", 0.0)
     label   = status_info.get("label", "Due")
     cons    = status_info.get("consumption_m3", 0.0)
@@ -205,9 +288,6 @@ def build_bill_message(consumer, status_info: dict, channel: str = "sms") -> dic
         pcf        = status_info.get("payment_carried_forward", 0.0)
         is_cleared = status_info.get("is_current_cleared", False)
 
-        # Show the PCF row only when the current bill is NOT cleared.
-        # Not cleared + no carry → "KES 0.00".
-        # Cleared → row omitted entirely.
         pcf_line = ""
         if not is_cleared:
             pcf_line = f"{'Payment Carried Fwd':<23}: KES {pcf:,.2f}\n"
@@ -238,7 +318,6 @@ def build_bill_message(consumer, status_info: dict, channel: str = "sms") -> dic
             f"Thank you."
         )
     else:
-        # WhatsApp text (fallback) — compact format
         body = (
             f"SIMON FRESH WATER - Kikuyu\n"
             f"Dear {consumer.cust_name},\n"
@@ -250,27 +329,13 @@ def build_bill_message(consumer, status_info: dict, channel: str = "sms") -> dic
     return {"body": body}
 
 
-# ─── WhatsApp document sender (PDF bill via template) ───
+# ─── WhatsApp document sender (unchanged) ───
 def send_whatsapp_document(to_phone: str,
                            pdf_public_url: str,
                            filename: str,
                            body_params: list,
                            template_name: str = None,
                            language: str = None) -> dict:
-    """
-    Send a WhatsApp message with a Document header via an approved template.
-
-    Args:
-        to_phone        : recipient phone (any Kenyan format)
-        pdf_public_url  : publicly reachable HTTPS URL of the PDF
-        filename        : what WhatsApp should show as the file name
-        body_params     : list of strings for the template body variables
-                          e.g. ["John Kamau", "MTR-0012"]
-        template_name   : overrides WA_TEMPLATE_NAME if provided
-        language        : overrides WA_TEMPLATE_LANG if provided
-
-    Returns {ok, provider_id?, error?}.
-    """
     if not WA_PHONE_NUMBER_ID or not WA_ACCESS_TOKEN:
         return {"ok": False,
                 "error": "WhatsApp provider not configured (set WA_PHONE_NUMBER_ID & WA_ACCESS_TOKEN)"}
@@ -332,7 +397,6 @@ def send_whatsapp_document(to_phone: str,
             provider_id = msgs[0].get("id") if msgs else ""
             return {"ok": True, "provider_id": provider_id}
 
-        # Extract readable error
         try:
             err_body = r.json()
             err = err_body.get("error", {}) or {}
@@ -349,13 +413,8 @@ def send_whatsapp_document(to_phone: str,
         return {"ok": False, "error": str(e)}
 
 
-# ─── SMS retry wrapper (used for payment confirmations) ───
+# ─── SMS retry wrapper (unchanged) ───
 def send_sms_with_retry(to_phone: str, message: str, max_attempts: int = 3) -> dict:
-    """
-    Send SMS with exponential backoff on failure.
-    Attempts: 1 → wait 2s → 2 → wait 4s → 3.
-    Returns the last result (ok or error).
-    """
     import time as _time
     last = {"ok": False, "error": "no attempts"}
     for attempt in range(1, max_attempts + 1):
@@ -363,5 +422,5 @@ def send_sms_with_retry(to_phone: str, message: str, max_attempts: int = 3) -> d
         if last.get("ok"):
             return last
         if attempt < max_attempts:
-            _time.sleep(2 ** attempt)   # 2s, 4s
+            _time.sleep(2 ** attempt)
     return last
