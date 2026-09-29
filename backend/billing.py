@@ -1,4 +1,13 @@
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
+
+# ─── Nairobi timezone (UTC+3, no DST) ───
+# Age computed against Nairobi calendar date so overdue reflects Kenya local time.
+_NAIROBI_TZ = timezone(timedelta(hours=3), name="Africa/Nairobi")
+
+
+def _nairobi_today() -> date:
+    """Today's date in Africa/Nairobi."""
+    return datetime.now(_NAIROBI_TZ).date()
 
 RATE_PER_M3 = 150.0  # KES 150 per M³
 
@@ -34,9 +43,9 @@ def get_consumer_status(readings: list) -> dict:
 
       - CLEARED             : last reading fully paid, no credit.
       - PREPAYMENT          : last reading cleared AND extra credit exists.
-      - DUE                 : last reading has unpaid balance, age <= 1 month.
-      - OVERDUE             : last reading unpaid, age > 1 month, paid >= 80%.
-      - OVERDUE_APPROACHING : last reading unpaid, age > 1 month, paid < 80%.
+      - DUE                 : last reading has unpaid balance, age <= 20 days.
+      - OVERDUE             : last reading unpaid, age > 20 days, paid >= 80%.
+      - OVERDUE_APPROACHING : last reading unpaid, age > 20 days, paid < 80%.
     """
     if not readings:
         return {
@@ -47,7 +56,7 @@ def get_consumer_status(readings: list) -> dict:
 
     latest = readings[0]
     balance = latest.balance
-    age_days = (date.today() - latest.reading_date).days
+    age_days = (_nairobi_today() - latest.reading_date).days
 
     total_credit = sum(max(r.amount_paid - r.amount_kes, 0.0) for r in readings)
     total_outstanding = sum(max(r.balance, 0.0) for r in readings)
@@ -56,7 +65,7 @@ def get_consumer_status(readings: list) -> dict:
         status, label = "PREPAYMENT", "Prepayment"
     elif balance <= 0 and total_credit == 0:
         status, label = "CLEARED", "Cleared"
-    elif age_days <= 30:
+    elif age_days <= 20:
         status, label = "DUE", "Due"
     else:
         pct_paid = (latest.amount_paid / latest.amount_kes * 100
@@ -80,8 +89,8 @@ def get_reading_bill_status(reading) -> str:
     """Per-reading bill label (used inside the individual bill view)."""
     if reading.balance <= 0:
         return "Cleared"
-    age_days = (date.today() - reading.reading_date).days
-    if age_days <= 30:
+    age_days = (_nairobi_today() - reading.reading_date).days
+    if age_days <= 20:
         return "Due"
     pct_paid = (reading.amount_paid / reading.amount_kes * 100
                 if reading.amount_kes > 0 else 0)

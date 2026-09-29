@@ -2,7 +2,7 @@ import os
 import json
 import secrets
 import ipaddress
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from collections import deque
 from threading import Lock
 from time import time as _time_now
@@ -337,6 +337,32 @@ def _fmt_date(d):
     return d.strftime("%d %b %Y") if d else "—"
 
 
+# ─── Nairobi timezone helpers ───
+# Africa/Nairobi is UTC+3 year-round (no DST). Fixed offset avoids the
+# tzdata dependency that ZoneInfo needs on minimal Linux images.
+_NAIROBI_TZ = timezone(timedelta(hours=3), name="Africa/Nairobi")
+
+
+def _nairobi_now() -> datetime:
+    """Current time in Africa/Nairobi (tz-aware)."""
+    return datetime.now(_NAIROBI_TZ)
+
+
+def _nairobi_today() -> date:
+    """Today's date in Africa/Nairobi."""
+    return _nairobi_now().date()
+
+
+def _as_nairobi(dt):
+    """Convert a naive (assumed UTC) or aware datetime to Africa/Nairobi.
+    None → current Nairobi time."""
+    if dt is None:
+        return _nairobi_now()
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(_NAIROBI_TZ)
+
+
 def _ensure_all_columns():
     """Idempotent migration for consumers + payment_log.
     Uses dialect-aware SQL types so it works on both SQLite (D1) and PostgreSQL."""
@@ -442,7 +468,7 @@ def admin_bulk_sms_page():
 
 def _parse_ym_from_request():
     """Extract (year, month) from query string; default = current month."""
-    today = date.today()
+    today = _nairobi_today()
     try:
         year = int(request.args.get("year", today.year))
     except (ValueError, TypeError):
@@ -536,7 +562,7 @@ def _build_report_snapshot(year: int, month: int) -> dict:
         "report_no": f"RPT-{year}{month:02d}",
         "report_month": month_names[month - 1],
         "report_year": str(year),
-        "generated_date": date.today().strftime("%d %b %Y"),
+        "generated_date": _nairobi_today().strftime("%d %b %Y"),
         "total_consumers": str(total_consumers),
         "active_consumers": str(active_consumers),
         "total_consumption": f"{total_consumption:.2f}",
@@ -612,7 +638,7 @@ def billing_report_preview():
     year, month = _parse_ym_from_request()
 
     # ─── Future-period guard ───
-    today = date.today()
+    today = _nairobi_today()
     is_future = (year > today.year) or (year == today.year and month > today.month)
 
     if is_future:
@@ -1136,7 +1162,7 @@ def download_statement(consumer_id):
             "sort": (r.reading_date, 0, r.id),
         })
     for p in payments_asc:
-        pdate = p.created_at.date() if p.created_at else date.today()
+        pdate = p.created_at.date() if p.created_at else _nairobi_today()
         ref = (p.method or "Payment").title()
         if p.reference:
             ref += f" · {p.reference}"
@@ -1182,7 +1208,7 @@ def download_statement(consumer_id):
 
     snapshot = {
         "statement_no":   f"STMT-{consumer.id:06d}",
-        "statement_date": date.today().strftime("%d %b %Y"),
+        "statement_date": _nairobi_today().strftime("%d %b %Y"),
         "period_from":    period_from,
         "period_to":      period_to,
         "cust_name":      consumer.cust_name,
@@ -1403,7 +1429,7 @@ def submit_reading():
 
     new_reading = MeterReading(
         consumer_id=consumer.id, reading_m3=reading_m3,
-        reading_date=date.today(), amount_kes=amount, amount_paid=0.0,
+        reading_date=_nairobi_today(), amount_kes=amount, amount_paid=0.0,
     )
     db.session.add(new_reading)
     db.session.commit()
@@ -2015,7 +2041,7 @@ def _apply_fifo_payment(consumer, amount: float, method: str,
     db.session.flush()
 
     receipt_no = f"{log.id:06d}"
-    created = log.created_at or datetime.utcnow()
+    created = _as_nairobi(log.created_at)
 
     snapshot = {
         "receipt_no": receipt_no,
@@ -2164,7 +2190,7 @@ def admin_record_payment(consumer_id):
     db.session.flush()   # get log.id
 
     receipt_no = f"{log.id:06d}"
-    created = log.created_at or datetime.utcnow()
+    created = _as_nairobi(log.created_at)
 
     snapshot = {
         "receipt_no": receipt_no,
