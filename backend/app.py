@@ -519,6 +519,7 @@ def _build_report_snapshot(year: int, month: int) -> dict:
         total_outstanding += outstanding
 
         rows.append({
+            "id": c.id,
             "name": c.cust_name,
             "meter": c.meter_acc_no,
             "cnt": cnt,
@@ -547,6 +548,7 @@ def _build_report_snapshot(year: int, month: int) -> dict:
     # Row placeholders r1_*..r20_*
     for idx in range(1, 21):
         row = rows[idx - 1] if idx - 1 < len(rows) else None
+        snapshot[f"r{idx}_id"]    = str(row["id"]) if row else ""
         snapshot[f"r{idx}_name"]  = row["name"]  if row else ""
         snapshot[f"r{idx}_meter"] = row["meter"] if row else ""
         snapshot[f"r{idx}_cnt"]   = str(row["cnt"]) if row else ""
@@ -670,6 +672,7 @@ def billing_report_preview():
         if not name:
             continue
         rows.append({
+            "id":    snapshot.get(f"r{idx}_id") or "",
             "name":  name,
             "meter": snapshot.get(f"r{idx}_meter") or "",
             "cm3":   snapshot.get(f"r{idx}_cm3") or "",

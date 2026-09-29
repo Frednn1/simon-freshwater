@@ -203,8 +203,8 @@
                 ${rows.map((r, i) => `
                   <tr>
                     <td>${i + 1}</td>
-                    <td>${esc(r.name)}</td>
-                    <td>${esc(r.meter)}</td>
+                    <td>${r.id ? `<a href="/consumer?id=${encodeURIComponent(r.id)}">${esc(r.name)}</a>` : esc(r.name)}</td>
+                    <td>${r.id ? `<a href="/consumer?id=${encodeURIComponent(r.id)}">${esc(r.meter)}</a>` : esc(r.meter)}</td>
                     <td class="right">${esc(r.cm3)}</td>
                     <td class="right">${esc(r.amt)}</td>
                     <td class="right">${esc(r.paid)}</td>
