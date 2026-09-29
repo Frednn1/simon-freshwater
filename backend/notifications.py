@@ -5,6 +5,7 @@ Notification senders.
   WhatsApp  → Meta WhatsApp Cloud API (graph.facebook.com)
 """
 import os
+import json
 import time
 import threading
 import requests
@@ -407,6 +408,8 @@ def send_whatsapp_document(to_phone: str,
             code = err.get("code")
             if code:
                 msg = f"[{code}] {msg}"
+            # WA_ERROR_DIAGNOSTIC — full Meta error details for debugging
+            print("WA_ERROR_DIAGNOSTIC:", json.dumps(err_body))
         except Exception:
             msg = f"HTTP {r.status_code}: {r.text[:200]}"
         return {"ok": False, "error": msg}
