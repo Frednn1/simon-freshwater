@@ -1742,3 +1742,35 @@ body.drawer-open { overflow: hidden; }
   font-size: .9rem;
   color: var(--grey-700);
 }
+
+
+/* ═══════════════════════════════════════════════
+   ADMIN PAGES — Left-aligned brand header
+   Logo left; brand name & subtitle right.
+   Matches the home-page brand row.
+   ═══════════════════════════════════════════════ */
+.settings-body .brand-link {
+  display: block;
+  margin-bottom: 1.2rem;
+  text-align: left;
+}
+.settings-header {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  text-align: left;
+  color: #fff;
+  margin-bottom: 0;
+}
+.settings-header .brand-logo {
+  margin-bottom: 0;
+}
+.settings-header h1 {
+  font-size: 1.15rem;
+  margin-bottom: .15rem;
+}
+.settings-header p {
+  font-size: .82rem;
+  opacity: .85;
+  margin: 0;
+}
