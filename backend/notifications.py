@@ -60,6 +60,7 @@ def _fetch_token_pair() -> dict:
         _api("/auth/token"),
         auth=(SMSGATE_USERNAME, SMSGATE_PASSWORD),
         headers={"Content-Type": "application/json"},
+        json={"scopes": ["messages:send"]},
         timeout=15,
     )
     if r.status_code in (404, 405):
