@@ -1774,3 +1774,35 @@ body.drawer-open { overflow: hidden; }
   opacity: .85;
   margin: 0;
 }
+
+
+/* ═══════════════════════════════════════════════
+   ADMIN REPORTS — Terminated consumers block
+   Light-red links distinguish terminated rows
+   from the blue links used for active consumers.
+   ═══════════════════════════════════════════════ */
+.readings-table a.terminated-link {
+  color: #e57373;
+}
+.readings-table a.terminated-link:hover,
+.readings-table a.terminated-link:focus-visible {
+  color: #ef5350;
+  text-decoration: underline;
+}
+
+/* ═══════════════════════════════════════════════
+   ADMIN REPORTS — Download Report button
+   Sized to content; overrides
+   `.settings-card .btn-primary { width: 100%; }`
+   (specificity 0,0,3,0 beats 0,0,2,0 and mobile
+    media queries at 0,0,1,0).
+   ═══════════════════════════════════════════════ */
+.settings-card .btn-primary.btn-fit {
+  width: auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .35rem;
+  padding: .75rem 1.2rem;
+}

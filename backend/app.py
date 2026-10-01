@@ -498,12 +498,10 @@ def _build_report_snapshot(year: int, month: int) -> dict:
     total_paid = 0.0
     total_outstanding = 0.0
 
-    # per-consumer data
+    # per-consumer data (active + terminated)
     rows = []
+    terminated_rows = []
     for c in consumers:
-        if not c.is_active:
-            continue
-
         all_readings = (MeterReading.query
                         .filter_by(consumer_id=c.id)
                         .order_by(MeterReading.reading_date.asc(),
@@ -539,12 +537,7 @@ def _build_report_snapshot(year: int, month: int) -> dict:
         info = get_consumer_status(list(reversed(all_readings)))
         outstanding = float(info.get("total_due", 0.0))
 
-        total_consumption += cm3
-        total_billed += amt
-        total_paid += paid
-        total_outstanding += outstanding
-
-        rows.append({
+        row = {
             "id": c.id,
             "name": c.cust_name,
             "meter": c.meter_acc_no,
@@ -553,10 +546,22 @@ def _build_report_snapshot(year: int, month: int) -> dict:
             "amt": _fmt_money(amt),
             "paid": _fmt_money(paid),
             "bal": f"{_fmt_money(outstanding)} · {info['label']}",
-        })
+        }
+
+        if c.is_active:
+            total_consumption += cm3
+            total_billed += amt
+            total_paid += paid
+            total_outstanding += outstanding
+            rows.append(row)
+        else:
+            # Terminated — include only if there was activity this month
+            if cnt > 0 or paid > 0:
+                terminated_rows.append(row)
 
     truncated = len(rows) > 20
     rows = rows[:20]
+    terminated_rows = terminated_rows[:20]
 
     snapshot = {
         "report_no": f"RPT-{year}{month:02d}",
@@ -583,6 +588,9 @@ def _build_report_snapshot(year: int, month: int) -> dict:
         snapshot[f"r{idx}_paid"]  = row["paid"]  if row else ""
         snapshot[f"r{idx}_bal"]   = row["bal"]   if row else ""
 
+    # Terminated consumers — used only by the preview JSON, not the PDF
+    snapshot["_terminated_rows"] = terminated_rows
+
     return snapshot, truncated
 
 
@@ -598,6 +606,7 @@ def download_billing_report():
 
     try:
         snapshot, _truncated = _build_report_snapshot(year, month)
+        snapshot.pop("_terminated_rows", None)  # PDF only shows active consumers
     except Exception as e:
         app.logger.exception("[Report] snapshot failed")
         return jsonify({"error": f"Report data failed: {e}"}), 500
@@ -655,6 +664,7 @@ def billing_report_preview():
             ),
             "summary": None,
             "rows": [],
+            "terminated_rows": [],
             "truncated": False,
         })
 
@@ -688,6 +698,7 @@ def billing_report_preview():
             ),
             "summary": None,
             "rows": [],
+            "terminated_rows": [],
             "truncated": False,
         })
 
@@ -707,6 +718,8 @@ def billing_report_preview():
             "bal":   snapshot.get(f"r{idx}_bal") or "",
         })
 
+    terminated_rows = snapshot.pop("_terminated_rows", []) or []
+
     return jsonify({
         "year": year,
         "month": month,
@@ -721,6 +734,7 @@ def billing_report_preview():
             "total_outstanding": snapshot["total_outstanding"],
         },
         "rows": rows,
+        "terminated_rows": terminated_rows,
         "truncated": truncated,
     })
 

@@ -96,13 +96,22 @@
       </div>
     </div>
 
+    <!-- Terminated Consumers -->
+    <div class="settings-card" id="terminatedCard" style="display:none;">
+      <h2>🚫 Terminated Consumers <span id="terminatedCount" style="font-weight:400;color:#90a4ae;font-size:.85rem;"></span></h2>
+      <p class="form-hint-small" style="margin-bottom:.75rem;">
+        Terminated consumers with readings or payments in this period.
+      </p>
+      <div id="terminatedTableWrap" class="table-wrap"></div>
+    </div>
+
     <!-- Download -->
     <div class="settings-card">
       <h2>📄 Download</h2>
       <p class="form-hint-small" style="margin-bottom:.75rem;">
         Generates a one-page A4 landscape PDF with the summary and up to 20 consumer rows.
       </p>
-      <button id="downloadBtn" class="btn-primary" type="button">
+      <button id="downloadBtn" class="btn-primary btn-fit" type="button">
         <span class="btn-icon">📊</span> Download Report (PDF)
       </button>
       <div id="downloadMsg" class="alert hidden"></div>
@@ -166,6 +175,8 @@
             notice.classList.remove('hidden');
           }
           card.style.display = 'none';
+          const _tc = document.getElementById('terminatedCard');
+          if (_tc) _tc.style.display = 'none';
           return;
         }
         if (notice) { notice.classList.add('hidden'); notice.innerHTML = ''; }
@@ -215,6 +226,44 @@
         }
 
         card.style.display = 'block';
+
+        /* ── Terminated consumers block ── */
+        const tCard = document.getElementById('terminatedCard');
+        const tWrap = document.getElementById('terminatedTableWrap');
+        const tRows = d.terminated_rows || [];
+        document.getElementById('terminatedCount').textContent =
+          tRows.length ? '(' + tRows.length + ')' : '';
+        if (tRows.length === 0) {
+          tCard.style.display = 'none';
+        } else {
+          tWrap.innerHTML = `
+            <table class="readings-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Customer</th>
+                  <th>Meter No.</th>
+                  <th class="right">M³</th>
+                  <th class="right">Billed (KES)</th>
+                  <th class="right">Paid (KES)</th>
+                  <th class="right">Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${tRows.map((r, i) => `
+                  <tr>
+                    <td>${i + 1}</td>
+                    <td>${r.id ? `<a class="terminated-link" href="/consumer?id=${encodeURIComponent(r.id)}">${esc(r.name)}</a>` : esc(r.name)}</td>
+                    <td>${r.id ? `<a class="terminated-link" href="/consumer?id=${encodeURIComponent(r.id)}">${esc(r.meter)}</a>` : esc(r.meter)}</td>
+                    <td class="right">${esc(r.cm3)}</td>
+                    <td class="right">${esc(r.amt)}</td>
+                    <td class="right">${esc(r.paid)}</td>
+                    <td class="right">${esc(r.bal)}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>`;
+          tCard.style.display = 'block';
+        }
       } catch { show(msg, 'error', '❌ Network error.'); }
     }
 
