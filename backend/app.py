@@ -2768,6 +2768,31 @@ def admin_mpesa_payments():
     })
 
 
+@app.route("/api/admin/consumers/all", methods=["GET"])
+def admin_consumers_all():
+    """Return all consumers (active + terminated), alphabetically.
+    Used by the Reports page — Consumers Database block.
+    Admin-only."""
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("consumers_all", 30, 60):
+        return _too_many(60)
+
+    consumers = (Consumer.query
+                 .order_by(db.func.lower(Consumer.cust_name).asc())
+                 .all())
+
+    return jsonify({
+        "consumers": [{
+            "id": c.id,
+            "cust_name": c.cust_name,
+            "meter_acc_no": c.meter_acc_no,
+            "contact": c.contact or "",
+            "is_active": bool(c.is_active),
+        } for c in consumers],
+    })
+
+
 @app.route("/api/admin/consumers/search", methods=["GET"])
 def admin_consumers_search():
     """

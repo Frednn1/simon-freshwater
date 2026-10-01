@@ -90,6 +90,13 @@
         ⚠️ More than 20 consumers have activity this month — the PDF shows the first 20 by name.
       </p>
 
+      <div style="margin-top:1.4rem;margin-bottom:0;">
+        <button id="downloadBtn" class="btn-primary btn-fit" type="button">
+          <span class="btn-icon">📊</span> Download Report (PDF)
+        </button>
+        <div id="downloadMsg" class="alert hidden"></div>
+      </div>
+
       <h3 style="margin-top:1.4rem;font-size:.95rem;color:#0d47a1;">Preview (rows in the PDF)</h3>
       <div id="previewTableWrap" class="table-wrap" style="margin-top:.5rem;">
         <p class="form-hint-small">Click <strong>Load Preview</strong> to see the consumer rows.</p>
@@ -105,16 +112,20 @@
       <div id="terminatedTableWrap" class="table-wrap"></div>
     </div>
 
-    <!-- Download -->
-    <div class="settings-card">
-      <h2>📄 Download</h2>
-      <p class="form-hint-small" style="margin-bottom:.75rem;">
-        Generates a one-page A4 landscape PDF with the summary and up to 20 consumer rows.
-      </p>
-      <button id="downloadBtn" class="btn-primary btn-fit" type="button">
-        <span class="btn-icon">📊</span> Download Report (PDF)
+    <!-- Consumers Database -->
+    <div class="settings-card" id="consumersDbCard">
+      <button type="button" id="consumersDbToggle" class="db-toggle"
+              aria-expanded="false" aria-controls="consumersDbBody">
+        <span class="db-toggle-icon">📇</span>
+        <span class="db-toggle-label">Consumers Database</span>
+        <span class="db-toggle-meta" id="consumersDbMeta"></span>
+        <span class="db-toggle-chev">▾</span>
       </button>
-      <div id="downloadMsg" class="alert hidden"></div>
+      <div id="consumersDbBody" class="db-body" hidden>
+        <div id="consumersDbWrap" class="table-wrap">
+          <p class="form-hint-small">Loading consumers…</p>
+        </div>
+      </div>
     </div>
 
     <div class="settings-back">
@@ -266,6 +277,73 @@
         }
       } catch { show(msg, 'error', '❌ Network error.'); }
     }
+
+    // ── Consumers Database (lazy-loaded, alphabetical) ──
+    let _consumersDbLoaded = false;
+    async function loadConsumersDb() {
+      if (_consumersDbLoaded) return;
+      _consumersDbLoaded = true;
+
+      const wrap = document.getElementById('consumersDbWrap');
+      const meta = document.getElementById('consumersDbMeta');
+      try {
+        const r = await fetch('/api/admin/consumers/all', { credentials: 'same-origin' });
+        if (r.status === 401) { location.href = '/admin/login?next=/admin/reports'; return; }
+        const d = await r.json();
+        if (!r.ok || d.error) {
+          wrap.innerHTML = '<p class="form-hint-small">❌ ' +
+            esc(d.error || 'Failed to load consumers.') + '</p>';
+          return;
+        }
+        const list = d.consumers || [];
+        meta.textContent = list.length ? '(' + list.length + ')' : '(0)';
+        if (list.length === 0) {
+          wrap.innerHTML = '<p class="form-hint-small">No consumers on file.</p>';
+          return;
+        }
+        wrap.innerHTML = `
+          <table class="readings-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Customer</th>
+                <th>Meter No.</th>
+                <th>Phone</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${list.map((c, i) => {
+                const cls = c.is_active ? '' : ' class="terminated-link"';
+                return `
+                  <tr>
+                    <td>${i + 1}</td>
+                    <td><a${cls} href="/consumer?id=${encodeURIComponent(c.id)}">${esc(c.cust_name)}</a></td>
+                    <td><a${cls} href="/consumer?id=${encodeURIComponent(c.id)}">${esc(c.meter_acc_no)}</a></td>
+                    <td>${esc(c.contact || '—')}</td>
+                  </tr>`;
+              }).join('')}
+            </tbody>
+          </table>`;
+      } catch {
+        wrap.innerHTML = '<p class="form-hint-small">❌ Network error.</p>';
+      }
+    }
+
+    document.getElementById('consumersDbToggle').addEventListener('click', () => {
+      const body = document.getElementById('consumersDbBody');
+      const btn  = document.getElementById('consumersDbToggle');
+      const isOpen = !body.hasAttribute('hidden');
+      if (isOpen) {
+        body.setAttribute('hidden', '');
+        btn.setAttribute('aria-expanded', 'false');
+        btn.classList.remove('open');
+      } else {
+        body.removeAttribute('hidden');
+        btn.setAttribute('aria-expanded', 'true');
+        btn.classList.add('open');
+        loadConsumersDb();
+      }
+    });
 
     async function downloadReport() {
       const { month, year } = getPeriod();

@@ -1806,3 +1806,49 @@ body.drawer-open { overflow: hidden; }
   gap: .35rem;
   padding: .75rem 1.2rem;
 }
+
+
+/* ═══════════════════════════════════════════════
+   ADMIN REPORTS — Consumers Database dropdown
+   ═══════════════════════════════════════════════ */
+.db-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  background: linear-gradient(135deg, #e3f2fd, #f5faff);
+  border: 1px solid #bbdefb;
+  color: #0d47a1;
+  padding: .85rem 1rem;
+  border-radius: var(--radius-sm);
+  font-size: .95rem;
+  font-weight: 700;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: background .2s;
+  text-align: left;
+}
+.db-toggle:hover { background: linear-gradient(135deg, #d4e8fb, #e8f3ff); }
+.db-toggle .db-toggle-icon { font-size: 1.1rem; line-height: 1; flex-shrink: 0; }
+.db-toggle .db-toggle-label { flex: 1; }
+.db-toggle .db-toggle-meta {
+  font-weight: 400;
+  color: var(--grey-700);
+  font-size: .82rem;
+  margin-right: .25rem;
+}
+.db-toggle .db-toggle-chev {
+  font-size: 1rem;
+  line-height: 1;
+  transition: transform .2s;
+}
+.db-toggle.open .db-toggle-chev { transform: rotate(180deg); }
+.db-body {
+  margin-top: .85rem;
+  padding-top: .5rem;
+  border-top: 1px dashed var(--grey-100);
+}
+
+#consumersDbWrap .readings-table { font-size: .85rem; }
+#consumersDbWrap .readings-table th,
+#consumersDbWrap .readings-table td { padding: .55rem .55rem; }
