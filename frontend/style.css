@@ -1881,3 +1881,47 @@ body.drawer-open { overflow: hidden; }
 }
 .optin-checkbox span { flex: 1; }
 .optin-checkbox strong { color: var(--blue-700); }
+
+
+/* ═══════════════════════════════════════════════
+   BILLS HISTORY — archive rows
+   Reuses .payment-history / .payment-item styling
+   from the Recent Payments block. Only two new
+   classes are needed: the view action link and
+   the inline SMS body expander.
+   ═══════════════════════════════════════════════ */
+.btn-view-archive {
+  background: transparent;
+  border: none;
+  color: var(--blue-500);
+  font-weight: 600;
+  font-size: .85rem;
+  font-family: var(--font);
+  cursor: pointer;
+  padding: 0;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.btn-view-archive:hover,
+.btn-view-archive:focus-visible {
+  text-decoration: underline;
+  color: var(--blue-700);
+}
+.btn-view-archive:visited { color: var(--blue-500); }
+
+.archive-body {
+  background: var(--grey-50);
+  border: 1px solid var(--grey-100);
+  border-radius: var(--radius-sm);
+  padding: .75rem 1rem;
+  margin: .25rem 0 .65rem;
+}
+.archive-body pre {
+  font-family: 'Courier New', monospace;
+  font-size: .78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--grey-900);
+  margin: 0;
+}

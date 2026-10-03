@@ -171,6 +171,20 @@
           <div id="paymentHistoryList"></div>
         </div>
       </div>
+
+      <!-- Bills History — permanent archive of sent SMS / WhatsApp bills -->
+      <div id="billsArchive" class="payment-history">
+        <button class="payment-toggle" id="billsArchiveToggleBtn" type="button"
+                aria-expanded="false" aria-controls="billsArchiveBody">
+          <span>📄 Bills History</span>
+          <span class="chev" id="billsArchiveToggleChev">▾</span>
+        </button>
+        <div class="payment-history-body hidden" id="billsArchiveBody">
+          <div id="billsArchiveList">
+            <p class="form-hint-small">Loading…</p>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section id="notifyCard" class="card hidden">

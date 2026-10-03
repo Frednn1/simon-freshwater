@@ -632,6 +632,7 @@ async function initConsumerPage(consumerId) {
           submitPayment(consumerId);
         });
         renderPaymentHistory();
+        initBillsArchive();
 
         /* Show download button ONCE if a payment was just recorded.
            Reading + clearing here ensures the button disappears on the
@@ -950,6 +951,103 @@ function renderPaymentHistory() {
   }
 
   wrap.classList.remove('hidden');
+}
+
+/* ═══════════════════════════════════════════════
+   BILLS HISTORY (permanent archive of sent bills)
+   Data comes from /api/admin/consumer/<id>/bills_archive.
+   WhatsApp PDFs open inline via /api/admin/archive/<id>/download.
+   SMS rows expand to show the exact message body.
+   ═══════════════════════════════════════════════ */
+let BILLS_ARCHIVE = [];
+let BILLS_ARCHIVE_LOADED = false;
+
+async function initBillsArchive() {
+  const list = document.getElementById('billsArchiveList');
+  const body = document.getElementById('billsArchiveBody');
+  const btn  = document.getElementById('billsArchiveToggleBtn');
+  if (!list || !body || !btn) return;
+
+  // Wire the toggle once per page load
+  if (!btn.dataset.wired) {
+    btn.addEventListener('click', () => {
+      const nowHidden = body.classList.toggle('hidden');
+      btn.classList.toggle('open', !nowHidden);
+      btn.setAttribute('aria-expanded', String(!nowHidden));
+    });
+    btn.dataset.wired = '1';
+  }
+
+  // Load the archive once per page load
+  if (BILLS_ARCHIVE_LOADED) return;
+  try {
+    const r = await fetch(
+      `${API}/api/admin/consumer/${CURRENT_CONSUMER.id}/bills_archive`,
+      { credentials: 'same-origin' }
+    );
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    BILLS_ARCHIVE = d.archives || [];
+    BILLS_ARCHIVE_LOADED = true;
+    renderBillsArchive();
+  } catch {
+    list.innerHTML = '<p class="form-hint-small">❌ Failed to load archive.</p>';
+  }
+}
+
+function renderBillsArchive() {
+  const list = document.getElementById('billsArchiveList');
+  if (!list) return;
+
+  if (!BILLS_ARCHIVE.length) {
+    list.innerHTML = '<p class="form-hint-small">No archived sends yet.</p>';
+    return;
+  }
+
+  list.innerHTML = BILLS_ARCHIVE.map((a) => {
+    const isWa  = a.channel === 'whatsapp';
+    const icon  = isWa ? '📱' : '💬';
+    const label = isWa
+      ? (a.kind === 'bill_pdf' ? 'WhatsApp · Bill PDF' : 'WhatsApp · Reminder')
+      : 'SMS · Reminder';
+    const badge = a.status === 'sent' ? 'badge-cleared' : 'badge-due';
+
+    let action = '';
+    if (isWa && a.has_pdf) {
+      action = `<a href="${API}/api/admin/archive/${a.id}/download"
+                   target="_blank" rel="noopener" class="btn-view-archive">View 📄</a>`;
+    } else if (a.body_text) {
+      action = `<button type="button" class="btn-view-archive"
+                        data-view-body="${a.id}">View 📝</button>`;
+    }
+
+    const bodyBlock = a.body_text
+      ? `<div class="archive-body hidden" data-archive-body="${a.id}"><pre>${esc(a.body_text)}</pre></div>`
+      : '';
+
+    return `
+      <div class="payment-item">
+        <div>
+          <div class="amount">${icon} ${esc(label)}</div>
+          <div class="meta">To ${esc(a.recipient_phone)} · ${esc(a.sent_at_display)}</div>
+          ${a.error ? `<div class="meta" style="color:#c62828;">⚠ ${esc(a.error)}</div>` : ''}
+        </div>
+        <div class="meta" style="display:flex;gap:.55rem;align-items:center;">
+          <span class="badge ${badge}">${esc(a.status)}</span>
+          ${action}
+        </div>
+      </div>
+      ${bodyBlock}`;
+  }).join('');
+
+  // Wire inline SMS-body toggles
+  list.querySelectorAll('.btn-view-archive[data-view-body]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.viewBody;
+      const target = list.querySelector(`[data-archive-body="${id}"]`);
+      if (target) target.classList.toggle('hidden');
+    });
+  });
 }
 
 /* ═══════════════════════════════════════════════
