@@ -131,6 +131,28 @@ def get_available_channels() -> list:
     return channels
 
 
+# ─── Payment info (paybill + account for the current mode) ───
+def _payment_info(consumer) -> dict:
+    """
+    Return {'paybill': '...', 'account': '...'} for the current payment mode.
+
+      PAYMENT_MODE=fixed  → FIXED_PAYBILL / FIXED_PAYMENT_ACCOUNT (temporary)
+      otherwise           → PAYBILL env + consumer.meter_acc_no (dynamic, preserved)
+
+    Switching modes is a single env-var change — no code deploy.
+    """
+    mode = os.environ.get("PAYMENT_MODE", "").strip().lower()
+    if mode == "fixed":
+        return {
+            "paybill": os.environ.get("FIXED_PAYBILL", "").strip() or "—",
+            "account": os.environ.get("FIXED_PAYMENT_ACCOUNT", "").strip() or "—",
+        }
+    return {
+        "paybill": os.environ.get("PAYBILL", "XXXXXX"),
+        "account": consumer.meter_acc_no,
+    }
+
+
 # ─── Phone normalisation ───
 def _normalize_phone_ke(phone: str) -> str:
     p = "".join(c for c in (phone or "") if c.isdigit())
@@ -277,7 +299,7 @@ def build_bill_message(consumer, status_info: dict, channel: str = "sms") -> dic
     amount  = status_info.get("total_due", 0.0)
     label   = status_info.get("label", "Due")
     cons    = status_info.get("consumption_m3", 0.0)
-    paybill = os.environ.get("PAYBILL", "XXXXXX")
+    pay     = _payment_info(consumer)
 
     if channel == "sms":
         current_m3        = status_info.get("current_reading_m3", 0.0)
@@ -309,8 +331,8 @@ def build_bill_message(consumer, status_info: dict, channel: str = "sms") -> dic
             f"{'Prev Outstanding':<23}: KES {prev_outstanding:,.2f}\n"
             f"{'Total Outstanding':<23}: KES {total_outstanding:,.2f}\n"
             f"\n"
-            f"Pay via Paybill {paybill}\n"
-            f"Account No        : {consumer.meter_acc_no}\n"
+            f"Pay via Paybill {pay['paybill']}\n"
+            f"Account No        : {pay['account']}\n"
             f"\n"
             f"--------------------------\n"
             f"Water charges payable on or before 20 days\n"
@@ -325,7 +347,7 @@ def build_bill_message(consumer, status_info: dict, channel: str = "sms") -> dic
             f"Dear {consumer.cust_name},\n"
             f"Your water bill ({consumer.meter_acc_no}) status: {label}. "
             f"Outstanding: KES {amount:,.2f}. "
-            f"Pay via Paybill {paybill}, Acc {consumer.meter_acc_no}. "
+            f"Pay via Paybill {pay['paybill']}, Acc {pay['account']}. "
             f"Thank you."
         )
     return {"body": body}

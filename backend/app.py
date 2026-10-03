@@ -26,7 +26,7 @@ from sheets import sync_consumer_to_sheet
 from reminders import start_scheduler
 from notifications import (
     send_sms, send_sms_with_retry, send_whatsapp, send_whatsapp_document,
-    build_bill_message, get_available_channels,
+    build_bill_message, get_available_channels, _payment_info,
 )
 from admin_auth import (
     create_first_admin, login as admin_login_fn,
@@ -1106,6 +1106,7 @@ def download_water_bill(reading_id):
     pcf     = round(min(pcf_raw, current_charges), 2)
     is_cleared = reading.balance <= 0
 
+    _pay = _payment_info(consumer)
     snapshot = {
         "bill_no":              f"{reading.id:06d}",
         "date":                 reading.reading_date.strftime("%d %b %Y"),
@@ -1119,6 +1120,8 @@ def download_water_bill(reading_id):
         "previous_outstanding": _fmt_money(prev_outstanding),
         "total_outstanding":    _fmt_money(total_outstanding),
         "status_label":         get_reading_bill_status(reading).upper(),
+        "paybill":              _pay["paybill"],
+        "payment_account":      _pay["account"],
     }
 
     try:
@@ -1344,6 +1347,7 @@ def send_whatsapp_bill(consumer_id):
     pcf     = round(min(pcf_raw, current_charges), 2)
     is_cleared = reading.balance <= 0
 
+    _pay = _payment_info(consumer)
     snapshot = {
         "bill_no":              f"{reading.id:06d}",
         "date":                 reading.reading_date.strftime("%d %b %Y"),
@@ -1357,6 +1361,8 @@ def send_whatsapp_bill(consumer_id):
         "previous_outstanding": _fmt_money(prev_outstanding),
         "total_outstanding":    _fmt_money(total_outstanding),
         "status_label":         get_reading_bill_status(reading).upper(),
+        "paybill":              _pay["paybill"],
+        "payment_account":      _pay["account"],
     }
 
     try:
