@@ -1852,3 +1852,32 @@ body.drawer-open { overflow: hidden; }
 #consumersDbWrap .readings-table { font-size: .85rem; }
 #consumersDbWrap .readings-table th,
 #consumersDbWrap .readings-table td { padding: .55rem .55rem; }
+
+
+/* ═══════════════════════════════════════════════
+   OPT-IN CHECKBOX (WhatsApp)
+   Used in the New Customer modal. Checkbox left,
+   text right, wraps on narrow screens.
+   ═══════════════════════════════════════════════ */
+.optin-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: .55rem;
+  font-size: .85rem;
+  line-height: 1.45;
+  color: var(--grey-900);
+  cursor: pointer;
+  padding: .55rem .65rem;
+  background: var(--grey-50);
+  border: 1px dashed var(--grey-300);
+  border-radius: var(--radius-sm);
+}
+.optin-checkbox input[type="checkbox"] {
+  margin-top: .25rem;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+.optin-checkbox span { flex: 1; }
+.optin-checkbox strong { color: var(--blue-700); }

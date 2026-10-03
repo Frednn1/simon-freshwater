@@ -393,6 +393,11 @@ def _ensure_all_columns():
             alters.append(f"ADD COLUMN terminated_at {TIME_T} NULL")
         if "meter_initial_reading_m3" not in existing:
             alters.append(f"ADD COLUMN meter_initial_reading_m3 {REAL_T} NOT NULL DEFAULT 0")
+        if "whatsapp_opt_in" not in existing:
+            if dialect == "sqlite":
+                alters.append("ADD COLUMN whatsapp_opt_in INTEGER NOT NULL DEFAULT 0")
+            else:
+                alters.append("ADD COLUMN whatsapp_opt_in BOOLEAN NOT NULL DEFAULT FALSE")
         for alt in alters:
             db.session.execute(text(f"ALTER TABLE consumers {alt}"))
         if alters:
@@ -1838,6 +1843,7 @@ def admin_create_consumer():
     latitude = data.get("latitude")
     longitude = data.get("longitude")
     initial_raw = data.get("meter_initial_reading_m3")
+    whatsapp_opt_in = bool(data.get("whatsapp_opt_in"))
 
     if not (cust_name and acc_name and meter_acc_no and contact):
         return jsonify({"error": "cust_name, acc_name, meter_acc_no, and contact are required."}), 400
@@ -1865,7 +1871,8 @@ def admin_create_consumer():
                  meter_acc_no=meter_acc_no, contact=contact,
                  email=email or None, address=address or None,
                  latitude=lat, longitude=lng,
-                 meter_initial_reading_m3=initial, is_active=True)
+                 meter_initial_reading_m3=initial, is_active=True,
+                 whatsapp_opt_in=whatsapp_opt_in)
     db.session.add(c)
     db.session.commit()
 
@@ -1876,6 +1883,7 @@ def admin_create_consumer():
         "latitude": c.latitude, "longitude": c.longitude,
         "meter_initial_reading_m3": float(c.meter_initial_reading_m3 or 0.0),
         "is_active": True,
+        "whatsapp_opt_in": bool(c.whatsapp_opt_in),
     }}), 201
 
 
@@ -1891,7 +1899,7 @@ def admin_update_consumer(consumer_id):
     data = request.get_json(silent=True) or {}
     allowed = ("cust_name", "acc_name", "meter_acc_no", "contact",
                "email", "address", "latitude", "longitude",
-               "meter_initial_reading_m3")
+               "meter_initial_reading_m3", "whatsapp_opt_in")
     updated = {}
     for f in allowed:
         if f not in data:
@@ -1919,6 +1927,16 @@ def admin_update_consumer(consumer_id):
                 setattr(consumer, f, float(v) if v not in (None, "", "null") else 0.0)
             except (ValueError, TypeError):
                 return jsonify({"error": "meter_initial_reading_m3 must be a number."}), 400
+        elif f == "whatsapp_opt_in":
+            # Accept bool, int (0/1), or strings "true"/"false"/"1"/"0"
+            if isinstance(v, bool):
+                setattr(consumer, f, v)
+            elif isinstance(v, (int, float)):
+                setattr(consumer, f, bool(v))
+            elif isinstance(v, str):
+                setattr(consumer, f, v.strip().lower() in ("1", "true", "yes", "on"))
+            else:
+                setattr(consumer, f, False)
         else:
             setattr(consumer, f, v)
         updated[f] = v
@@ -1934,6 +1952,7 @@ def admin_update_consumer(consumer_id):
         "latitude": consumer.latitude, "longitude": consumer.longitude,
         "meter_initial_reading_m3": float(consumer.meter_initial_reading_m3 or 0.0),
         "is_active": bool(consumer.is_active),
+        "whatsapp_opt_in": bool(consumer.whatsapp_opt_in),
     }})
 
 
