@@ -142,3 +142,37 @@ class PasswordResetToken(db.Model):
     expires_at = db.Column(db.DateTime, nullable=False)
     used = db.Column(db.Boolean, default=False, nullable=False, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# ═══════════════════════════════════════════════
+#  PERMANENT ARCHIVE — sent bills and reminders
+# ═══════════════════════════════════════════════
+# Rows are tiny (~500 bytes). For WhatsApp PDF bills, the PDF bytes
+# live in Cloudflare R2 and only the storage_key is kept here.
+# For SMS / WhatsApp text reminders, the message body is stored
+# in body_text — no external storage needed.
+#
+# Retention: 3 years (1095 days). Purged automatically from the
+# archive.py module (rate-limited to once per 24 h).
+
+
+class SentBillArchive(db.Model):
+    __tablename__ = 'sent_bill_archive'
+    id = db.Column(db.Integer, primary_key=True)
+    consumer_id = db.Column(db.Integer, db.ForeignKey('consumers.id'),
+                            nullable=False, index=True)
+    reading_id = db.Column(db.Integer, db.ForeignKey('meter_readings.id'),
+                           nullable=True, index=True)
+    channel = db.Column(db.String(20), nullable=False)     # 'whatsapp' | 'sms'
+    kind = db.Column(db.String(30), nullable=False)        # 'bill_pdf' | 'reminder_text'
+    recipient_phone = db.Column(db.String(20), nullable=False)
+    template_name = db.Column(db.String(80))
+    provider_message_id = db.Column(db.String(120))
+    sent_at = db.Column(db.DateTime, default=datetime.utcnow,
+                        nullable=False, index=True)
+    status = db.Column(db.String(20), nullable=False)      # 'sent' | 'failed'
+    error = db.Column(db.String(255))
+    body_text = db.Column(db.Text)
+    storage_key = db.Column(db.String(255))
+    file_size = db.Column(db.Integer)
+    snapshot_json = db.Column(db.Text)

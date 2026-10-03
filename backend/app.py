@@ -16,7 +16,7 @@ from sqlalchemy import text, inspect
 
 from models import (
     db, Consumer, MeterReading, NotificationLog,
-    AdminUser, PaymentLog, MpesaLog,
+    AdminUser, PaymentLog, MpesaLog, SentBillArchive,
 )
 from billing import (
     compute_amount, compute_consumption,
@@ -41,6 +41,7 @@ from bulk_sms import send_bulk_sms, BULK_SMS_MAX_BATCH
 from mpesa import (
     get_mpesa_config, register_c2b_urls, simulate_c2b_payment,
 )
+import archive
 from statement import generate_statement_pdf
 
 
@@ -1367,7 +1368,8 @@ def send_whatsapp_bill(consumer_id):
     # Save PDF into a token-addressed public slot.
     # Reuse the receipt token machinery but with a dedicated store.
     token = secrets.token_urlsafe(32)
-    _PUBLIC_BILL_TOKENS[token] = bytes(pdf_buf.getvalue())
+    pdf_bytes = bytes(pdf_buf.getvalue())
+    _PUBLIC_BILL_TOKENS[token] = pdf_bytes
 
     public_url = request.host_url.rstrip("/") + f"/public/bill/{token}.pdf"
     filename = f"SimonWater_Bill_{reading.id:06d}.pdf"
@@ -1379,6 +1381,38 @@ def send_whatsapp_bill(consumer_id):
         filename=filename,
         body_params=[consumer.cust_name, consumer.meter_acc_no],
     )
+
+    # ── Best-effort archive: PDF to R2, metadata to D1 ──
+    # Wrapped in try/except — an archive failure must NEVER break the send.
+    try:
+        sent_at = datetime.utcnow()
+        key = None
+        if result.get("ok") and archive.is_configured():
+            key = archive.make_key(consumer.id, reading.id, sent_at)
+            if not archive.upload_pdf(key, pdf_bytes):
+                key = None
+        row = SentBillArchive(
+            consumer_id=consumer.id,
+            reading_id=reading.id,
+            channel="whatsapp",
+            kind="bill_pdf",
+            recipient_phone=consumer.contact,
+            template_name=os.environ.get("WA_TEMPLATE_NAME", ""),
+            provider_message_id=result.get("provider_id", ""),
+            sent_at=sent_at,
+            status="sent" if result.get("ok") else "failed",
+            error=(result.get("error") or None) if not result.get("ok") else None,
+            body_text=None,
+            storage_key=key,
+            file_size=len(pdf_bytes),
+            snapshot_json=json.dumps(snapshot),
+        )
+        db.session.add(row)
+        db.session.commit()
+        archive.purge_expired()
+    except Exception:
+        app.logger.exception("[Archive] bill_pdf insert failed")
+        db.session.rollback()
 
     if result.get("ok"):
         return jsonify({
@@ -1549,6 +1583,31 @@ def notify_consumer(consumer_id):
     )
     db.session.add(log)
     db.session.commit()
+
+    # ── Best-effort archive: SMS / WhatsApp text body → D1 ──
+    try:
+        arch_row = SentBillArchive(
+            consumer_id=consumer.id,
+            reading_id=None,
+            channel=channel,
+            kind="reminder_text",
+            recipient_phone=to_value,
+            template_name=None,
+            provider_message_id=result.get("provider_id", ""),
+            sent_at=datetime.utcnow(),
+            status="sent" if result.get("ok") else "failed",
+            error=(result.get("error") or None) if not result.get("ok") else None,
+            body_text=payload.get("body") or "",
+            storage_key=None,
+            file_size=None,
+            snapshot_json=None,
+        )
+        db.session.add(arch_row)
+        db.session.commit()
+        archive.purge_expired()
+    except Exception:
+        app.logger.exception("[Archive] reminder_text insert failed")
+        db.session.rollback()
 
     if result.get("ok"):
         return jsonify({"ok": True, "channel": channel,
@@ -2785,6 +2844,83 @@ def admin_mpesa_payments():
             "received_at": l.received_at.isoformat() if l.received_at else None,
         } for l in logs],
     })
+
+
+# ═══════════════════════════════════════════════
+#  ADMIN — Sent-bills archive
+# ═══════════════════════════════════════════════
+
+@app.route("/api/admin/consumer/<int:consumer_id>/bills_archive", methods=["GET"])
+def admin_consumer_bills_archive(consumer_id):
+    """List archived sends for one consumer (admin-only)."""
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("bills_archive", 30, 60):
+        return _too_many(60)
+
+    consumer = Consumer.query.get_or_404(consumer_id)
+    rows = (SentBillArchive.query
+            .filter_by(consumer_id=consumer.id)
+            .order_by(SentBillArchive.sent_at.desc())
+            .limit(200)
+            .all())
+
+    out = []
+    for r in rows:
+        sent_nbo = _as_nairobi(r.sent_at)
+        out.append({
+            "id": r.id,
+            "channel": r.channel,
+            "kind": r.kind,
+            "recipient_phone": r.recipient_phone,
+            "sent_at": sent_nbo.isoformat(),
+            "sent_at_display": sent_nbo.strftime("%d %b %Y, %H:%M"),
+            "status": r.status,
+            "error": r.error,
+            "has_pdf": bool(r.storage_key),
+            "body_text": r.body_text,
+            "file_size": r.file_size,
+        })
+
+    return jsonify({"archives": out})
+
+
+@app.route("/api/admin/archive/<int:archive_id>/download", methods=["GET"])
+def admin_archive_download(archive_id):
+    """Stream an archived PDF (admin-only)."""
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("archive_download", 30, 60):
+        return _too_many(60)
+
+    row = SentBillArchive.query.get_or_404(archive_id)
+    if not row.storage_key:
+        return jsonify({"error": "No PDF attached to this archive row."}), 404
+
+    data = archive.download_pdf(row.storage_key)
+    if data is None:
+        return jsonify({"error": "PDF not available in storage."}), 502
+
+    from io import BytesIO
+    filename = f"SimonWater_Archive_{row.id:06d}.pdf"
+    return send_file(
+        BytesIO(data),
+        mimetype="application/pdf",
+        as_attachment=False,
+        download_name=filename,
+    )
+
+
+@app.route("/api/admin/archive/purge", methods=["POST"])
+def admin_archive_purge():
+    """Manually trigger the 3-year retention purge (admin-only)."""
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("archive_purge", 3, 300):
+        return _too_many(300)
+
+    result = archive.purge_expired(force=True)
+    return jsonify({"ok": True, **result})
 
 
 @app.route("/api/admin/consumers/all", methods=["GET"])
