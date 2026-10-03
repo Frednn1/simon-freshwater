@@ -2469,12 +2469,54 @@ def admin_delete_consumer(consumer_id):
         return jsonify({"error": "Consumer not found"}), 404
 
     name = consumer.cust_name
+
+    # 1. Sent-bill archive — delete R2 objects first, then DB rows.
+    #    This satisfies the FK constraint on sent_bill_archive.consumer_id
+    #    and prevents orphaned files in Cloudflare R2.
+    #    R2 failures are logged but never block the delete — a stale
+    #    object in R2 costs ~nothing; blocking user intent does not.
+    archive_rows = SentBillArchive.query.filter_by(consumer_id=consumer.id).all()
+    r2_failed = 0
+    for row in archive_rows:
+        if row.storage_key:
+            try:
+                ok = archive.delete_pdf(row.storage_key)
+                if not ok:
+                    r2_failed += 1
+                    app.logger.warning(
+                        f"[Delete] R2 delete returned False for "
+                        f"key={row.storage_key!r} "
+                        f"(archive_id={row.id}, consumer={consumer.id})"
+                    )
+            except Exception:
+                r2_failed += 1
+                app.logger.exception(
+                    f"[Delete] R2 delete raised for key={row.storage_key!r} "
+                    f"(archive_id={row.id}, consumer={consumer.id})"
+                )
+        db.session.delete(row)
+
+    # 2. Payments, notifications, readings (order preserved from original)
     PaymentLog.query.filter_by(consumer_id=consumer.id).delete()
     NotificationLog.query.filter_by(consumer_id=consumer.id).delete()
     MeterReading.query.filter_by(consumer_id=consumer.id).delete()
+
+    # 3. Consumer itself
     db.session.delete(consumer)
     db.session.commit()
-    return jsonify({"ok": True, "message": f"{name} permanently deleted."})
+
+    # 4. Audit log — records exactly what was deleted
+    app.logger.info(
+        f"[Delete] consumer={consumer_id} name={name!r} "
+        f"archives_removed={len(archive_rows)} r2_orphaned={r2_failed}"
+    )
+
+    return jsonify({
+        "ok": True,
+        "message": f"{name} permanently deleted.",
+        "archives_removed": len(archive_rows),
+        "r2_orphaned": r2_failed,
+    })
 
 
 # ═══════════════════════════════════════════════

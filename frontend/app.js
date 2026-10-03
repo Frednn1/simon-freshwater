@@ -1072,12 +1072,21 @@ async function deleteConsumer(id, name) {
 
   try {
     const r = await adminFetch(`${API}/api/admin/consumer/${id}`, { method: 'DELETE' });
-    const data = await r.json();
-    if (r.ok && data.ok) { alert(`🗑️ ${name} permanently deleted.`); location.href = '/'; }
-    else { alert(`❌ ${data.error || 'Delete failed.'}`); }
+    // Some errors return HTML (Flask 500); guard r.json() so we surface the status
+    let data = null;
+    try { data = await r.json(); } catch { /* non-JSON response */ }
+    if (r.ok && data && data.ok) {
+      const detail = data.archives_removed != null
+        ? ` (${data.archives_removed} archived send${data.archives_removed === 1 ? '' : 's'} removed)`
+        : '';
+      alert(`🗑️ ${name} permanently deleted.${detail}`);
+      location.href = '/';
+    } else {
+      alert(`❌ ${(data && data.error) || 'Delete failed (HTTP ' + r.status + ').'}`);
+    }
   } catch (e) {
     if (e.message && e.message.includes('Redirecting')) return;
-    alert('Network error.');
+    alert(`Network error: ${e.message || e}`);
   }
 }
 
