@@ -1402,6 +1402,9 @@ def send_whatsapp_bill(consumer_id):
     if wa_toggle not in ("1", "true", "yes", "on"):
         return jsonify({"error": "WhatsApp sending is currently disabled."}), 403
 
+    data = request.get_json(silent=True) or {}
+    send_to_alt = bool(data.get("send_to_alt"))
+
     consumer = Consumer.query.get_or_404(consumer_id)
     if not consumer.is_active:
         return jsonify({"error": "Consumer is terminated. No reminders sent."}), 403
@@ -1481,40 +1484,58 @@ def send_whatsapp_bill(consumer_id):
     public_url = request.host_url.rstrip("/") + f"/public/bill/{token}.pdf"
     filename = f"SimonWater_Bill_{reading.id:06d}.pdf"
 
-    # Send via WhatsApp template with document header
-    result = send_whatsapp_document(
-        to_phone=consumer.contact,
-        pdf_public_url=public_url,
-        filename=filename,
-        body_params=[consumer.cust_name, consumer.meter_acc_no],
-    )
+    # ── Build recipients list — main + alt (if requested & available) ──
+    recipients = [consumer.contact]
+    if send_to_alt and consumer.alt_contact:
+        recipients.append(consumer.alt_contact)
+
+    # ── Send to each recipient ──
+    results = []
+    for phone in recipients:
+        r = send_whatsapp_document(
+            to_phone=phone,
+            pdf_public_url=public_url,
+            filename=filename,
+            body_params=[consumer.cust_name, consumer.meter_acc_no],
+        )
+        results.append({"phone": phone, "ok": r.get("ok"),
+                        "error": r.get("error") or "",
+                        "provider_id": r.get("provider_id", "")})
+
+    sent_phones = [r["phone"] for r in results if r["ok"]]
+    failed      = [r for r in results if not r["ok"]]
+    overall_ok  = len(failed) == 0
+    first_error = failed[0]["error"] if failed else ""
+    to_value    = ", ".join(sent_phones) if sent_phones \
+                  else ", ".join(r["phone"] for r in results)
 
     # ── Best-effort archive: PDF to R2, metadata to D1 ──
     # Wrapped in try/except — an archive failure must NEVER break the send.
     try:
         sent_at = datetime.utcnow()
-        key = None
-        if result.get("ok") and archive.is_configured():
-            key = archive.make_key(consumer.id, reading.id, sent_at)
-            if not archive.upload_pdf(key, pdf_bytes):
-                key = None
-        row = SentBillArchive(
-            consumer_id=consumer.id,
-            reading_id=reading.id,
-            channel="whatsapp",
-            kind="bill_pdf",
-            recipient_phone=consumer.contact,
-            template_name=os.environ.get("WA_TEMPLATE_NAME", ""),
-            provider_message_id=result.get("provider_id", ""),
-            sent_at=sent_at,
-            status="sent" if result.get("ok") else "failed",
-            error=(result.get("error") or None) if not result.get("ok") else None,
-            body_text=None,
-            storage_key=key,
-            file_size=len(pdf_bytes),
-            snapshot_json=json.dumps(snapshot),
-        )
-        db.session.add(row)
+        for r in results:
+            key = None
+            if r["ok"] and archive.is_configured():
+                key = archive.make_key(consumer.id, reading.id, sent_at)
+                if not archive.upload_pdf(key, pdf_bytes):
+                    key = None
+            row = SentBillArchive(
+                consumer_id=consumer.id,
+                reading_id=reading.id,
+                channel="whatsapp",
+                kind="bill_pdf",
+                recipient_phone=r["phone"],
+                template_name=os.environ.get("WA_TEMPLATE_NAME", ""),
+                provider_message_id=r.get("provider_id", ""),
+                sent_at=sent_at,
+                status="sent" if r["ok"] else "failed",
+                error=(r["error"] or None) if not r["ok"] else None,
+                body_text=None,
+                storage_key=key,
+                file_size=len(pdf_bytes),
+                snapshot_json=json.dumps(snapshot),
+            )
+            db.session.add(row)
         db.session.commit()
         archive.purge_expired()
     except Exception:
@@ -1524,20 +1545,21 @@ def send_whatsapp_bill(consumer_id):
     _audit("send_whatsapp_bill",
            target_type="consumer", target_id=consumer.id,
            target_label=f"{consumer.cust_name} · {consumer.meter_acc_no}",
-           detail=f"to={consumer.contact}, ok={result.get('ok')}, "
-                  f"err={(result.get('error') or '')[:80]}")
+           detail=f"to={to_value}, ok={overall_ok}, recipients={len(results)}, "
+                  f"err={(first_error or '')[:80]}")
 
-    if result.get("ok"):
+    if overall_ok:
         return jsonify({
             "ok": True,
             "channel": "whatsapp",
             "message": "WhatsApp bill sent successfully.",
-            "to": consumer.contact,
+            "to": to_value,
+            "recipients_sent": len(sent_phones),
         }), 200
 
     return jsonify({
         "ok": False,
-        "error": result.get("error", "Send failed"),
+        "error": first_error or "Send failed",
     }), 502
 
 
@@ -1632,6 +1654,7 @@ def notify_consumer(consumer_id):
     channel = (data.get("channel") or "").lower().strip()
     if channel not in ("sms", "whatsapp"):
         return jsonify({"error": "channel must be 'sms' or 'whatsapp'"}), 400
+    send_to_alt = bool(data.get("send_to_alt"))
 
     consumer = Consumer.query.get_or_404(consumer_id)
     if not consumer.is_active:
@@ -1685,44 +1708,64 @@ def notify_consumer(consumer_id):
         return jsonify({"error": f"Please wait {wait}s before resending via {channel}."}), 429
 
     payload = build_bill_message(consumer, info, channel=channel)
-    if channel == "sms":
-        if not consumer.contact:
-            return jsonify({"error": "Consumer has no contact number on file."}), 400
-        result = send_sms(consumer.contact, payload["body"])
-        to_value = consumer.contact
-    else:  # whatsapp
-        if not consumer.contact:
-            return jsonify({"error": "Consumer has no contact number on file."}), 400
-        result = send_whatsapp(consumer.contact, payload["body"])
-        to_value = consumer.contact
 
-    log = NotificationLog(
-        consumer_id=consumer.id, channel=channel,
-        status="sent" if result.get("ok") else "failed",
-        detail=(result.get("error") or result.get("provider_id") or "")[:255],
-    )
-    db.session.add(log)
+    # ── Build recipients list — main + alt (if requested & available) ──
+    recipients = []
+    if consumer.contact:
+        recipients.append(consumer.contact)
+    if send_to_alt and consumer.alt_contact:
+        recipients.append(consumer.alt_contact)
+    if not recipients:
+        return jsonify({"error": "Consumer has no contact number on file."}), 400
+
+    # ── Send to each recipient ──
+    results = []
+    for phone in recipients:
+        if channel == "sms":
+            r = send_sms(phone, payload["body"])
+        else:
+            r = send_whatsapp(phone, payload["body"])
+        results.append({"phone": phone, "ok": r.get("ok"),
+                        "error": r.get("error") or "",
+                        "provider_id": r.get("provider_id", "")})
+
+    sent_phones = [r["phone"] for r in results if r["ok"]]
+    failed      = [r for r in results if not r["ok"]]
+    overall_ok  = len(failed) == 0
+    first_error = failed[0]["error"] if failed else ""
+    to_value    = ", ".join(sent_phones) if sent_phones \
+                  else ", ".join(r["phone"] for r in results)
+
+    # ── One NotificationLog per recipient ──
+    for r in results:
+        log = NotificationLog(
+            consumer_id=consumer.id, channel=channel,
+            status="sent" if r["ok"] else "failed",
+            detail=((r["error"] or r["provider_id"]) or "")[:255],
+        )
+        db.session.add(log)
     db.session.commit()
 
-    # ── Best-effort archive: SMS / WhatsApp text body → D1 ──
+    # ── One archive row per recipient ──
     try:
-        arch_row = SentBillArchive(
-            consumer_id=consumer.id,
-            reading_id=None,
-            channel=channel,
-            kind="reminder_text",
-            recipient_phone=to_value,
-            template_name=None,
-            provider_message_id=result.get("provider_id", ""),
-            sent_at=datetime.utcnow(),
-            status="sent" if result.get("ok") else "failed",
-            error=(result.get("error") or None) if not result.get("ok") else None,
-            body_text=payload.get("body") or "",
-            storage_key=None,
-            file_size=None,
-            snapshot_json=None,
-        )
-        db.session.add(arch_row)
+        for r in results:
+            arch_row = SentBillArchive(
+                consumer_id=consumer.id,
+                reading_id=None,
+                channel=channel,
+                kind="reminder_text",
+                recipient_phone=r["phone"],
+                template_name=None,
+                provider_message_id=r.get("provider_id", ""),
+                sent_at=datetime.utcnow(),
+                status="sent" if r["ok"] else "failed",
+                error=(r["error"] or None) if not r["ok"] else None,
+                body_text=payload.get("body") or "",
+                storage_key=None,
+                file_size=None,
+                snapshot_json=None,
+            )
+            db.session.add(arch_row)
         db.session.commit()
         archive.purge_expired()
     except Exception:
@@ -1732,14 +1775,15 @@ def notify_consumer(consumer_id):
     _audit(f"send_{channel}",
            target_type="consumer", target_id=consumer.id,
            target_label=f"{consumer.cust_name} · {consumer.meter_acc_no}",
-           detail=f"to={to_value}, ok={result.get('ok')}, "
-                  f"err={(result.get('error') or '')[:80]}")
+           detail=f"to={to_value}, ok={overall_ok}, recipients={len(results)}, "
+                  f"err={(first_error or '')[:80]}")
 
-    if result.get("ok"):
+    if overall_ok:
         return jsonify({"ok": True, "channel": channel,
                         "message": f"{channel.upper()} reminder sent.",
-                        "to": to_value}), 200
-    return jsonify({"ok": False, "error": result.get("error", "Send failed")}), 502
+                        "to": to_value,
+                        "recipients_sent": len(sent_phones)}), 200
+    return jsonify({"ok": False, "error": first_error or "Send failed"}), 502
 
 
 # ═══════════════════════════════════════════════

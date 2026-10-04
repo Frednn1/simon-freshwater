@@ -2027,3 +2027,75 @@ body.drawer-open { overflow: hidden; }
   .audit-table thead th,
   .audit-table tbody td { padding: .4rem .45rem; }
 }
+
+
+/* ═══════════════════════════════════════════════
+   ALT-PHONE NOTIFY TOGGLE
+   Round toggle switch shown inside the Send Bill
+   Reminder card. Only visible when the consumer
+   has an alt_contact on file.
+   ═══════════════════════════════════════════════ */
+.alt-notify-toggle {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  margin: .75rem 0 .9rem;
+  padding: .6rem .8rem;
+  font-size: .88rem;
+  color: var(--grey-900);
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  background: linear-gradient(135deg, #f5faff, #e8f3ff);
+  border: 1px solid #bbdefb;
+  border-radius: var(--radius-sm);
+  transition: background .18s;
+}
+.alt-notify-toggle:hover { background: linear-gradient(135deg, #e8f3ff, #d4e8fb); }
+.alt-notify-toggle input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 42px;
+  height: 24px;
+  background: #cfd8dc;
+  border-radius: 24px;
+  position: relative;
+  cursor: pointer;
+  transition: background .2s;
+  flex-shrink: 0;
+  margin: 0;
+  border: none;
+  outline: none;
+}
+.alt-notify-toggle input[type="checkbox"]::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform .2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,.25);
+}
+.alt-notify-toggle input[type="checkbox"]:checked {
+  background: #1976d2;
+}
+.alt-notify-toggle input[type="checkbox"]:checked::after {
+  transform: translateX(18px);
+}
+.alt-notify-toggle input[type="checkbox"]:focus-visible {
+  box-shadow: 0 0 0 3px rgba(25,118,210,.25);
+}
+.alt-notify-toggle span { flex: 1; line-height: 1.4; }
+.alt-notify-toggle strong {
+  color: var(--blue-700);
+  font-family: 'Courier New', monospace;
+  font-weight: 700;
+}
+
+@media (max-width: 600px) {
+  .alt-notify-toggle { font-size: .82rem; padding: .55rem .7rem; }
+  .alt-notify-toggle strong { font-size: .8rem; }
+}
