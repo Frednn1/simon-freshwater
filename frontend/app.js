@@ -658,6 +658,19 @@ async function initConsumerPage(consumerId) {
         const available = data.available_channels || [];
         if (outstanding && available.length > 0 && isAdmin) {
           notifyCard.classList.remove('hidden');
+
+          /* Alt. Phone toggle — reveal only when consumer has an alt contact */
+          const altWrap = document.getElementById('altNotifyToggleWrap');
+          const altNum  = document.getElementById('altNotifyNumber');
+          if (altWrap && altNum) {
+            if (c.alt_contact) {
+              altNum.textContent = c.alt_contact;
+              altWrap.classList.remove('hidden');
+            } else {
+              altWrap.classList.add('hidden');
+            }
+          }
+
           const smsBtn = document.getElementById('sendSmsBtn');
           const waBtn  = document.getElementById('sendWhatsAppBtn');
           if (!available.includes('sms'))      smsBtn.style.display = 'none';
@@ -1150,10 +1163,12 @@ async function sendBillWhatsApp(consumerId, btn) {
   msgEl.classList.add('hidden');
 
   try {
+    const sendToAlt = document.getElementById('altNotifyCheck')?.checked || false;
     const r = await fetch(`${API}/api/consumer/${consumerId}/whatsapp_bill`, {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ send_to_alt: sendToAlt }),
     });
     const data = await r.json();
 
@@ -1297,10 +1312,11 @@ function wireNotifyButtons(consumerId) {
     btn.innerHTML = '<span class="btn-icon">⏳</span> Sending…';
     msgEl.classList.add('hidden');
 
+    const sendToAlt = document.getElementById('altNotifyCheck')?.checked || false;
     fetch(`${API}/api/consumer/${consumerId}/notify`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ channel }),
+      body: JSON.stringify({ channel, send_to_alt: sendToAlt }),
     })
       .then((r) => r.json().then((d) => ({ ok: r.ok, data: d })))
       .then(({ ok, data }) => {
