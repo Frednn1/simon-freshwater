@@ -2496,7 +2496,21 @@ def admin_delete_consumer(consumer_id):
                 )
         db.session.delete(row)
 
-    # 2. Payments, notifications, readings (order preserved from original)
+    # 2. M-Pesa logs — MUST be deleted BEFORE PaymentLog
+    #    (FK: mpesa_log.payment_log_id → payment_log.id)
+    mpesa_rows = MpesaLog.query.filter_by(consumer_id=consumer.id).count()
+    MpesaLog.query.filter_by(consumer_id=consumer.id).delete(synchronize_session=False)
+
+    # Belt-and-braces: any MpesaLog whose consumer_id is NULL but whose
+    # payment_log_id still points at one of this consumer's payments.
+    _pay_ids = [p.id for p in PaymentLog.query.filter_by(consumer_id=consumer.id).all()]
+    orphan_mpesa = 0
+    if _pay_ids:
+        orphan_mpesa = (MpesaLog.query
+                        .filter(MpesaLog.payment_log_id.in_(_pay_ids))
+                        .delete(synchronize_session=False))
+
+    # 3. Payments, notifications, readings
     PaymentLog.query.filter_by(consumer_id=consumer.id).delete()
     NotificationLog.query.filter_by(consumer_id=consumer.id).delete()
     MeterReading.query.filter_by(consumer_id=consumer.id).delete()
@@ -2508,7 +2522,8 @@ def admin_delete_consumer(consumer_id):
     # 4. Audit log — records exactly what was deleted
     app.logger.info(
         f"[Delete] consumer={consumer_id} name={name!r} "
-        f"archives_removed={len(archive_rows)} r2_orphaned={r2_failed}"
+        f"archives_removed={len(archive_rows)} r2_orphaned={r2_failed} "
+        f"mpesa_removed={mpesa_rows} orphan_mpesa_removed={orphan_mpesa}"
     )
 
     return jsonify({
@@ -2516,6 +2531,8 @@ def admin_delete_consumer(consumer_id):
         "message": f"{name} permanently deleted.",
         "archives_removed": len(archive_rows),
         "r2_orphaned": r2_failed,
+        "mpesa_removed": mpesa_rows,
+        "orphan_mpesa_removed": orphan_mpesa,
     })
 
 
