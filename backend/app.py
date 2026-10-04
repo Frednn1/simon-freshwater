@@ -16,7 +16,7 @@ from sqlalchemy import text, inspect
 
 from models import (
     db, Consumer, MeterReading, NotificationLog,
-    AdminUser, PaymentLog, MpesaLog, SentBillArchive,
+    AdminUser, PaymentLog, MpesaLog, SentBillArchive, AdminAuditLog,
 )
 from billing import (
     compute_amount, compute_consumption,
@@ -302,7 +302,12 @@ def _current_admin():
             session.clear()
             return None
         if now - last_dt > timedelta(minutes=SESSION_IDLE_MINUTES):
+            _uname = session.get("admin_username")
+            _aid = session.get("admin_id")
             session.clear()
+            if _uname:
+                _audit("session_timeout",
+                       _admin_id=_aid, _admin_username=_uname)
             return None
 
     a = AdminUser.query.get(aid)
@@ -362,6 +367,89 @@ def _as_nairobi(dt):
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(_NAIROBI_TZ)
+
+
+# ═══════════════════════════════════════════════
+#  ADMIN AUDIT TRAIL helper
+# ═══════════════════════════════════════════════
+
+AUDIT_RETENTION_DAYS     = 14
+AUDIT_PURGE_INTERVAL_SEC = 12 * 3600
+_audit_last_purge = None
+_audit_lock = Lock()
+
+
+def _audit(action, target_type=None, target_id=None, target_label=None,
+           detail=None, _admin_id=None, _admin_username=None):
+    """Write one audit row. NEVER raises — any failure is logged and swallowed.
+    Call at the END of a handler, after its own db.session.commit(), so that
+    our commit does not flush someone else's pending work.
+    """
+    global _audit_last_purge
+    try:
+        if _admin_username is not None or _admin_id is not None:
+            aid = _admin_id
+            uname = _admin_username
+        else:
+            aid = session.get("admin_id")
+            uname = session.get("admin_username")
+
+        def _clean(v, n):
+            if v is None:
+                return None
+            v = str(v).replace("\x00", "")
+            return v[:n]
+
+        row = AdminAuditLog(
+            admin_id=aid,
+            admin_username=_clean(uname, 60) or "unknown",
+            action=_clean(action, 40) or "unknown",
+            target_type=_clean(target_type, 30),
+            target_id=target_id,
+            target_label=_clean(target_label, 120),
+            detail=_clean(detail, 500),
+            ip_address=_clean(_client_ip(), 45),
+            user_agent=_clean(request.headers.get("User-Agent", ""), 200),
+        )
+        db.session.add(row)
+        db.session.commit()
+
+        # Opportunistic purge — at most once per AUDIT_PURGE_INTERVAL_SEC
+        with _audit_lock:
+            now = datetime.utcnow()
+            if (_audit_last_purge is None or
+                (now - _audit_last_purge).total_seconds() > AUDIT_PURGE_INTERVAL_SEC):
+                _audit_last_purge = now
+                _audit_purge_run()
+    except Exception:
+        try:
+            app.logger.exception("[Audit] insert failed")
+            db.session.rollback()
+        except Exception:
+            pass
+
+
+def _audit_purge_run():
+    """Delete audit rows older than AUDIT_RETENTION_DAYS. Never raises."""
+    try:
+        cutoff = datetime.utcnow() - timedelta(days=AUDIT_RETENTION_DAYS)
+        deleted = (AdminAuditLog.query
+                   .filter(AdminAuditLog.created_at < cutoff)
+                   .delete(synchronize_session=False))
+        db.session.commit()
+        if deleted:
+            app.logger.info(
+                f"[Audit] purge removed {deleted} rows older than "
+                f"{AUDIT_RETENTION_DAYS} days"
+            )
+        return deleted
+    except Exception:
+        try:
+            app.logger.exception("[Audit] purge failed")
+            db.session.rollback()
+        except Exception:
+            pass
+        return 0
 
 
 def _ensure_all_columns():
@@ -622,6 +710,9 @@ def download_billing_report():
     except Exception as e:
         app.logger.exception("[Report] PDF generation failed")
         return jsonify({"error": f"PDF generation failed: {e}"}), 500
+
+    _audit("download_report", target_type="system",
+           detail=f"period={year}-{month:02d}")
 
     filename = f"SimonWater_Report_{year}-{month:02d}.pdf"
     return send_file(
@@ -1420,6 +1511,12 @@ def send_whatsapp_bill(consumer_id):
         app.logger.exception("[Archive] bill_pdf insert failed")
         db.session.rollback()
 
+    _audit("send_whatsapp_bill",
+           target_type="consumer", target_id=consumer.id,
+           target_label=f"{consumer.cust_name} · {consumer.meter_acc_no}",
+           detail=f"to={consumer.contact}, ok={result.get('ok')}, "
+                  f"err={(result.get('error') or '')[:80]}")
+
     if result.get("ok"):
         return jsonify({
             "ok": True,
@@ -1500,6 +1597,13 @@ def submit_reading():
         sync_consumer_to_sheet(consumer, latest)
     except Exception as e:
         app.logger.warning(f"[Sheets sync] {e}")
+
+    _audit("add_reading",
+           target_type="consumer", target_id=consumer.id,
+           target_label=f"{consumer.cust_name} · {consumer.meter_acc_no}",
+           detail=f"reading={new_reading.reading_m3:.2f} M³, "
+                  f"consumption={consumption:.2f} M³, "
+                  f"amount=KES {new_reading.amount_kes:.2f}")
 
     return jsonify({"message": "Reading recorded", "reading": {
         "id": new_reading.id, "reading_m3": new_reading.reading_m3,
@@ -1615,6 +1719,12 @@ def notify_consumer(consumer_id):
         app.logger.exception("[Archive] reminder_text insert failed")
         db.session.rollback()
 
+    _audit(f"send_{channel}",
+           target_type="consumer", target_id=consumer.id,
+           target_label=f"{consumer.cust_name} · {consumer.meter_acc_no}",
+           detail=f"to={to_value}, ok={result.get('ok')}, "
+                  f"err={(result.get('error') or '')[:80]}")
+
     if result.get("ok"):
         return jsonify({"ok": True, "channel": channel,
                         "message": f"{channel.upper()} reminder sent.",
@@ -1667,6 +1777,8 @@ def admin_login_route():
     data = request.get_json(silent=True) or {}
     result = admin_login_fn(data.get("username", ""), data.get("password", ""))
     if not result.get("ok"):
+        _audit("login_failed",
+               detail=f"attempted_username={(data.get('username') or '')[:40]}")
         return jsonify({"ok": False, "error": result["error"]}), 401
 
     # ── 2FA branch ──
@@ -1699,6 +1811,7 @@ def admin_login_route():
     session["admin_id"] = result["admin_id"]
     session["admin_username"] = result["username"]
     session["last_activity"] = datetime.utcnow().isoformat()
+    _audit("login")
     return jsonify({"ok": True, "username": result["username"]}), 200
 
 
@@ -1726,7 +1839,7 @@ def admin_login_verify_otp():
     session["admin_id"] = admin.id
     session["admin_username"] = admin.username
     session["last_activity"] = datetime.utcnow().isoformat()
-
+    _audit("login_2fa_ok")
     return jsonify({"ok": True, "username": admin.username}), 200
 
 
@@ -1752,6 +1865,7 @@ def admin_login_resend_otp():
 
 @app.route("/api/admin/logout", methods=["POST"])
 def admin_logout_route():
+    _audit("logout")
     session.clear()
     return jsonify({"ok": True}), 200
 
@@ -1823,7 +1937,10 @@ def admin_update_username():
 
     admin.username = new_username
     db.session.commit()
-    session["admin_username"] = new_username   # keep display in sync
+    session["admin_username"] = new_username
+
+    _audit("update_settings_username",
+           detail=f"new_username={new_username}")
 
     return jsonify({"ok": True, "username": new_username})
 
@@ -1856,6 +1973,10 @@ def admin_update_phone():
 
     admin.phone = new_phone
     db.session.commit()
+
+    _audit("update_settings_phone",
+           detail=f"new_phone={new_phone}")
+
     return jsonify({"ok": True, "phone": new_phone})
 
 
@@ -1884,7 +2005,8 @@ def admin_update_password():
     admin.locked_until = None
     db.session.commit()
 
-    # Force re-login: clearing the session confirms the new password works.
+    _audit("update_settings_password")
+
     session.clear()
     return jsonify({"ok": True, "message": "Password updated. Please log in again."})
 
@@ -1940,6 +2062,12 @@ def admin_create_consumer():
                  whatsapp_opt_in=whatsapp_opt_in)
     db.session.add(c)
     db.session.commit()
+
+    _audit("create_consumer",
+           target_type="consumer", target_id=c.id,
+           target_label=f"{c.cust_name} · {c.meter_acc_no}",
+           detail=f"contact={c.contact}, email={c.email or '—'}, "
+                  f"opt_in={bool(c.whatsapp_opt_in)}")
 
     return jsonify({"ok": True, "consumer": {
         "id": c.id, "cust_name": c.cust_name, "acc_name": c.acc_name,
@@ -2009,6 +2137,12 @@ def admin_update_consumer(consumer_id):
     if not updated:
         return jsonify({"error": "No valid fields to update"}), 400
     db.session.commit()
+
+    _audit("update_consumer",
+           target_type="consumer", target_id=consumer.id,
+           target_label=f"{consumer.cust_name} · {consumer.meter_acc_no}",
+           detail=f"fields={','.join(sorted(updated.keys()))}")
+
     return jsonify({"ok": True, "updated": updated, "consumer": {
         "id": consumer.id, "cust_name": consumer.cust_name,
         "acc_name": consumer.acc_name, "meter_acc_no": consumer.meter_acc_no,
@@ -2335,6 +2469,11 @@ def admin_record_payment(consumer_id):
 
     db.session.commit()
 
+    _audit("record_payment",
+           target_type="payment", target_id=log.id,
+           target_label=f"{consumer.cust_name} · KES {amount:.2f}",
+           detail=f"method={method}, ref={reference or '—'}")
+
     return jsonify({
         "ok": True,
         "payment_id": log.id,
@@ -2438,6 +2577,11 @@ def admin_terminate_consumer(consumer_id):
     consumer.is_active = False
     consumer.terminated_at = datetime.utcnow()
     db.session.commit()
+
+    _audit("terminate_consumer",
+           target_type="consumer", target_id=consumer.id,
+           target_label=f"{consumer.cust_name} · {consumer.meter_acc_no}")
+
     return jsonify({"ok": True, "message": f"{consumer.cust_name} terminated.",
                     "is_active": False,
                     "terminated_at": consumer.terminated_at.isoformat()})
@@ -2455,6 +2599,11 @@ def admin_reactivate_consumer(consumer_id):
     consumer.is_active = True
     consumer.terminated_at = None
     db.session.commit()
+
+    _audit("reactivate_consumer",
+           target_type="consumer", target_id=consumer.id,
+           target_label=f"{consumer.cust_name} · {consumer.meter_acc_no}")
+
     return jsonify({"ok": True, "message": f"{consumer.cust_name} reactivated.",
                     "is_active": True})
 
@@ -2525,6 +2674,13 @@ def admin_delete_consumer(consumer_id):
         f"archives_removed={len(archive_rows)} r2_orphaned={r2_failed} "
         f"mpesa_removed={mpesa_rows} orphan_mpesa_removed={orphan_mpesa}"
     )
+
+    _audit("delete_consumer",
+           target_type="consumer", target_id=consumer_id,
+           target_label=name,
+           detail=f"archives_removed={len(archive_rows)}, "
+                  f"r2_orphaned={r2_failed}, mpesa_removed={mpesa_rows}, "
+                  f"orphan_mpesa_removed={orphan_mpesa}")
 
     return jsonify({
         "ok": True,
@@ -2684,6 +2840,12 @@ def admin_bulk_sms_send():
 
     if missing:
         result["skipped_ids"] = missing
+
+    _audit("bulk_sms_send",
+           detail=f"recipients={len(items)}, "
+                  f"ok={result.get('sent', result.get('ok_count', 0))}, "
+                  f"failed={result.get('failed', result.get('fail_count', 0))}, "
+                  f"skipped={len(missing)}")
 
     return jsonify(result), 200
 
@@ -2855,7 +3017,9 @@ def admin_mpesa_register():
 
     result = register_c2b_urls(conf, val)
     if not result.get("ok"):
+        _audit("register_mpesa", detail=f"FAILED: {result.get('error')}")
         return jsonify({"ok": False, "error": result.get("error")}), 502
+    _audit("register_mpesa", detail=f"conf={conf}")
     return jsonify({
         "ok": True,
         "confirmation_url": conf,
@@ -2985,7 +3149,68 @@ def admin_archive_purge():
         return _too_many(300)
 
     result = archive.purge_expired(force=True)
+    _audit("purge_archive",
+           detail=f"purged={result.get('purged', 0)}, "
+                  f"failed={result.get('failed', 0)}")
     return jsonify({"ok": True, **result})
+
+
+# ═══════════════════════════════════════════════
+#  ADMIN — Audit trail (read-only + manual purge)
+# ═══════════════════════════════════════════════
+
+@app.route("/api/admin/audit", methods=["GET"])
+def admin_audit_list():
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("audit_list", 30, 60):
+        return _too_many(60)
+
+    days_raw = request.args.get("days", "7")
+    try:
+        days = int(days_raw)
+    except (ValueError, TypeError):
+        days = 7
+    days = max(1, min(days, 14))
+
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    rows = (AdminAuditLog.query
+            .filter(AdminAuditLog.created_at >= cutoff)
+            .order_by(AdminAuditLog.created_at.desc())
+            .limit(500)
+            .all())
+
+    out = []
+    for r in rows:
+        dt_nbo = _as_nairobi(r.created_at)
+        out.append({
+            "id": r.id,
+            "admin_username": r.admin_username,
+            "action": r.action,
+            "target_type": r.target_type,
+            "target_id": r.target_id,
+            "target_label": r.target_label,
+            "detail": r.detail,
+            "ip_address": r.ip_address,
+            "created_at": dt_nbo.isoformat(),
+            "created_at_display": dt_nbo.strftime("%d %b %Y, %H:%M:%S"),
+        })
+
+    return jsonify({"audit": out, "days": days, "count": len(out)})
+
+
+@app.route("/api/admin/audit/purge", methods=["POST"])
+def admin_audit_purge():
+    global _audit_last_purge
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("audit_purge", 3, 300):
+        return _too_many(300)
+
+    _audit_last_purge = datetime.utcnow()   # suppress opportunistic purge
+    deleted = _audit_purge_run()
+    _audit("purge_audit", detail=f"deleted={deleted}")
+    return jsonify({"ok": True, "deleted": deleted})
 
 
 @app.route("/api/admin/consumers/all", methods=["GET"])

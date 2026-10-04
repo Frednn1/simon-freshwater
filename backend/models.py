@@ -176,3 +176,33 @@ class SentBillArchive(db.Model):
     storage_key = db.Column(db.String(255))
     file_size = db.Column(db.Integer)
     snapshot_json = db.Column(db.Text)
+
+
+# ═══════════════════════════════════════════════
+#  ADMIN AUDIT TRAIL — 14-day rolling activity log
+# ═══════════════════════════════════════════════
+# Write-only from a single helper (_audit in app.py). No endpoint
+# accepts writes to this table. Rows older than AUDIT_RETENTION_DAYS
+# are purged opportunistically.
+#
+# admin_username is denormalized so log rows survive later deletion
+# of the AdminUser record. Passwords, OTP codes and message bodies
+# are never written to this table.
+
+
+class AdminAuditLog(db.Model):
+    __tablename__ = 'admin_audit_log'
+    id = db.Column(db.Integer, primary_key=True)
+    admin_id = db.Column(db.Integer,
+                         db.ForeignKey('admin_users.id'),
+                         nullable=True, index=True)
+    admin_username = db.Column(db.String(60), nullable=False, index=True)
+    action = db.Column(db.String(40), nullable=False, index=True)
+    target_type = db.Column(db.String(30))
+    target_id = db.Column(db.Integer)
+    target_label = db.Column(db.String(120))
+    detail = db.Column(db.String(500))
+    ip_address = db.Column(db.String(45))
+    user_agent = db.Column(db.String(200))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           nullable=False, index=True)

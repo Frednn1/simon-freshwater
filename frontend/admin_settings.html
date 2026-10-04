@@ -85,6 +85,27 @@
       <div id="passwordMsg" class="alert hidden"></div>
     </div>
 
+    <!-- Activity Log (read-only audit trail) -->
+    <div class="settings-card">
+      <h2>📋 Activity Log</h2>
+      <p class="form-hint-small" style="margin-bottom:.75rem;">
+        Audit trail of admin actions. Records auto-delete after 14 days.
+      </p>
+      <div class="audit-filter">
+        <label for="auditDays">Show last</label>
+        <select id="auditDays">
+          <option value="1">24 hours</option>
+          <option value="3">3 days</option>
+          <option value="7" selected>7 days</option>
+          <option value="14">14 days</option>
+        </select>
+        <button id="auditRefreshBtn" class="btn-secondary" type="button">↻ Refresh</button>
+      </div>
+      <div id="auditList" class="audit-list">
+        <p class="form-hint-small">Loading…</p>
+      </div>
+    </div>
+
     <div class="settings-back">
       <a href="/">← Back to Home</a>
     </div>
@@ -198,6 +219,64 @@
         btn.disabled = false; btn.textContent = 'Change Password';
       }
     });
+    // ─── Activity Log ───
+    function esc(s) {
+      const d = document.createElement('div');
+      d.textContent = s == null ? '' : String(s);
+      return d.innerHTML;
+    }
+
+    async function loadAudit() {
+      const list = document.getElementById('auditList');
+      const days = document.getElementById('auditDays').value;
+      list.innerHTML = '<p class="form-hint-small">Loading…</p>';
+      try {
+        const r = await fetch('/api/admin/audit?days=' + days,
+                              { credentials: 'same-origin' });
+        if (r.status === 401) {
+          location.href = '/admin/login?next=/admin/settings';
+          return;
+        }
+        const d = await r.json();
+        const rows = d.audit || [];
+        if (rows.length === 0) {
+          list.innerHTML =
+            '<p class="form-hint-small">No activity in this period.</p>';
+          return;
+        }
+        list.innerHTML = `
+          <table class="audit-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Admin</th>
+                <th>Action</th>
+                <th>Target</th>
+                <th>Detail</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.map(a => `
+                <tr>
+                  <td class="audit-time">${esc(a.created_at_display)}</td>
+                  <td class="audit-admin">${esc(a.admin_username)}</td>
+                  <td class="audit-action">${esc(a.action)}</td>
+                  <td class="audit-target">${esc(a.target_label || '—')}</td>
+                  <td class="audit-detail">${esc(a.detail || '—')}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>`;
+      } catch {
+        list.innerHTML =
+          '<p class="form-hint-small">❌ Failed to load activity log.</p>';
+      }
+    }
+
+    document.getElementById('auditRefreshBtn')
+      .addEventListener('click', loadAudit);
+    document.getElementById('auditDays')
+      .addEventListener('change', loadAudit);
+    loadAudit();
   </script>
 </body>
 </html>
