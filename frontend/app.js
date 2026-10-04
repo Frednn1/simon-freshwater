@@ -562,6 +562,7 @@ async function initConsumerPage(consumerId) {
       document.getElementById('accName').textContent = c.acc_name;
       document.getElementById('meterAccNo').textContent = c.meter_acc_no;
       document.getElementById('contact').textContent = c.contact;
+      document.getElementById('altContact').textContent = c.alt_contact || '—';
       document.getElementById('email').textContent = c.email || '—';
       document.getElementById('custNameValue').textContent = c.cust_name;
       document.getElementById('latitude').textContent = c.latitude != null ? c.latitude : '—';
@@ -736,6 +737,7 @@ const EDITABLE_FIELDS = [
   { field: 'acc_name',                 id: 'accName',       type: 'text',   required: true },
   { field: 'meter_acc_no',             id: 'meterAccNo',    type: 'text',   required: true },
   { field: 'contact',                  id: 'contact',       type: 'text',   required: true },
+  { field: 'alt_contact',              id: 'altContact',    type: 'text',   required: false },
   { field: 'email',                    id: 'email',         type: 'email',  required: false },
   { field: 'address',                  id: 'address',       type: 'text',   required: false },
   { field: 'latitude',                 id: 'latitude',      type: 'number', required: false, step: 'any' },
@@ -810,6 +812,8 @@ async function saveConsumerEdits() {
     } else if (field === 'latitude' || field === 'longitude') {
       v = v === '' ? null : parseFloat(v);
     } else if (field === 'email') {
+      v = v || null;
+    } else if (field === 'alt_contact') {
       v = v || null;
     } else if (field === 'address') {
       v = v || null;
