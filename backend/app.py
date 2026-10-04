@@ -487,13 +487,6 @@ def _ensure_all_columns():
                 alters.append("ADD COLUMN whatsapp_opt_in INTEGER NOT NULL DEFAULT 0")
             else:
                 alters.append("ADD COLUMN whatsapp_opt_in BOOLEAN NOT NULL DEFAULT FALSE")
-        if "alt_contact" not in existing:
-            alters.append("ADD COLUMN alt_contact VARCHAR(20) NULL")
-        if "alt_whatsapp_opt_in" not in existing:
-            if dialect == "sqlite":
-                alters.append("ADD COLUMN alt_whatsapp_opt_in INTEGER NOT NULL DEFAULT 0")
-            else:
-                alters.append("ADD COLUMN alt_whatsapp_opt_in BOOLEAN NOT NULL DEFAULT FALSE")
         for alt in alters:
             db.session.execute(text(f"ALTER TABLE consumers {alt}"))
         if alters:
@@ -1076,9 +1069,6 @@ def get_consumer_details(consumer_id):
             "meter_initial_reading_m3": initial,
             "is_active": bool(consumer.is_active),
             "terminated_at": consumer.terminated_at.isoformat() if consumer.terminated_at else None,
-            "whatsapp_opt_in": bool(consumer.whatsapp_opt_in),
-            "alt_contact": consumer.alt_contact,
-            "alt_whatsapp_opt_in": bool(consumer.alt_whatsapp_opt_in),
         },
         "readings": [{
             "id": r.id, "reading_m3": r.reading_m3,
@@ -2041,9 +2031,6 @@ def admin_create_consumer():
     longitude = data.get("longitude")
     initial_raw = data.get("meter_initial_reading_m3")
     whatsapp_opt_in = bool(data.get("whatsapp_opt_in"))
-    alt_contact = (data.get("alt_contact") or "").strip()
-    # Alt opt-in is only meaningful if alt_contact is set — force False otherwise.
-    alt_whatsapp_opt_in = bool(data.get("alt_whatsapp_opt_in")) and bool(alt_contact)
 
     if not (cust_name and acc_name and meter_acc_no and contact):
         return jsonify({"error": "cust_name, acc_name, meter_acc_no, and contact are required."}), 400
@@ -2072,18 +2059,15 @@ def admin_create_consumer():
                  email=email or None, address=address or None,
                  latitude=lat, longitude=lng,
                  meter_initial_reading_m3=initial, is_active=True,
-                 whatsapp_opt_in=whatsapp_opt_in,
-                 alt_contact=alt_contact or None,
-                 alt_whatsapp_opt_in=alt_whatsapp_opt_in)
+                 whatsapp_opt_in=whatsapp_opt_in)
     db.session.add(c)
     db.session.commit()
 
     _audit("create_consumer",
            target_type="consumer", target_id=c.id,
            target_label=f"{c.cust_name} · {c.meter_acc_no}",
-           detail=f"contact={c.contact}, alt={c.alt_contact or '—'}, "
-                  f"email={c.email or '—'}, opt_in={bool(c.whatsapp_opt_in)}, "
-                  f"alt_opt_in={bool(c.alt_whatsapp_opt_in)}")
+           detail=f"contact={c.contact}, email={c.email or '—'}, "
+                  f"opt_in={bool(c.whatsapp_opt_in)}")
 
     return jsonify({"ok": True, "consumer": {
         "id": c.id, "cust_name": c.cust_name, "acc_name": c.acc_name,
@@ -2093,8 +2077,6 @@ def admin_create_consumer():
         "meter_initial_reading_m3": float(c.meter_initial_reading_m3 or 0.0),
         "is_active": True,
         "whatsapp_opt_in": bool(c.whatsapp_opt_in),
-        "alt_contact": c.alt_contact,
-        "alt_whatsapp_opt_in": bool(c.alt_whatsapp_opt_in),
     }}), 201
 
 
@@ -2110,8 +2092,7 @@ def admin_update_consumer(consumer_id):
     data = request.get_json(silent=True) or {}
     allowed = ("cust_name", "acc_name", "meter_acc_no", "contact",
                "email", "address", "latitude", "longitude",
-               "meter_initial_reading_m3", "whatsapp_opt_in",
-               "alt_contact", "alt_whatsapp_opt_in")
+               "meter_initial_reading_m3", "whatsapp_opt_in")
     updated = {}
     for f in allowed:
         if f not in data:
@@ -2149,29 +2130,12 @@ def admin_update_consumer(consumer_id):
                 setattr(consumer, f, v.strip().lower() in ("1", "true", "yes", "on"))
             else:
                 setattr(consumer, f, False)
-        elif f == "alt_contact":
-            # Empty string → NULL (clears the alt contact)
-            setattr(consumer, f, (str(v) or "").strip() or None)
-        elif f == "alt_whatsapp_opt_in":
-            if isinstance(v, bool):
-                setattr(consumer, f, v)
-            elif isinstance(v, (int, float)):
-                setattr(consumer, f, bool(v))
-            elif isinstance(v, str):
-                setattr(consumer, f, v.strip().lower() in ("1", "true", "yes", "on"))
-            else:
-                setattr(consumer, f, False)
         else:
             setattr(consumer, f, v)
         updated[f] = v
 
     if not updated:
         return jsonify({"error": "No valid fields to update"}), 400
-
-    # Defensive: alt opt-in is meaningless without an alt contact.
-    if not consumer.alt_contact and consumer.alt_whatsapp_opt_in:
-        consumer.alt_whatsapp_opt_in = False
-
     db.session.commit()
 
     _audit("update_consumer",
@@ -2188,8 +2152,6 @@ def admin_update_consumer(consumer_id):
         "meter_initial_reading_m3": float(consumer.meter_initial_reading_m3 or 0.0),
         "is_active": bool(consumer.is_active),
         "whatsapp_opt_in": bool(consumer.whatsapp_opt_in),
-        "alt_contact": consumer.alt_contact,
-        "alt_whatsapp_opt_in": bool(consumer.alt_whatsapp_opt_in),
     }})
 
 
