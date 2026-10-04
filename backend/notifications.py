@@ -335,8 +335,6 @@ def build_bill_message(consumer, status_info: dict, channel: str = "sms") -> dic
             f"Account No        : {pay['account']}\n"
             f"\n"
             f"--------------------------\n"
-            f"Water charges payable on or before 20 days\n"
-            f"from the meter reading date.\n"
             f"Please settle any outstanding balance to\n"
             f"continue enjoying uninterrupted water service.\n"
             f"Thank you."
