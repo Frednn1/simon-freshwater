@@ -3300,15 +3300,15 @@ def admin_audit_purge():
 
 @app.route("/api/admin/backup/run", methods=["POST"])
 def admin_backup_run():
-    """Build a full .xlsx backup and upload it to the configured Drive folder."""
+    """Build a full .xlsx backup and upload it to the configured R2 bucket."""
     u = _require_admin()
     if u: return u
     if not _rate_limit("backup_run", 3, 300):
         return _too_many(300)
 
-    if not os.environ.get("GDRIVE_BACKUP_FOLDER_ID", "").strip():
+    if not archive.is_configured():
         return jsonify({"ok": False,
-                        "error": "GDRIVE_BACKUP_FOLDER_ID is not configured on this service."}), 500
+                        "error": "R2 is not configured on this service."}), 500
 
     try:
         result = backup.build_and_upload()
@@ -3321,7 +3321,7 @@ def admin_backup_run():
         _audit("backup_run",
                detail=f"file={result.get('filename')}, "
                       f"size={result.get('size_bytes')}, "
-                      f"id={result.get('id')}")
+                      f"key={result.get('key')}")
         return jsonify(result), 200
 
     _audit("backup_run_failed",

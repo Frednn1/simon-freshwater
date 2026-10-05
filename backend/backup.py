@@ -1,33 +1,29 @@
 """
-Full-database backup to Google Drive as a styled Excel workbook.
+Full-database backup to Cloudflare R2 as a styled Excel workbook.
 
   • build_backup_workbook() → bytes of the .xlsx (8 tabs)
-  • upload_to_drive(filename, data) → Drive REST v3 upload, returns metadata
+  • upload_to_r2(filename, data) → S3-compatible PUT, returns metadata
 
-Auth: reuses the exact service-account pattern from sheets.py —
-GOOGLE_CREDENTIALS_JSON env var first, credentials.json file fallback.
+Auth: reuses the same R2 env vars as archive.py —
+R2_ACCOUNT_ID, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET.
 
-Destination: the folder whose ID is in GDRIVE_BACKUP_FOLDER_ID.
+Destination: backups/YYYY/MM/ prefix inside the configured bucket.
 Retention: manual (no auto-delete).
 """
 import os
-import json
 from datetime import datetime, timezone, timedelta
 from io import BytesIO
-
-import requests
-from google.oauth2.service_account import Credentials
-from google.auth.transport.requests import Request as GoogleRequest
 
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
 
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive",
-]
+# ─── Cloudflare R2 configuration (mirrors archive.py — same env vars) ───
+R2_ACCOUNT_ID = os.environ.get("R2_ACCOUNT_ID", "").strip()
+R2_ACCESS_KEY = os.environ.get("R2_ACCESS_KEY", "").strip()
+R2_SECRET_KEY = os.environ.get("R2_SECRET_KEY", "").strip()
+R2_BUCKET     = os.environ.get("R2_BUCKET", "").strip()
 
 _NAIROBI_TZ = timezone(timedelta(hours=3), name="Africa/Nairobi")
 
@@ -373,98 +369,68 @@ def build_backup_workbook() -> bytes:
 #  Google Drive upload
 # ═══════════════════════════════════════════════
 
-def _drive_creds():
-    """Return service-account credentials with Drive scope."""
-    creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
-    if creds_json:
-        info = json.loads(creds_json)
-        creds = Credentials.from_service_account_info(info, scopes=SCOPES)
-    else:
-        creds = Credentials.from_service_account_file(
-            "credentials.json", scopes=SCOPES,
-        )
-    creds.refresh(GoogleRequest())
-    return creds
+
+# ═══════════════════════════════════════════════
+#  Cloudflare R2 upload
+# ═══════════════════════════════════════════════
+
+def _r2_client():
+    """S3-compatible boto3 client pointed at Cloudflare R2.
+    Lazy import so a missing dependency cannot break the module load."""
+    import boto3
+    endpoint = f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+    return boto3.client(
+        "s3",
+        endpoint_url=endpoint,
+        aws_access_key_id=R2_ACCESS_KEY,
+        aws_secret_access_key=R2_SECRET_KEY,
+        region_name="auto",
+    )
 
 
-def _multipart_body(boundary: str, metadata: dict, file_bytes: bytes) -> bytes:
-    """Build multipart/related body per Google Drive API spec."""
-    nl = b"\r\n"
-    body = bytearray()
-    body += b"--" + boundary.encode() + nl
-    body += b"Content-Type: application/json; charset=UTF-8" + nl + nl
-    body += json.dumps(metadata).encode() + nl
-    body += b"--" + boundary.encode() + nl
-    body += (b"Content-Type: application/vnd.openxmlformats-"
-             b"officedocument.spreadsheetml.sheet") + nl + nl
-    body += file_bytes + nl
-    body += b"--" + boundary.encode() + b"--" + nl
-    return bytes(body)
+def _r2_key(filename: str) -> str:
+    """Namespaced object key, e.g.
+    backups/2026/10/SimonFreshWater_Backup_2026-10-05_1830.xlsx"""
+    now = _now_nbo()
+    return f"backups/{now.strftime('%Y')}/{now.strftime('%m')}/{filename}"
 
 
-def upload_to_drive(filename: str, data: bytes) -> dict:
-    """
-    Upload .xlsx bytes to the configured Drive folder.
-    Returns {'ok', 'id', 'name', 'web_view_link', 'error'?}
-    """
-    folder_id = os.environ.get("GDRIVE_BACKUP_FOLDER_ID", "").strip()
-    if not folder_id:
+def _r2_configured() -> bool:
+    return bool(R2_ACCOUNT_ID and R2_ACCESS_KEY and R2_SECRET_KEY and R2_BUCKET)
+
+
+def upload_to_r2(filename: str, data: bytes) -> dict:
+    """Upload the .xlsx bytes to R2 under the backups/ prefix.
+    Returns {'ok', 'key', 'bucket', 'filename', 'size_bytes'} or {'ok': False, 'error'}."""
+    if not _r2_configured():
         return {"ok": False,
-                "error": "GDRIVE_BACKUP_FOLDER_ID is not set on this service."}
+                "error": "R2 is not configured on this service "
+                         "(need R2_ACCOUNT_ID, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET)."}
 
+    key = _r2_key(filename)
     try:
-        creds = _drive_creds()
+        c = _r2_client()
+        c.put_object(
+            Bucket=R2_BUCKET,
+            Key=key,
+            Body=data,
+            ContentType=("application/vnd.openxmlformats-"
+                         "officedocument.spreadsheetml.sheet"),
+        )
     except Exception as e:
-        return {"ok": False, "error": f"Auth failed: {e}"}
+        return {"ok": False, "error": f"R2 upload failed: {e}"}
 
-    import secrets
-    boundary = "sfl_backup_" + secrets.token_hex(12)
-
-    metadata = {
-        "name": filename,
-        "parents": [folder_id],
-        "mimeType": ("application/vnd.openxmlformats-"
-                     "officedocument.spreadsheetml.sheet"),
-    }
-    body = _multipart_body(boundary, metadata, data)
-
-    url = ("https://www.googleapis.com/upload/drive/v3/files"
-           "?uploadType=multipart&supportsAllDrives=true"
-           "&fields=id,name,webViewLink")
-
-    headers = {
-        "Authorization": f"Bearer {creds.token}",
-        "Content-Type": f"multipart/related; boundary={boundary}",
-    }
-
-    try:
-        r = requests.post(url, headers=headers, data=body, timeout=180)
-    except Exception as e:
-        return {"ok": False, "error": f"Upload request failed: {e}"}
-
-    if r.status_code not in (200, 201):
-        # Extract Google's error message if present
-        try:
-            err = r.json().get("error", {})
-            msg = err.get("message", r.text[:200])
-        except Exception:
-            msg = r.text[:200]
-        return {"ok": False, "error": f"HTTP {r.status_code}: {msg}"}
-
-    info = r.json()
-    file_id = info.get("id", "")
     return {
         "ok": True,
-        "id": file_id,
-        "name": info.get("name", filename),
-        "web_view_link": info.get("webViewLink") or
-                          (f"https://drive.google.com/file/d/{file_id}/view"
-                           if file_id else ""),
+        "key": key,
+        "bucket": R2_BUCKET,
+        "filename": filename,
+        "size_bytes": len(data),
     }
 
 
 def build_and_upload() -> dict:
-    """End-to-end: build the workbook and upload it. Returns metadata dict."""
+    """Build the workbook and upload it to R2. Returns metadata dict."""
     filename = f"SimonFreshWater_Backup_{_now_nbo().strftime('%Y-%m-%d_%H%M')}.xlsx"
 
     try:
@@ -472,7 +438,4 @@ def build_and_upload() -> dict:
     except Exception as e:
         return {"ok": False, "error": f"Workbook build failed: {e}"}
 
-    result = upload_to_drive(filename, data)
-    result["filename"] = filename
-    result["size_bytes"] = len(data)
-    return result
+    return upload_to_r2(filename, data)

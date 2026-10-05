@@ -106,13 +106,14 @@
       </div>
     </div>
 
-    <!-- Backup to Google Drive -->
+    <!-- Backup to Cloudflare R2 -->
     <div class="settings-card">
-      <h2>📦 Backup to Google Drive</h2>
+      <h2>📦 Backup to Cloudflare R2</h2>
       <p class="form-hint-small" style="margin-bottom:.75rem;">
         Build a full Excel backup (8 tabs — summary, consumers, readings,
         payments, bills archive, M-Pesa, notifications, audit) and upload it
-        to the <strong>SimonFreshWater_Backups</strong> folder on Google Drive.
+        to the <strong>backups/</strong> prefix inside the Cloudflare R2 bucket
+        configured on this service.
       </p>
       <button id="backupRunBtn" class="btn-primary btn-fit" type="button">
         <span class="btn-icon">📦</span> Run Backup Now
@@ -292,7 +293,7 @@
       .addEventListener('change', loadAudit);
     loadAudit();
 
-    // ─── Backup to Google Drive ───
+    // ─── Backup to Cloudflare R2 ───
     async function runBackup() {
       const btn = document.getElementById('backupRunBtn');
       const msg = document.getElementById('backupMsg');
@@ -310,10 +311,10 @@
         if (r.ok && d.ok) {
           msg.className = 'alert alert-success';
           const sizeKb = Math.round((d.size_bytes || 0) / 1024);
-          const link = d.web_view_link
-            ? ` — <a href="${d.web_view_link}" target="_blank" rel="noopener">Open in Drive</a>`
-            : '';
-          msg.innerHTML = `✅ Backup uploaded: <strong>${esc(d.filename)}</strong> (${sizeKb} KB)${link}`;
+          msg.innerHTML =
+            `✅ Backup uploaded to R2: <strong>${esc(d.filename)}</strong> ` +
+            `(${sizeKb} KB)<br><span style="font-size:.82rem;opacity:.85;">` +
+            `bucket <code>${esc(d.bucket || '')}</code> · key <code>${esc(d.key || '')}</code></span>`;
           msg.classList.remove('hidden');
         } else {
           msg.className = 'alert alert-error';
