@@ -11,3 +11,4 @@ pymupdf==1.24.14
 sqlalchemy-cloudflare-d1
 httpx>=0.24.0
 boto3==1.35.0
+openpyxl==3.1.5

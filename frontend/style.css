@@ -2099,3 +2099,28 @@ body.drawer-open { overflow: hidden; }
   .alt-notify-toggle { font-size: .82rem; padding: .55rem .7rem; }
   .alt-notify-toggle strong { font-size: .8rem; }
 }
+
+
+/* ═══════════════════════════════════════════════
+   BACKUP TO GOOGLE DRIVE
+   Reuses .settings-card and .btn-fit. Only the
+   sizing of the backup button needs a tweak so it
+   does not stretch full width.
+   ═══════════════════════════════════════════════ */
+.settings-card #backupRunBtn {
+  width: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .4rem;
+  padding: .75rem 1.2rem;
+}
+.settings-card #backupMsg {
+  margin-top: .9rem;
+  word-break: break-word;
+}
+.settings-card #backupMsg a {
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+}

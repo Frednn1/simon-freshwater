@@ -42,6 +42,7 @@ from mpesa import (
     get_mpesa_config, register_c2b_urls, simulate_c2b_payment,
 )
 import archive
+import backup
 from statement import generate_statement_pdf
 
 
@@ -3291,6 +3292,41 @@ def admin_audit_purge():
     deleted = _audit_purge_run()
     _audit("purge_audit", detail=f"deleted={deleted}")
     return jsonify({"ok": True, "deleted": deleted})
+
+
+# ═══════════════════════════════════════════════
+#  ADMIN — Backup to Google Drive
+# ═══════════════════════════════════════════════
+
+@app.route("/api/admin/backup/run", methods=["POST"])
+def admin_backup_run():
+    """Build a full .xlsx backup and upload it to the configured Drive folder."""
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("backup_run", 3, 300):
+        return _too_many(300)
+
+    if not os.environ.get("GDRIVE_BACKUP_FOLDER_ID", "").strip():
+        return jsonify({"ok": False,
+                        "error": "GDRIVE_BACKUP_FOLDER_ID is not configured on this service."}), 500
+
+    try:
+        result = backup.build_and_upload()
+    except Exception as e:
+        app.logger.exception("[Backup] run failed")
+        _audit("backup_run_failed", detail=str(e)[:200])
+        return jsonify({"ok": False, "error": str(e)[:200]}), 500
+
+    if result.get("ok"):
+        _audit("backup_run",
+               detail=f"file={result.get('filename')}, "
+                      f"size={result.get('size_bytes')}, "
+                      f"id={result.get('id')}")
+        return jsonify(result), 200
+
+    _audit("backup_run_failed",
+           detail=(result.get("error") or "")[:200])
+    return jsonify(result), 502
 
 
 @app.route("/api/admin/consumers/all", methods=["GET"])
