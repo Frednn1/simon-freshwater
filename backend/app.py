@@ -374,7 +374,7 @@ def _as_nairobi(dt):
 #  ADMIN AUDIT TRAIL helper
 # ═══════════════════════════════════════════════
 
-AUDIT_RETENTION_DAYS     = 14
+AUDIT_RETENTION_DAYS     = 7
 AUDIT_PURGE_INTERVAL_SEC = 12 * 3600
 _audit_last_purge = None
 _audit_lock = Lock()
@@ -3252,7 +3252,7 @@ def admin_audit_list():
         days = int(days_raw)
     except (ValueError, TypeError):
         days = 7
-    days = max(1, min(days, 14))
+    days = max(1, min(days, 7))
 
     cutoff = datetime.utcnow() - timedelta(days=days)
     rows = (AdminAuditLog.query

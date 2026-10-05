@@ -2124,3 +2124,56 @@ body.drawer-open { overflow: hidden; }
   font-weight: 700;
   text-decoration: underline;
 }
+
+
+/* ═══════════════════════════════════════════════
+   ACTIVITY LOG — free-flow overrides
+   Loosens spacing, widens the detail column, and
+   removes the vertical squeeze on the audit card.
+   Scoped to .audit-* — no other table is affected.
+   ═══════════════════════════════════════════════ */
+.audit-list {
+  max-height: 800px;               /* was 520 — less vertical squeeze */
+  border: 1px solid var(--grey-100);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+.audit-table {
+  font-size: .82rem;               /* was .78 */
+  table-layout: auto;
+}
+.audit-table thead th {
+  padding: .7rem .85rem;           /* was .55 .6 */
+  font-size: .74rem;
+}
+.audit-table tbody td {
+  padding: .7rem .85rem;           /* was .5 .6 */
+  line-height: 1.5;
+}
+.audit-table .audit-time {
+  font-size: .78rem;
+  min-width: 130px;
+}
+.audit-table .audit-admin {
+  font-size: .82rem;
+  min-width: 90px;
+}
+.audit-table .audit-action {
+  font-size: .8rem;
+  min-width: 140px;
+}
+.audit-table .audit-target {
+  min-width: 150px;
+}
+.audit-table .audit-detail {
+  font-size: .8rem;
+  line-height: 1.45;
+  min-width: 260px;               /* was squeezed */
+}
+
+@media (max-width: 700px) {
+  .audit-table { font-size: .78rem; }
+  .audit-table thead th,
+  .audit-table tbody td { padding: .55rem .6rem; }
+  .audit-table .audit-detail { min-width: 200px; }
+}
