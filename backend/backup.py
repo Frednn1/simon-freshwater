@@ -389,12 +389,13 @@ def _r2_client():
 
 
 def _r2_key(filename: str) -> str:
-    """Fixed object key — every backup overwrites the previous one.
+    """Fixed object key — every backup overwrites the previous one for this env.
 
-    The dated filename is only used for the success message shown in the UI.
-    R2 always stores exactly one file at this path: backups/SimonFreshWater_Backup_LATEST.xlsx
+    The path is prefixed by BACKUP_ENV (default 'production') so staging and
+    production keep separate files. The dated filename is only shown in the UI.
     """
-    return "backups/SimonFreshWater_Backup_LATEST.xlsx"
+    env = (os.environ.get("BACKUP_ENV", "production").strip().lower() or "production")
+    return f"backups/{env}/SimonFreshWater_Backup_LATEST.xlsx"
 
 
 def _r2_configured() -> bool:
