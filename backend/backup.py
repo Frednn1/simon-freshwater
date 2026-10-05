@@ -389,10 +389,12 @@ def _r2_client():
 
 
 def _r2_key(filename: str) -> str:
-    """Namespaced object key, e.g.
-    backups/2026/10/SimonFreshWater_Backup_2026-10-05_1830.xlsx"""
-    now = _now_nbo()
-    return f"backups/{now.strftime('%Y')}/{now.strftime('%m')}/{filename}"
+    """Fixed object key — every backup overwrites the previous one.
+
+    The dated filename is only used for the success message shown in the UI.
+    R2 always stores exactly one file at this path: backups/SimonFreshWater_Backup_LATEST.xlsx
+    """
+    return "backups/SimonFreshWater_Backup_LATEST.xlsx"
 
 
 def _r2_configured() -> bool:
