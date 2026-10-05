@@ -331,6 +331,16 @@ def _require_admin():
     return jsonify({"error": "Unauthorized. Please log in."}), 401
 
 
+def _safe_filename(name: str) -> str:
+    """Sanitize a consumer name for a download filename.
+    'Sheila Wangu' -> 'SheilaWangu'. ASCII letters + digits only.
+    Returns 'Consumer' if the input is empty or has no usable characters."""
+    if not name:
+        return "Consumer"
+    cleaned = "".join(c for c in name if c.isascii() and c.isalnum())
+    return cleaned or "Consumer"
+
+
 def _fmt_money(n):
     try:
         return f"{float(n or 0):,.2f}"
@@ -1232,7 +1242,7 @@ def download_water_bill(reading_id):
         app.logger.exception("[WaterBill] PDF generation failed")
         return jsonify({"error": f"PDF generation failed: {e}"}), 500
 
-    filename = f"SimonWater_Bill_{reading.id:06d}.pdf"
+    filename = f"{_safe_filename(consumer.cust_name)}_bill_{reading.id:06d}.pdf"
     return send_file(
         pdf_buf,
         mimetype="application/pdf",
@@ -1374,7 +1384,7 @@ def download_statement(consumer_id):
         app.logger.exception("[Statement] PDF generation failed")
         return jsonify({"error": f"PDF generation failed: {e}"}), 500
 
-    filename = f"SimonWater_Statement_{consumer.id:06d}.pdf"
+    filename = f"{_safe_filename(consumer.cust_name)}_statement_{consumer.id:06d}.pdf"
     return send_file(
         pdf_buf,
         mimetype="application/pdf",
@@ -1483,7 +1493,7 @@ def send_whatsapp_bill(consumer_id):
     _PUBLIC_BILL_TOKENS[token] = pdf_bytes
 
     public_url = request.host_url.rstrip("/") + f"/public/bill/{token}.pdf"
-    filename = f"SimonWater_Bill_{reading.id:06d}.pdf"
+    filename = f"{_safe_filename(consumer.cust_name)}_bill_{reading.id:06d}.pdf"
 
     # ── Build recipients list — main + alt (if requested & available) ──
     recipients = [consumer.contact]
@@ -2275,7 +2285,7 @@ def public_receipt_pdf(token):
         app.logger.exception("[Public Receipt] generation failed")
         return "PDF generation failed.", 500
 
-    filename = f"SimonWater_Receipt_{snapshot.get('receipt_no','payment')}.pdf"
+    filename = f"{_safe_filename(snapshot.get('cust_name',''))}_receipt_{snapshot.get('receipt_no','payment')}.pdf"
     return send_file(pdf_buf, mimetype="application/pdf",
                      as_attachment=False, download_name=filename)
 
@@ -2596,7 +2606,7 @@ def download_receipt(payment_id):
         app.logger.exception("[Receipt] PDF generation failed")
         return jsonify({"error": f"PDF generation failed: {e}"}), 500
 
-    filename = f"SimonWater_Receipt_{snapshot.get('receipt_no','payment')}.pdf"
+    filename = f"{_safe_filename(snapshot.get('cust_name',''))}_receipt_{snapshot.get('receipt_no','payment')}.pdf"
     return send_file(
         pdf_buf,
         mimetype="application/pdf",
@@ -2631,7 +2641,7 @@ def receipt_browser_view(payment_id):
         app.logger.exception("[Receipt] PDF generation failed")
         return "PDF generation failed.", 500
 
-    filename = f"SimonWater_Receipt_{snapshot.get('receipt_no','payment')}.pdf"
+    filename = f"{_safe_filename(snapshot.get('cust_name',''))}_receipt_{snapshot.get('receipt_no','payment')}.pdf"
     return send_file(
         pdf_buf,
         mimetype="application/pdf",
