@@ -1112,6 +1112,20 @@ async function deleteConsumer(id, name) {
 /* ═══════════════════════════════════════════════
    NOTIFY BUTTONS
    ═══════════════════════════════════════════════ */
+function _filenameFromResponse(r) {
+  /* Return the server-provided download name from the Content-Disposition
+     header. Same-origin fetch → the header is always readable. Returns an
+     empty string if missing. */
+  try {
+    const cd = r.headers.get('Content-Disposition') || '';
+    let m = cd.match(/filename\*=UTF-8''([^;]+)/i);
+    if (m) return decodeURIComponent(m[1]);
+    m = cd.match(/filename="?([^";]+)"?/i);
+    if (m) return m[1];
+  } catch (_) { /* header not readable */ }
+  return '';
+}
+
 function wireStatementDownloadButton(consumerId) {
   const btn = document.getElementById('downloadStatementBtn');
   if (!btn || btn.dataset.wired) return;
@@ -1137,7 +1151,8 @@ function wireStatementDownloadButton(consumerId) {
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement('a');
       a.href = url;
-      a.download = `SimonWater_Statement_${String(consumerId).padStart(6, '0')}.pdf`;
+      a.download = _filenameFromResponse(r)
+        || `${String(consumerId).padStart(6, '0')}_statement.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1415,7 +1430,8 @@ function wireBillDownloadButton(readingId) {
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement('a');
       a.href = url;
-      a.download = `SimonWater_Bill_${String(readingId).padStart(6, '0')}.pdf`;
+      a.download = _filenameFromResponse(r)
+        || `${String(readingId).padStart(6, '0')}_bill.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1466,7 +1482,8 @@ function showDownloadReceiptButton(paymentId, receiptNo) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `SimonWater_Receipt_${receiptNo || paymentId}.pdf`;
+      a.download = _filenameFromResponse(r)
+        || `${receiptNo || paymentId}_receipt.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
