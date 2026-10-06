@@ -86,10 +86,6 @@
           <span class="report-summary-value" id="sOutstanding">—</span>
         </div>
       </div>
-      <p id="truncatedNote" style="display:none;margin-top:.75rem;font-size:.82rem;color:#c62828;">
-        ⚠️ More than 20 consumers have activity this month — the PDF shows the first 20 by name.
-      </p>
-
       <div style="margin-top:1.4rem;margin-bottom:0;">
         <button id="downloadBtn" class="btn-primary btn-fit" type="button">
           <span class="btn-icon">📊</span> Download Report (PDF)
@@ -200,7 +196,6 @@
         document.getElementById('sPaid').textContent            = 'KES ' + s.total_paid;
         document.getElementById('sOutstanding').textContent     = 'KES ' + s.total_outstanding;
         document.getElementById('reportNo').textContent         = '(' + esc(d.report_no) + ')';
-        document.getElementById('truncatedNote').style.display  = d.truncated ? 'block' : 'none';
 
         /* Preview table of the report rows */
         const wrap = document.getElementById('previewTableWrap');
