@@ -715,7 +715,9 @@ def _build_report_snapshot(year: int, month: int) -> dict:
         snapshot[f"r{idx}_paid"]  = row["paid"]  if row else ""
         snapshot[f"r{idx}_bal"]   = row["bal"]   if row else ""
 
-    # Extra active rows (21+) — consumed by report.py on continuation pages
+    # All active rows — consumed by report.py for the full dynamic PDF
+    snapshot["_all_rows"] = rows
+    # Extra active rows (21+) — legacy, still used by the preview JSON
     snapshot["_extra_rows"] = extra_rows
     # Terminated consumers — used only by the preview JSON, not the PDF
     snapshot["_terminated_rows"] = terminated_rows
@@ -896,14 +898,51 @@ def waterbill_template_view():
 
 @app.route("/template/report")
 def report_template_view():
-    """Serve the report template HTML for manual Chrome -> Save as PDF."""
+    """Live-preview the monthly report HTML with real data.
+
+    Optional query params:
+        ?year=YYYY&month=MM   — defaults to the current Nairobi month.
+    Fills the same placeholders the PDF generator uses; save as PDF
+    from the browser for a shareable copy.
+    """
     if not _current_admin():
         return redirect("/admin/login?next=/template/report")
-    return send_from_directory(
-        TEMPLATES_DIR,
-        "SimonWater_ReportTemplate.html",
-        mimetype="text/html",
-    )
+
+    from flask import render_template_string
+
+    year, month = _parse_ym_from_request()
+
+    try:
+        snapshot, _ = _build_report_snapshot(year, month)
+    except Exception as e:
+        app.logger.exception("[Report template] snapshot failed")
+        return f"Report data failed: {e}", 500
+
+    # The HTML preview shows active rows only
+    snapshot.pop("_terminated_rows", None)
+    snapshot.pop("_extra_rows", None)
+
+    # Fill r1_*..r30_* from _all_rows
+    all_rows = snapshot.pop("_all_rows", []) or []
+    for idx in range(1, 31):
+        row = all_rows[idx - 1] if idx - 1 < len(all_rows) else None
+        snapshot[f"r{idx}_id"]    = str(row["id"])    if row else ""
+        snapshot[f"r{idx}_name"]  = row["name"]       if row else ""
+        snapshot[f"r{idx}_meter"] = row["meter"]      if row else ""
+        snapshot[f"r{idx}_cm3"]   = row["cm3"]        if row else ""
+        snapshot[f"r{idx}_amt"]   = row["amt"]        if row else ""
+        snapshot[f"r{idx}_paid"]  = row["paid"]       if row else ""
+        snapshot[f"r{idx}_bal"]   = row["bal"]        if row else ""
+
+    html_path = os.path.join(TEMPLATES_DIR, "SimonWater_ReportTemplate.html")
+    if not os.path.exists(html_path):
+        return f"Report template not found: {html_path}", 500
+
+    with open(html_path, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    rendered = render_template_string(html, **snapshot)
+    return rendered, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 @app.route("/style.css")
 def styles():
