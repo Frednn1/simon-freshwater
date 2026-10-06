@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <title>Simon Fresh Water — Monthly Billing Report (Template)</title>
 <style>
-  @page { size: A4 landscape; margin: 8mm 10mm; }
+  @page { size: A4 landscape; margin: 6mm 8mm; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
@@ -184,6 +184,28 @@
   }
   /* 5. Prevent orphaned totals or footer alone at the top of a page. */
   .r-totals { page-break-after: avoid; break-after: avoid; }
+
+  /* ─── Print-only overrides ─── */
+  @media print {
+    /* Let the container use the full printable width — no max-width clamp */
+    .report { max-width: 100% !important; margin: 0 !important; }
+    /* Remove the body's bottom border — the totals band already closes
+       the visual bottom. This eliminates Chrome's reserve-space for the
+       bordered container. */
+    .r-body { border-bottom: none !important; }
+    /* Totals and footer may break if a page really cannot hold them */
+    .r-totals, .r-footer {
+      page-break-inside: auto !important;
+      break-inside: auto !important;
+    }
+    /* Every row atomic — never split mid-row */
+    table.r-data tbody tr {
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+    }
+    /* Repeat table header on each page */
+    table.r-data thead { display: table-header-group; }
+  }
 </style>
 </head>
 <body>
