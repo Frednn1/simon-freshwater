@@ -160,12 +160,30 @@
   }
   .brand-link { color: inherit; text-decoration: none; }
 
-  /* ─── Pagination — free flow, multi-page ─── */
+  /* ─── Pagination — free flow, fill page 1 completely ─── */
+  /* 1. Every container breaks freely — nothing forces an early break. */
+  .report,
+  .r-body,
+  table.r-data,
+  table.r-data tbody {
+    page-break-inside: auto !important;
+    break-inside: auto !important;
+  }
+  /* 2. Table header repeats on every page. */
   table.r-data thead { display: table-header-group; }
-  table.r-data tbody tr { page-break-inside: avoid; }
+  /* 3. Individual rows are atomic — never split mid-row. */
+  table.r-data tbody tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+  /* 4. Small header/footer blocks stay intact — no split mid-element. */
   .r-header, .r-meta, .r-title, .r-summary,
-  .r-totals, .r-footer { page-break-inside: avoid; }
-  .r-totals, .r-footer { page-break-before: auto; }
+  .r-totals, .r-footer {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  /* 5. Prevent orphaned totals or footer alone at the top of a page. */
+  .r-totals { page-break-after: avoid; break-after: avoid; }
 </style>
 </head>
 <body>
