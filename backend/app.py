@@ -9,7 +9,7 @@ from time import time as _time_now
 
 from flask import (
     Flask, request, jsonify, send_from_directory, session, send_file,
-    redirect,
+    redirect, render_template_string,
 )
 from flask_cors import CORS
 from sqlalchemy import text, inspect
@@ -672,6 +672,10 @@ def _build_report_snapshot(year: int, month: int) -> dict:
                 terminated_rows.append(row)
 
     truncated = len(rows) > 20
+    # Preserve the FULL active row list for the HTML template (dynamic rows).
+    # The r1_*..r20_* placeholders below remain capped at 20 for the legacy
+    # PDF generator; the HTML template uses `rows` directly.
+    _all_active_rows = list(rows)
     rows = rows[:20]
     terminated_rows = terminated_rows[:20]
 
@@ -700,6 +704,8 @@ def _build_report_snapshot(year: int, month: int) -> dict:
         snapshot[f"r{idx}_paid"]  = row["paid"]  if row else ""
         snapshot[f"r{idx}_bal"]   = row["bal"]   if row else ""
 
+    # Full active rows list — used by the HTML report template
+    snapshot["rows"] = _all_active_rows
     # Terminated consumers — used only by the preview JSON, not the PDF
     snapshot["_terminated_rows"] = terminated_rows
 
@@ -867,14 +873,36 @@ def waterbill_template_view():
 
 @app.route("/template/report")
 def report_template_view():
-    """Serve the report template HTML for manual Chrome -> Save as PDF."""
+    """Live-preview the monthly report HTML with real data.
+
+    Query params (optional):
+        ?year=YYYY&month=MM   — defaults to the current Nairobi month.
+    The HTML template is filled server-side via Jinja2 using the same
+    snapshot the PDF generator uses. Save as PDF from the browser.
+    """
     if not _current_admin():
         return redirect("/admin/login?next=/template/report")
-    return send_from_directory(
-        TEMPLATES_DIR,
-        "SimonWater_ReportTemplate.html",
-        mimetype="text/html",
-    )
+
+    year, month = _parse_ym_from_request()
+
+    try:
+        snapshot, _ = _build_report_snapshot(year, month)
+    except Exception as e:
+        app.logger.exception("[Report template] snapshot failed")
+        return f"Report data failed: {e}", 500
+
+    # The HTML template only needs the active rows list and scalars.
+    snapshot.pop("_terminated_rows", None)
+
+    html_path = os.path.join(TEMPLATES_DIR, "SimonWater_ReportTemplate.html")
+    if not os.path.exists(html_path):
+        return f"Report template not found: {html_path}", 500
+
+    with open(html_path, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    rendered = render_template_string(html, **snapshot)
+    return rendered, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 @app.route("/style.css")
 def styles():

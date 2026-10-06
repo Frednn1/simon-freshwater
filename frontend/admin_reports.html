@@ -345,39 +345,23 @@
       }
     });
 
-    async function downloadReport() {
+    function openReportPreview() {
       const { month, year } = getPeriod();
-      const btn = document.getElementById('downloadBtn');
       const msg = document.getElementById('downloadMsg');
-      btn.disabled = true;
       hide(msg);
-      try {
-        const r = await fetch(`/api/admin/report.pdf?month=${month}&year=${year}`,
-                              { credentials: 'same-origin' });
-        if (r.status === 401) { location.href = '/admin/login?next=/admin/reports'; return; }
-        if (!r.ok) {
-          let m = 'Download failed.';
-          try { const j = await r.json(); m = j.error || m; } catch {}
-          show(msg, 'error', '❌ ' + m);
-          btn.disabled = false;
-          return;
-        }
-        const blob = await r.blob();
-        const url  = URL.createObjectURL(blob);
-        const a    = document.createElement('a');
-        a.href = url;
-        a.download = `SimonWater_Report_${year}-${String(month).padStart(2, '0')}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-        show(msg, 'success', '✅ Report downloaded.');
-      } catch { show(msg, 'error', '❌ Network error.'); }
-      finally { btn.disabled = false; }
+      const url = `/template/report?year=${year}&month=${String(month).padStart(2, '0')}`;
+      const win = window.open(url, '_blank', 'noopener');
+      if (!win) {
+        show(msg, 'error',
+          '❌ Pop-up blocked. Allow pop-ups for this site, then try again.');
+        return;
+      }
+      show(msg, 'success',
+        '✅ Report opened in a new tab. Use Chrome → Print → Save as PDF.');
     }
 
     document.getElementById('previewBtn').addEventListener('click', loadPreview);
-    document.getElementById('downloadBtn').addEventListener('click', downloadReport);
+    document.getElementById('downloadBtn').addEventListener('click', openReportPreview);
     document.getElementById('rptMonth').addEventListener('change', loadPreview);
     document.getElementById('rptYear').addEventListener('change', loadPreview);
 
