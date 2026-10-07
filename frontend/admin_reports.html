@@ -345,14 +345,18 @@
       const msg = document.getElementById('downloadMsg');
       hide(msg);
       const url = `/template/report?year=${year}&month=${String(month).padStart(2, '0')}`;
+      /* Try a new tab first — works when this page is in a regular
+         Chrome tab (e.g. staging). In an installed PWA, window.open()
+         returns null; fall back to navigating in place so the report
+         still opens and can be saved from the PWA's Print menu. */
       const win = window.open(url, '_blank', 'noopener');
-      if (!win) {
-        show(msg, 'error',
-          '❌ Pop-up blocked. Allow pop-ups for this site, then try again.');
+      if (win) {
+        show(msg, 'success',
+          '✅ Report opened in a new tab. Use Chrome → Print → Save as PDF.');
         return;
       }
-      show(msg, 'success',
-        '✅ Report opened in a new tab. Use Chrome → Print → Save as PDF.');
+      /* Fallback: navigate the current view to the report URL. */
+      window.location.href = url;
     }
 
     document.getElementById('previewBtn').addEventListener('click', loadPreview);
