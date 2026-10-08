@@ -671,13 +671,24 @@ def _build_report_snapshot(year: int, month: int) -> dict:
             if cnt > 0 or paid > 0:
                 terminated_rows.append(row)
 
-    truncated = len(rows) > 20
-    # Preserve the FULL active row list for the HTML template (dynamic rows).
-    # The r1_*..r20_* placeholders below remain capped at 20 for the legacy
-    # PDF generator; the HTML template uses `rows` directly.
-    _all_active_rows = list(rows)
+    # Safety cap — protects against pathological data; not a user-facing limit.
+    # Override with env REPORT_MAX_ROWS (default 500).
+    try:
+        _report_max = int(os.environ.get("REPORT_MAX_ROWS", "500"))
+    except (ValueError, TypeError):
+        _report_max = 500
+    if _report_max < 20:
+        _report_max = 20
+
+    # Full active + terminated lists — used by the HTML template and preview.
+    _all_active_rows = list(rows[:_report_max])
+    _all_terminated_rows = list(terminated_rows[:_report_max])
+
+    truncated = (len(rows) > _report_max) or (len(terminated_rows) > _report_max)
+
+    # The r1_*..r20_ placeholders below are LEGACY (used only by the PDF
+    # endpoint /api/admin/report.pdf). The preview reads the full lists.
     rows = rows[:20]
-    terminated_rows = terminated_rows[:20]
 
     snapshot = {
         "report_no": f"RPT-{year}{month:02d}",
@@ -704,10 +715,10 @@ def _build_report_snapshot(year: int, month: int) -> dict:
         snapshot[f"r{idx}_paid"]  = row["paid"]  if row else ""
         snapshot[f"r{idx}_bal"]   = row["bal"]   if row else ""
 
-    # Full active rows list — used by the HTML report template
+    # Full active rows list — used by the HTML report template and the preview
     snapshot["rows"] = _all_active_rows
-    # Terminated consumers — used only by the preview JSON, not the PDF
-    snapshot["_terminated_rows"] = terminated_rows
+    # Full terminated rows list — used only by the preview JSON, not the PDF
+    snapshot["_terminated_rows"] = _all_terminated_rows
 
     return snapshot, truncated
 
@@ -823,23 +834,9 @@ def billing_report_preview():
             "truncated": False,
         })
 
-    # ─── Normal response ───
-    rows = []
-    for idx in range(1, 21):
-        name = snapshot.get(f"r{idx}_name") or ""
-        if not name:
-            continue
-        rows.append({
-            "id":    snapshot.get(f"r{idx}_id") or "",
-            "name":  name,
-            "meter": snapshot.get(f"r{idx}_meter") or "",
-            "cm3":   snapshot.get(f"r{idx}_cm3") or "",
-            "amt":   snapshot.get(f"r{idx}_amt") or "",
-            "paid":  snapshot.get(f"r{idx}_paid") or "",
-            "bal":   snapshot.get(f"r{idx}_bal") or "",
-        })
-
-    terminated_rows = snapshot.pop("_terminated_rows", []) or []
+    # ─── Normal response — full lists, no 20-row cap ───
+    rows = list(snapshot.pop("rows", []) or [])
+    terminated_rows = list(snapshot.pop("_terminated_rows", []) or [])
 
     return jsonify({
         "year": year,
