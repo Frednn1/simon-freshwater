@@ -1068,7 +1068,6 @@ def search_consumer():
 #  API — CONSUMER
 # ═══════════════════════════════════════════════
 
-@app.route("/api/consumer/<int:consumer_id>")
 def _carry_forward_display(all_r):
     """Compute per-reading display values: paid, balance, status.
 
@@ -1126,6 +1125,7 @@ def _carry_forward_display(all_r):
     return result
 
 
+@app.route("/api/consumer/<int:consumer_id>")
 def get_consumer_details(consumer_id):
     consumer = Consumer.query.get_or_404(consumer_id)
     all_r = (MeterReading.query.filter_by(consumer_id=consumer.id)
