@@ -1069,6 +1069,63 @@ def search_consumer():
 # ═══════════════════════════════════════════════
 
 @app.route("/api/consumer/<int:consumer_id>")
+def _carry_forward_display(all_r):
+    """Compute per-reading display values: paid, balance, status.
+
+    Waterfall over readings oldest → newest. Surplus on an older reading
+    flows forward to the next reading (shown under its Paid column). Older
+    readings show balance 0.00 and status Cleared. Only the newest reading
+    can keep a residual balance — negative means Prepayment.
+
+    Raw DB values are not modified. This only affects the consumer page's
+    readings table and the individual bill page reached from the Status link.
+
+    Returns {reading_id: {"paid": float, "balance": float, "status": str}}
+    """
+    result = {}
+    running_credit = 0.0
+    n = len(all_r)
+    for i, r in enumerate(all_r):
+        raw_charge = round(float(r.amount_kes or 0.0), 2)
+        raw_paid   = round(float(r.amount_paid or 0.0), 2)
+        credit_in  = running_credit
+
+        display_paid = round(raw_paid + credit_in, 2)
+        remaining    = round(raw_charge - display_paid, 2)
+        is_last      = (i == n - 1)
+
+        if remaining < 0:
+            if is_last:
+                display_balance = remaining
+                running_credit  = 0.0
+            else:
+                display_balance = 0.0
+                running_credit  = -remaining
+        else:
+            display_balance = remaining
+            running_credit  = 0.0
+
+        if display_balance < 0:
+            status = "Prepayment"
+        elif display_balance == 0:
+            status = "Cleared"
+        else:
+            age_days = (_nairobi_today() - r.reading_date).days
+            if age_days <= 20:
+                status = "Due"
+            else:
+                pct_paid = (r.amount_paid / r.amount_kes * 100
+                            if r.amount_kes > 0 else 0)
+                status = "Overdue" if pct_paid >= 80 else "Overdue (Approaching)"
+
+        result[r.id] = {
+            "paid":    display_paid,
+            "balance": display_balance,
+            "status":  status,
+        }
+    return result
+
+
 def get_consumer_details(consumer_id):
     consumer = Consumer.query.get_or_404(consumer_id)
     all_r = (MeterReading.query.filter_by(consumer_id=consumer.id)
@@ -1081,29 +1138,11 @@ def get_consumer_details(consumer_id):
         cons_by_id[r.id] = compute_consumption(r.reading_m3, prev_m3, initial)
         prev_m3 = r.reading_m3
 
-    # ─── Carry-forward display balances ───
-    # Waterfall over ALL readings, oldest → newest. A surplus on any reading
-    # is applied to the next reading; only the newest reading keeps a
-    # residual (which can be negative = credit to be carried further).
-    # Raw per-reading balances in the database are unchanged — this affects
-    # display on the consumer page's readings table only.
-    n_all = len(all_r)
-    running_credit = 0.0
-    display_bal_by_id = {}
-    for i, r in enumerate(all_r):
-        raw = round((r.amount_kes or 0.0) - (r.amount_paid or 0.0), 2)
-        is_last = (i == n_all - 1)
-        if is_last:
-            display = round(raw - running_credit, 2)
-        else:
-            effective = raw - running_credit
-            if effective < 0:
-                running_credit = -effective
-                display = 0.0
-            else:
-                running_credit = 0.0
-                display = round(effective, 2)
-        display_bal_by_id[r.id] = display
+    # ─── Carry-forward display (paid, balance, status) ───
+    # Waterfall over ALL readings, oldest → newest. Surplus on an older
+    # reading flows to the next under its Paid column. Older readings
+    # show 0.00; only the newest can be negative (Prepayment).
+    display_by_id = _carry_forward_display(all_r)
 
     latest5 = list(reversed(all_r))[:5]
     latest12 = list(reversed(all_r))[:12]   # for the trend chart
@@ -1151,11 +1190,11 @@ def get_consumer_details(consumer_id):
             "id": r.id, "reading_m3": r.reading_m3,
             "consumption_m3": cons_by_id.get(r.id, 0.0),
             "reading_date": r.reading_date.isoformat(),
-            "amount_kes": r.amount_kes, "amount_paid": r.amount_paid,
-            "balance": display_bal_by_id.get(r.id, r.balance),
-            "bill_status": get_reading_bill_status(
-                r, balance_override=display_bal_by_id.get(r.id),
-            ),
+            "amount_kes": r.amount_kes,
+            "amount_paid": display_by_id.get(r.id, {}).get("paid", r.amount_paid),
+            "balance":    display_by_id.get(r.id, {}).get("balance", r.balance),
+            "bill_status": display_by_id.get(r.id, {}).get(
+                "status", get_reading_bill_status(r)),
         } for r in latest5],
         "chart_readings": [{
             "reading_m3": r.reading_m3,
@@ -1176,6 +1215,12 @@ def get_consumer_details(consumer_id):
 def get_reading_bill(reading_id):
     reading = MeterReading.query.get_or_404(reading_id)
     consumer = reading.consumer
+    # Compute carry-forward display values for the selected reading
+    _all_asc = (MeterReading.query
+                .filter_by(consumer_id=consumer.id)
+                .order_by(MeterReading.reading_date.asc(),
+                          MeterReading.id.asc()).all())
+    _disp = _carry_forward_display(_all_asc).get(reading.id, {})
     # Find the reading that came immediately BEFORE this one
     # (largest (reading_date, id) strictly smaller than the current one).
     prev_query = (MeterReading.query
@@ -1220,9 +1265,9 @@ def get_reading_bill(reading_id):
             "reading_date": reading.reading_date.isoformat(),
             "bill_month": reading.reading_date.strftime("%B %Y"),
             "amount_kes": reading.amount_kes,
-            "amount_paid": reading.amount_paid,
-            "balance": reading.balance,
-            "bill_status": get_reading_bill_status(reading),
+            "amount_paid": _disp.get("paid", reading.amount_paid),
+            "balance":    _disp.get("balance", reading.balance),
+            "bill_status": _disp.get("status", get_reading_bill_status(reading)),
         },
     })
 
