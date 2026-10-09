@@ -656,6 +656,11 @@ def _build_report_snapshot(year: int, month: int) -> dict:
         _prepaid     = float(info.get("total_prepaid", 0.0))
         _net_balance = round(outstanding - _prepaid, 2)
 
+        # Report status override — when the carry-forward net is negative
+        # the row shows Prepayment. Due / Overdue / Cleared logic is
+        # untouched for every other case (net >= 0). _report_label_override
+        _report_label_override = "Prepayment" if _net_balance < 0 else info["label"]
+
         row = {
             "id": c.id,
             "name": c.cust_name,
@@ -664,7 +669,7 @@ def _build_report_snapshot(year: int, month: int) -> dict:
             "cm3": f"{cm3:.2f}",
             "amt": _fmt_money(amt),
             "paid": _fmt_money(paid),
-            "bal": f"{_fmt_money(_net_balance)} · {info['label']}",
+            "bal": f"{_fmt_money(_net_balance)} · {_report_label_override}",
         }
 
         if c.is_active:
