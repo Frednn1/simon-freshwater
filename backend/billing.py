@@ -37,7 +37,8 @@ def compute_amount(current_m3: float,
     return round(consumption * RATE_PER_M3, 2)
 
 
-def get_consumer_status(readings: list) -> dict:
+def get_consumer_status(readings: list,
+                       latest_balance_override: float | None = None) -> dict:
     """
     Overall water bill status — driven solely by the latest reading.
 
@@ -56,7 +57,13 @@ def get_consumer_status(readings: list) -> dict:
         }
 
     latest = readings[0]
-    balance = latest.balance
+    # Carry-forward display balance takes precedence when supplied —
+    # so the badge agrees with the readings table (surplus from older
+    # readings is applied to the latest bill before the status decision).
+    if latest_balance_override is not None:
+        balance = round(float(latest_balance_override), 2)
+    else:
+        balance = latest.balance
     age_days = (_nairobi_today() - latest.reading_date).days
 
     total_credit = sum(max(r.amount_paid - r.amount_kes, 0.0) for r in readings)

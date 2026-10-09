@@ -1073,6 +1073,17 @@ def search_consumer():
 #  API — CONSUMER
 # ═══════════════════════════════════════════════
 
+def _display_latest_balance(all_r):
+    """Return the carry-forward display balance of the newest reading,
+    or None if there are no readings. Used to feed status decisions
+    that must agree with the readings table."""
+    if not all_r:
+        return None
+    disp = _carry_forward_display(all_r)
+    newest_id = all_r[-1].id
+    return disp.get(newest_id, {}).get("balance")
+
+
 def _carry_forward_display(all_r):
     """Compute per-reading display values: paid, balance, status.
 
@@ -1146,7 +1157,11 @@ def get_consumer_details(consumer_id):
 
     latest5 = list(reversed(all_r))[:5]
     latest12 = list(reversed(all_r))[:12]   # for the trend chart
-    info = get_consumer_status(latest5)
+    # Feed the newest reading's carry-forward display balance into the
+    # status decision — so the badge matches the readings table below it.
+    _newest_id = latest5[0].id if latest5 else None
+    _newest_display = display_by_id.get(_newest_id, {}).get("balance") if _newest_id else None
+    info = get_consumer_status(latest5, latest_balance_override=_newest_display)
 
     last_sms = (NotificationLog.query
                 .filter_by(consumer_id=consumer.id, channel="sms", status="sent")
@@ -1779,7 +1794,10 @@ def notify_consumer(consumer_id):
     if not consumer.is_active:
         return jsonify({"error": "Consumer is terminated. No reminders sent."}), 403
 
-    info = get_consumer_status(_all_readings(consumer.id))
+    _all_readings_list = _all_readings(consumer.id)
+    _disp_latest = _display_latest_balance(list(reversed(_all_readings_list)))
+    info = get_consumer_status(_all_readings_list,
+                               latest_balance_override=_disp_latest)
     if info["status"] not in ("DUE", "OVERDUE"):
         return jsonify({"error": "No outstanding balance — nothing to notify.",
                         "status": info["status"]}), 400
@@ -2972,7 +2990,8 @@ def admin_bulk_sms_overdue():
     out = []
     for c in consumers:
         readings = _all_readings(c.id)
-        info = get_consumer_status(readings)
+        _disp = _display_latest_balance(list(reversed(readings)))
+        info = get_consumer_status(readings, latest_balance_override=_disp)
         if info["status"] not in allowed:
             continue
         out.append({
@@ -3020,7 +3039,8 @@ def admin_bulk_sms_send():
             missing.append(cid)
             continue
         readings = _all_readings(c.id)
-        info = get_consumer_status(readings)
+        _disp = _display_latest_balance(list(reversed(readings)))
+        info = get_consumer_status(readings, latest_balance_override=_disp)
         if info["status"] not in ("DUE", "OVERDUE"):
             missing.append(cid)
             continue
