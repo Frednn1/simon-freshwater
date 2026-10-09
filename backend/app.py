@@ -646,7 +646,7 @@ def _build_report_snapshot(year: int, month: int) -> dict:
         paid = round(sum(float(p.amount_kes or 0.0) for p in month_payments), 2)
 
         # Compute display balances (carry-forward) — same as consumer page.
-        _disp_all = _carry_forward_display(all_readings)
+        _disp_all = _carry_forward_display(all_readings, all_payments)
         _newest   = all_readings[-1] if all_readings else None
         _newest_display = (_disp_all.get(_newest.id, {}).get("balance")
                            if _newest else None)
@@ -1071,46 +1071,124 @@ def search_consumer():
 #  API — CONSUMER
 # ═══════════════════════════════════════════════
 
-def _display_latest_balance(all_r):
+def _consumer_payments(consumer_id):
+    """All payments for a consumer, oldest first — used by the
+    carry-forward display reconstruction."""
+    return (PaymentLog.query
+            .filter_by(consumer_id=consumer_id)
+            .order_by(PaymentLog.created_at.asc(),
+                      PaymentLog.id.asc())
+            .all())
+
+
+def _display_latest_balance(all_r, all_p=None):
     """Return the carry-forward display balance of the newest reading,
     or None if there are no readings. Used to feed status decisions
     that must agree with the readings table."""
     if not all_r:
         return None
-    disp = _carry_forward_display(all_r)
+    disp = _carry_forward_display(all_r, all_p)
     newest_id = all_r[-1].id
     return disp.get(newest_id, {}).get("balance")
 
 
-def _carry_forward_display(all_r):
+def _carry_forward_display(all_r, all_p=None):
     """Per-reading display values: paid, prepaid_credit, balance, status.
 
-    Waterfall over readings oldest → newest. The surplus (negative balance)
-    on any reading becomes the carry-forward credit for the next reading.
+    Reconstructs "effective paid" per reading from the actual payment
+    events (PaymentLog) — NOT the FIFO-allocated MeterReading.amount_paid
+    column, which silently redistributes payments across readings.
+
+    Chronological walk of readings + payments:
+      - A new reading opens a bill; carry-forward credit is applied
+        immediately, any surplus flowing to the next reading.
+      - A payment is allocated FIFO across readings that exist at that
+        moment; a surplus beyond all dues stays on the newest reading
+        and becomes the carry-forward credit for the next reading.
 
     Each row shows:
-        paid            — the raw amount the customer paid against this bill
+        paid            — money actually paid against this bill at its time
         prepaid_credit  — credit carried forward from the previous reading
         balance         — amount_kes − paid − prepaid_credit
         status          — Prepayment | Cleared | Due | Overdue
 
-    Raw DB values are not modified. This drives the consumer page's readings
-    table, the individual bill page, and (via latest_balance_override) the
-    overall status label on both the consumer page and the report.
-
-    Returns {reading_id: {"paid", "prepaid_credit", "balance", "status"}}
+    Raw DB values are not modified. Returns
+    {reading_id: {"paid", "prepaid_credit", "balance", "status"}}.
     """
-    result = {}
-    running_credit = 0.0
+    from datetime import datetime as _dt, time as _time
+
+    if not all_r:
+        return {}
+
+    # ── Chronological event stream (readings at midnight of reading_date) ──
+    events = []
     for r in all_r:
-        raw_charge = round(float(r.amount_kes or 0.0), 2)
-        raw_paid   = round(float(r.amount_paid or 0.0), 2)
-        credit_in  = round(running_credit, 2)
+        rd = r.reading_date
+        rdt = rd if isinstance(rd, _dt) else _dt.combine(rd, _time.min)
+        events.append((rdt, 0, r))            # 0 = reading
 
-        balance = round(raw_charge - raw_paid - credit_in, 2)
+    for p in (all_p or []):
+        if getattr(p, "created_at", None) is None:
+            continue
+        events.append((p.created_at, 1, p))   # 1 = payment
 
-        # Next reading's credit comes from THIS reading's surplus
-        running_credit = -balance if balance < 0 else 0.0
+    # Reading sorts before payment at identical timestamps
+    events.sort(key=lambda e: (e[0], e[1]))
+
+    eff_paid        = {}
+    credit_in       = {}
+    readings_so_far = []
+    running_credit  = 0.0
+
+    for _, etype, obj in events:
+        if etype == 0:
+            r = obj
+            charge = round(float(r.amount_kes or 0.0), 2)
+            credit_in[r.id] = round(running_credit, 2)
+            eff_paid[r.id]  = 0.0
+            remaining = round(charge - running_credit, 2)
+            running_credit = round(-remaining, 2) if remaining < 0 else 0.0
+            readings_so_far.append(r)
+        else:
+            p = obj
+            amount = round(float(p.amount_kes or 0.0), 2)
+            if amount <= 0 or not readings_so_far:
+                continue
+
+            # FIFO across existing readings
+            for r in readings_so_far:
+                if amount <= 0:
+                    break
+                paid   = eff_paid.get(r.id, 0.0)
+                cred   = credit_in.get(r.id, 0.0)
+                charge = round(float(r.amount_kes or 0.0), 2)
+                due = round(charge - paid - cred, 2)
+                if due <= 0:
+                    continue
+                apply = min(amount, due)
+                eff_paid[r.id] = round(paid + apply, 2)
+                amount = round(amount - apply, 2)
+
+            # Surplus stays on the newest reading
+            if amount > 0:
+                newest = readings_so_far[-1]
+                eff_paid[newest.id] = round(
+                    eff_paid.get(newest.id, 0.0) + amount, 2)
+
+            # Recompute carry-forward credit
+            newest = readings_so_far[-1]
+            charge = round(float(newest.amount_kes or 0.0), 2)
+            bal = round(charge - eff_paid.get(newest.id, 0.0)
+                               - credit_in.get(newest.id, 0.0), 2)
+            running_credit = round(-bal, 2) if bal < 0 else 0.0
+
+    # ── Compose output ──
+    result = {}
+    for r in all_r:
+        charge = round(float(r.amount_kes or 0.0), 2)
+        paid_val   = round(eff_paid.get(r.id, 0.0), 2)
+        credit_val = round(credit_in.get(r.id, 0.0), 2)
+        balance = round(charge - paid_val - credit_val, 2)
 
         if balance < 0:
             status = "Prepayment"
@@ -1121,8 +1199,8 @@ def _carry_forward_display(all_r):
             status = "Due" if age_days <= 20 else "Overdue"
 
         result[r.id] = {
-            "paid":           raw_paid,
-            "prepaid_credit": credit_in,
+            "paid":           paid_val,
+            "prepaid_credit": credit_val,
             "balance":        balance,
             "status":         status,
         }
@@ -1146,7 +1224,8 @@ def get_consumer_details(consumer_id):
     # Waterfall over ALL readings, oldest → newest. Surplus on an older
     # reading flows to the next under its Paid column. Older readings
     # show 0.00; only the newest can be negative (Prepayment).
-    display_by_id = _carry_forward_display(all_r)
+    _payments_all = _consumer_payments(consumer.id)
+    display_by_id = _carry_forward_display(all_r, _payments_all)
 
     latest5 = list(reversed(all_r))[:5]
     latest12 = list(reversed(all_r))[:12]   # for the trend chart
@@ -1229,7 +1308,7 @@ def get_reading_bill(reading_id):
                 .filter_by(consumer_id=consumer.id)
                 .order_by(MeterReading.reading_date.asc(),
                           MeterReading.id.asc()).all())
-    _disp = _carry_forward_display(_all_asc).get(reading.id, {})
+    _disp = _carry_forward_display(_all_asc, _consumer_payments(consumer.id)).get(reading.id, {})
     # Find the reading that came immediately BEFORE this one
     # (largest (reading_date, id) strictly smaller than the current one).
     prev_query = (MeterReading.query
@@ -1790,7 +1869,10 @@ def notify_consumer(consumer_id):
         return jsonify({"error": "Consumer is terminated. No reminders sent."}), 403
 
     _all_readings_list = _all_readings(consumer.id)
-    _disp_latest = _display_latest_balance(list(reversed(_all_readings_list)))
+    _disp_latest = _display_latest_balance(
+        list(reversed(_all_readings_list)),
+        _consumer_payments(consumer.id),
+    )
     info = get_consumer_status(_all_readings_list,
                                latest_balance_override=_disp_latest)
     if info["status"] not in ("DUE", "OVERDUE"):
@@ -2985,7 +3067,10 @@ def admin_bulk_sms_overdue():
     out = []
     for c in consumers:
         readings = _all_readings(c.id)
-        _disp = _display_latest_balance(list(reversed(readings)))
+        _disp = _display_latest_balance(
+            list(reversed(readings)),
+            _consumer_payments(c.id),
+        )
         info = get_consumer_status(readings, latest_balance_override=_disp)
         if info["status"] not in allowed:
             continue
@@ -3034,7 +3119,10 @@ def admin_bulk_sms_send():
             missing.append(cid)
             continue
         readings = _all_readings(c.id)
-        _disp = _display_latest_balance(list(reversed(readings)))
+        _disp = _display_latest_balance(
+            list(reversed(readings)),
+            _consumer_payments(c.id),
+        )
         info = get_consumer_status(readings, latest_balance_override=_disp)
         if info["status"] not in ("DUE", "OVERDUE"):
             missing.append(cid)
