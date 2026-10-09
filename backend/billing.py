@@ -66,8 +66,22 @@ def get_consumer_status(readings: list,
         balance = latest.balance
     age_days = (_nairobi_today() - latest.reading_date).days
 
-    total_credit = sum(max(r.amount_paid - r.amount_kes, 0.0) for r in readings)
-    total_outstanding = sum(max(r.balance, 0.0) for r in readings)
+    # Consumer-level totals.
+    #
+    # When the carry-forward display balance is supplied, it already
+    # represents the net position of the whole account:
+    #   negative  → that amount is credit on file
+    #   positive  → that amount is owed
+    # Older readings have already been settled or folded forward into it,
+    # so we must not re-add the raw per-reading balances on top.
+    # Derived from the carry-forward display balance when supplied.
+    if latest_balance_override is not None:
+        total_outstanding = round(max(balance, 0.0), 2)
+        total_credit      = round(max(-balance, 0.0), 2)
+    else:
+        total_credit      = sum(max(r.amount_paid - r.amount_kes, 0.0)
+                                for r in readings)
+        total_outstanding = sum(max(r.balance, 0.0) for r in readings)
 
     if balance < 0:
         status, label = "PREPAYMENT", "Prepayment"
