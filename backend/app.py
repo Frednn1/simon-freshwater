@@ -1408,20 +1408,19 @@ def download_water_bill(reading_id):
         previous_m3 = older_readings[0].reading_m3
     else:
         previous_m3 = float(consumer.meter_initial_reading_m3 or 0.0)
-    prev_outstanding = round(
-        sum(max(r.balance, 0.0) for r in older_readings), 2
-    )
     current_charges = float(reading.amount_kes or 0.0)
-    # Signed sum — carries over prepayment credit (negative balance)
-    # so total = current_charges − pcf + prev_outstanding.
-    total_outstanding = round(sum(r.balance for r in readings_desc), 2)
 
-    # Payment Carried Forward for this specific reading
-    sum_paid_all      = sum(float(r.amount_paid or 0.0) for r in readings_desc)
-    sum_older_charges = sum(float(r.amount_kes or 0.0) for r in older_readings)
-    pcf_raw = max(0.0, sum_paid_all - sum_older_charges)
-    pcf     = round(min(pcf_raw, current_charges), 2)
-    is_cleared = reading.balance <= 0
+    # Carry-forward display values for the billed reading
+    _asc = list(reversed(readings_desc))
+    _pays = _consumer_payments(consumer.id)
+    _disp_map = _carry_forward_display(_asc, _pays)
+    _d = _disp_map.get(reading.id, {})
+
+    # Total Outstanding = signed net position (Option B)
+    total_outstanding = round(sum(r.balance for r in readings_desc), 2)
+    current_display_balance = _d.get("balance", reading.balance)
+    # Previous Outstanding = Total − current bill's display balance
+    prev_outstanding = round(total_outstanding - current_display_balance, 2)
 
     _pay = _payment_info(consumer)
     snapshot = {
@@ -1433,10 +1432,11 @@ def download_water_bill(reading_id):
         "reading_m3":           f"{reading.reading_m3:.2f}",
         "previous_reading":     f"{previous_m3:.2f}",
         "amount_kes":           _fmt_money(current_charges),
-        "payment_carried_forward": "" if is_cleared else f"KES {_fmt_money(pcf)}",
+        "payment_carried_forward": f"KES {_fmt_money(_d.get('prepaid_credit', 0.0))}",
+        "paid":                 f"KES {_fmt_money(_d.get('paid', 0.0))}",
         "previous_outstanding": _fmt_money(prev_outstanding),
         "total_outstanding":    _fmt_money(total_outstanding),
-        "status_label":         get_reading_bill_status(reading).upper(),
+        "status_label":         _d.get("status", get_reading_bill_status(reading)).upper(),
         "paybill":              _pay["paybill"],
         "payment_account":      _pay["account"],
     }
@@ -1654,20 +1654,19 @@ def send_whatsapp_bill(consumer_id):
         older_readings[0].reading_m3 if older_readings
         else float(consumer.meter_initial_reading_m3 or 0.0)
     )
-    prev_outstanding = round(
-        sum(max(r.balance, 0.0) for r in older_readings), 2
-    )
     current_charges = float(reading.amount_kes or 0.0)
-    # Signed sum — carries over prepayment credit (negative balance)
-    # so total = current_charges − pcf + prev_outstanding.
-    total_outstanding = round(sum(r.balance for r in readings_desc), 2)
 
-    # Payment Carried Forward for this specific reading
-    sum_paid_all      = sum(float(r.amount_paid or 0.0) for r in readings_desc)
-    sum_older_charges = sum(float(r.amount_kes or 0.0) for r in older_readings)
-    pcf_raw = max(0.0, sum_paid_all - sum_older_charges)
-    pcf     = round(min(pcf_raw, current_charges), 2)
-    is_cleared = reading.balance <= 0
+    # Carry-forward display values for the billed reading
+    _asc = list(reversed(readings_desc))
+    _pays = _consumer_payments(consumer.id)
+    _disp_map = _carry_forward_display(_asc, _pays)
+    _d = _disp_map.get(reading.id, {})
+
+    # Total Outstanding = signed net position (Option B)
+    total_outstanding = round(sum(r.balance for r in readings_desc), 2)
+    current_display_balance = _d.get("balance", reading.balance)
+    # Previous Outstanding = Total − current bill's display balance
+    prev_outstanding = round(total_outstanding - current_display_balance, 2)
 
     _pay = _payment_info(consumer)
     snapshot = {
@@ -1679,10 +1678,11 @@ def send_whatsapp_bill(consumer_id):
         "reading_m3":           f"{reading.reading_m3:.2f}",
         "previous_reading":     f"{previous_m3:.2f}",
         "amount_kes":           _fmt_money(current_charges),
-        "payment_carried_forward": "" if is_cleared else f"KES {_fmt_money(pcf)}",
+        "payment_carried_forward": f"KES {_fmt_money(_d.get('prepaid_credit', 0.0))}",
+        "paid":                 f"KES {_fmt_money(_d.get('paid', 0.0))}",
         "previous_outstanding": _fmt_money(prev_outstanding),
         "total_outstanding":    _fmt_money(total_outstanding),
-        "status_label":         get_reading_bill_status(reading).upper(),
+        "status_label":         _d.get("status", get_reading_bill_status(reading)).upper(),
         "paybill":              _pay["paybill"],
         "payment_account":      _pay["account"],
     }
@@ -1901,26 +1901,29 @@ def notify_consumer(consumer_id):
             previous.reading_m3 if previous
             else float(consumer.meter_initial_reading_m3 or 0.0)
         )
-        previous_outstanding = round(
-            sum(max(r.balance, 0.0) for r in readings_desc[1:]), 2
-        )
         current_charges = float(latest.amount_kes or 0.0)
+
+        # Carry-forward display values for the billed (newest) reading
+        _asc = list(reversed(readings_desc))
+        _pays = _consumer_payments(consumer.id)
+        _disp_map = _carry_forward_display(_asc, _pays)
+        _d = _disp_map.get(latest.id, {})
+
+        # Total Outstanding = signed net position (Option B)
+        total_out = round(sum(r.balance for r in readings_desc), 2)
+        current_display_balance = _d.get("balance", latest.balance)
+        # Previous Outstanding = Total − current bill's display balance
+        prev_out = round(total_out - current_display_balance, 2)
+
         info["current_reading_m3"]    = latest.reading_m3
         info["previous_reading_m3"]   = previous_m3
         info["current_charges"]       = current_charges
-        info["previous_outstanding"]  = previous_outstanding
-        # Signed sum — carries prepayment credit (see bill endpoints)
-        info["total_outstanding"]     = round(sum(r.balance for r in readings_desc), 2)
+        info["paid"]                  = _d.get("paid", latest.amount_paid)
+        info["payment_carried_forward"] = _d.get("prepaid_credit", 0.0)
+        info["previous_outstanding"]  = prev_out
+        info["total_outstanding"]     = total_out
         info["bill_month"]            = latest.reading_date.strftime("%B %Y")
-
-        # Payment Carried Forward:
-        #   surplus from prior payments that flowed INTO the current bill
-        sum_paid_all     = sum(float(r.amount_paid or 0.0) for r in readings_desc)
-        sum_older_charges = sum(float(r.amount_kes or 0.0) for r in readings_desc[1:])
-        pcf_raw = max(0.0, sum_paid_all - sum_older_charges)
-        pcf     = round(min(pcf_raw, float(latest.amount_kes or 0.0)), 2)
-        info["payment_carried_forward"] = pcf
-        info["is_current_cleared"]      = latest.balance <= 0
+        info["is_current_cleared"]    = current_display_balance <= 0
 
     cutoff = datetime.utcnow() - timedelta(seconds=NOTIFY_COOLDOWN_SECONDS)
     recent = (NotificationLog.query
