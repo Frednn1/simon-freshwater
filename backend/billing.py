@@ -39,13 +39,14 @@ def compute_amount(current_m3: float,
 
 def get_consumer_status(readings: list) -> dict:
     """
-    Overall water bill status.
+    Overall water bill status — driven solely by the latest reading.
 
-      - CLEARED             : last reading fully paid, no credit.
-      - PREPAYMENT          : last reading cleared AND extra credit exists.
-      - DUE                 : last reading has unpaid balance, age <= 20 days.
-      - OVERDUE             : last reading unpaid, age > 20 days, paid >= 80%.
-      - OVERDUE_APPROACHING : last reading unpaid, age > 20 days, paid < 80%.
+      - PREPAYMENT : latest reading balance is negative (overpaid).
+      - CLEARED    : latest reading balance is exactly 0.
+      - DUE        : latest reading balance > 0 and age <= 20 days.
+      - OVERDUE    : latest reading balance > 0 and age > 20 days.
+
+    The 20-day window runs from the reading date.
     """
     if not readings:
         return {
@@ -61,19 +62,14 @@ def get_consumer_status(readings: list) -> dict:
     total_credit = sum(max(r.amount_paid - r.amount_kes, 0.0) for r in readings)
     total_outstanding = sum(max(r.balance, 0.0) for r in readings)
 
-    if balance <= 0 and total_credit > 0:
+    if balance < 0:
         status, label = "PREPAYMENT", "Prepayment"
-    elif balance <= 0 and total_credit == 0:
+    elif balance == 0:
         status, label = "CLEARED", "Cleared"
     elif age_days <= 20:
         status, label = "DUE", "Due"
     else:
-        pct_paid = (latest.amount_paid / latest.amount_kes * 100
-                    if latest.amount_kes > 0 else 0)
-        if pct_paid >= 80:
-            status, label = "OVERDUE", "Overdue"
-        else:
-            status, label = "OVERDUE_APPROACHING", "Overdue (Approaching)"
+        status, label = "OVERDUE", "Overdue"
 
     return {
         "status": status, "label": label,
@@ -94,11 +90,11 @@ def get_reading_bill_status(reading, balance_override: float | None = None) -> s
     amount_kes − amount_paid. Defaults to the raw balance.
     """
     balance = balance_override if balance_override is not None else reading.balance
-    if balance <= 0:
+    if balance < 0:
+        return "Prepayment"
+    if balance == 0:
         return "Cleared"
     age_days = (_nairobi_today() - reading.reading_date).days
     if age_days <= 20:
         return "Due"
-    pct_paid = (reading.amount_paid / reading.amount_kes * 100
-                if reading.amount_kes > 0 else 0)
-    return "Overdue" if pct_paid >= 80 else "Overdue (Approaching)"
+    return "Overdue"

@@ -1115,12 +1115,7 @@ def _carry_forward_display(all_r):
             status = "Cleared"
         else:
             age_days = (_nairobi_today() - r.reading_date).days
-            if age_days <= 20:
-                status = "Due"
-            else:
-                pct_paid = (r.amount_paid / r.amount_kes * 100
-                            if r.amount_kes > 0 else 0)
-                status = "Overdue" if pct_paid >= 80 else "Overdue (Approaching)"
+            status = "Due" if age_days <= 20 else "Overdue"
 
         result[r.id] = {
             "paid":    display_paid,
@@ -1785,7 +1780,7 @@ def notify_consumer(consumer_id):
         return jsonify({"error": "Consumer is terminated. No reminders sent."}), 403
 
     info = get_consumer_status(_all_readings(consumer.id))
-    if info["status"] not in ("DUE", "OVERDUE", "OVERDUE_APPROACHING"):
+    if info["status"] not in ("DUE", "OVERDUE"):
         return jsonify({"error": "No outstanding balance — nothing to notify.",
                         "status": info["status"]}), 400
 
@@ -2956,7 +2951,7 @@ def admin_bulk_sms_overdue():
     """
     List consumers with outstanding balances.
     Query params:
-      include_due=1  → also include DUE (default: only OVERDUE + OVERDUE_APPROACHING)
+      include_due=1  → also include DUE (default: only OVERDUE)
     """
     u = _require_admin()
     if u: return u
@@ -2965,7 +2960,7 @@ def admin_bulk_sms_overdue():
 
     include_due = request.args.get("include_due") == "1"
 
-    allowed = {"OVERDUE", "OVERDUE_APPROACHING"}
+    allowed = {"OVERDUE"}
     if include_due:
         allowed.add("DUE")
 
@@ -3026,7 +3021,7 @@ def admin_bulk_sms_send():
             continue
         readings = _all_readings(c.id)
         info = get_consumer_status(readings)
-        if info["status"] not in ("DUE", "OVERDUE", "OVERDUE_APPROACHING"):
+        if info["status"] not in ("DUE", "OVERDUE"):
             missing.append(cid)
             continue
         items.append({"consumer": c, "info": info})
