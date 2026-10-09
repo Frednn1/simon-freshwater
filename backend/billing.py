@@ -85,9 +85,16 @@ def get_consumer_status(readings: list) -> dict:
     }
 
 
-def get_reading_bill_status(reading) -> str:
-    """Per-reading bill label (used inside the individual bill view)."""
-    if reading.balance <= 0:
+def get_reading_bill_status(reading, balance_override: float | None = None) -> str:
+    """Per-reading bill label (used inside the individual bill view and the
+    consumer page's readings table).
+
+    balance_override — pass a display balance (post carry-forward) to have
+    the label reflect the effective status rather than the raw
+    amount_kes − amount_paid. Defaults to the raw balance.
+    """
+    balance = balance_override if balance_override is not None else reading.balance
+    if balance <= 0:
         return "Cleared"
     age_days = (_nairobi_today() - reading.reading_date).days
     if age_days <= 20:

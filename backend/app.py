@@ -1081,6 +1081,30 @@ def get_consumer_details(consumer_id):
         cons_by_id[r.id] = compute_consumption(r.reading_m3, prev_m3, initial)
         prev_m3 = r.reading_m3
 
+    # ─── Carry-forward display balances ───
+    # Waterfall over ALL readings, oldest → newest. A surplus on any reading
+    # is applied to the next reading; only the newest reading keeps a
+    # residual (which can be negative = credit to be carried further).
+    # Raw per-reading balances in the database are unchanged — this affects
+    # display on the consumer page's readings table only.
+    n_all = len(all_r)
+    running_credit = 0.0
+    display_bal_by_id = {}
+    for i, r in enumerate(all_r):
+        raw = round((r.amount_kes or 0.0) - (r.amount_paid or 0.0), 2)
+        is_last = (i == n_all - 1)
+        if is_last:
+            display = round(raw - running_credit, 2)
+        else:
+            effective = raw - running_credit
+            if effective < 0:
+                running_credit = -effective
+                display = 0.0
+            else:
+                running_credit = 0.0
+                display = round(effective, 2)
+        display_bal_by_id[r.id] = display
+
     latest5 = list(reversed(all_r))[:5]
     latest12 = list(reversed(all_r))[:12]   # for the trend chart
     info = get_consumer_status(latest5)
@@ -1128,7 +1152,10 @@ def get_consumer_details(consumer_id):
             "consumption_m3": cons_by_id.get(r.id, 0.0),
             "reading_date": r.reading_date.isoformat(),
             "amount_kes": r.amount_kes, "amount_paid": r.amount_paid,
-            "balance": r.balance, "bill_status": get_reading_bill_status(r),
+            "balance": display_bal_by_id.get(r.id, r.balance),
+            "bill_status": get_reading_bill_status(
+                r, balance_override=display_bal_by_id.get(r.id),
+            ),
         } for r in latest5],
         "chart_readings": [{
             "reading_m3": r.reading_m3,
