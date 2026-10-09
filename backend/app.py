@@ -3561,37 +3561,6 @@ def admin_backup_run():
     return jsonify(result), 502
 
 
-@app.route("/api/admin/_debug/consumer/<int:consumer_id>/events", methods=["GET"])
-def _debug_consumer_events(consumer_id):
-    """TEMPORARY diagnostic — returns raw readings + payments with timestamps.
-    Remove this route after the display investigation is complete."""
-    u = _require_admin()
-    if u: return u
-
-    readings = (MeterReading.query
-                .filter_by(consumer_id=consumer_id)
-                .order_by(MeterReading.id.asc()).all())
-    payments = (PaymentLog.query
-                .filter_by(consumer_id=consumer_id)
-                .order_by(PaymentLog.created_at.asc()).all())
-
-    return jsonify({
-        "readings": [{
-            "id": r.id,
-            "reading_date": r.reading_date.isoformat(),
-            "created_at":   r.created_at.isoformat() if r.created_at else None,
-            "amount_kes":   r.amount_kes,
-            "amount_paid":  r.amount_paid,
-        } for r in readings],
-        "payments": [{
-            "id": p.id,
-            "created_at": p.created_at.isoformat() if p.created_at else None,
-            "amount_kes": p.amount_kes,
-            "method":     p.method,
-        } for p in payments],
-    })
-
-
 @app.route("/api/admin/consumers/all", methods=["GET"])
 def admin_consumers_all():
     """Return all consumers (active + terminated), alphabetically.
