@@ -620,6 +620,7 @@ async function initConsumerPage(consumerId) {
           <td>${Number(r.consumption_m3 || 0).toFixed(2)}</td>
           <td>${fmt(r.amount_kes)}</td>
           <td>${fmt(r.amount_paid)}</td>
+          <td>${fmt(r.prepaid_credit || 0)}</td>
           <td>${fmt(r.balance)}</td>
           <td><a href="/bill?id=${r.id}">${esc(r.bill_status)} →</a></td>
         </tr>`).join('');
@@ -1392,6 +1393,8 @@ async function initBillPage(readingId) {
         Number(r.consumption_m3 || 0).toFixed(2) + ' M³';
       document.getElementById('bAmount').textContent = 'KES ' + fmt(r.amount_kes);
       document.getElementById('bPaid').textContent = 'KES ' + fmt(r.amount_paid);
+      document.getElementById('bPrepaidCredit').textContent =
+        'KES ' + fmt(r.prepaid_credit || 0);
       document.getElementById('bBalance').textContent = 'KES ' + fmt(r.balance);
       document.getElementById('billStatusBadge').textContent = r.bill_status;
 

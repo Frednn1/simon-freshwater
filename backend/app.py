@@ -645,21 +645,19 @@ def _build_report_snapshot(year: int, month: int) -> dict:
                 month_payments.append(p)
         paid = round(sum(float(p.amount_kes or 0.0) for p in month_payments), 2)
 
-        # Overall status + outstanding balance (all-time)
-        info = get_consumer_status(list(reversed(all_readings)))
-        outstanding = float(info.get("total_due", 0.0))
-        # Signed display balance:
-        #   positive → amount due
-        #   negative → prepayment credit (over-payment)
-        #   zero     → cleared
-        # `outstanding` above is unchanged, so summary totals are unaffected.
-        _prepaid     = float(info.get("total_prepaid", 0.0))
-        _net_balance = round(outstanding - _prepaid, 2)
+        # Compute display balances (carry-forward) — same as consumer page.
+        _disp_all = _carry_forward_display(all_readings)
+        _newest   = all_readings[-1] if all_readings else None
+        _newest_display = (_disp_all.get(_newest.id, {}).get("balance")
+                           if _newest else None)
 
-        # Report status override — when the carry-forward net is negative
-        # the row shows Prepayment. Due / Overdue / Cleared logic is
-        # untouched for every other case (net >= 0). _report_label_override
-        _report_label_override = "Prepayment" if _net_balance < 0 else info["label"]
+        # Overall status + outstanding balance (all-time).
+        # The override feeds the carry-forward display balance of the newest
+        # reading into the status decision, so the report label is always
+        # identical to the consumer page badge.
+        info = get_consumer_status(list(reversed(all_readings)),
+                                   latest_balance_override=_newest_display)
+        outstanding = float(info.get("total_due", 0.0))
 
         row = {
             "id": c.id,
@@ -669,7 +667,7 @@ def _build_report_snapshot(year: int, month: int) -> dict:
             "cm3": f"{cm3:.2f}",
             "amt": _fmt_money(amt),
             "paid": _fmt_money(paid),
-            "bal": f"{_fmt_money(_net_balance)} · {_report_label_override}",
+            "bal": f"{_fmt_money(_newest_display or 0.0)} · {info['label']}",
         }
 
         if c.is_active:
@@ -1085,53 +1083,48 @@ def _display_latest_balance(all_r):
 
 
 def _carry_forward_display(all_r):
-    """Compute per-reading display values: paid, balance, status.
+    """Per-reading display values: paid, prepaid_credit, balance, status.
 
-    Waterfall over readings oldest → newest. Surplus on an older reading
-    flows forward to the next reading (shown under its Paid column). Older
-    readings show balance 0.00 and status Cleared. Only the newest reading
-    can keep a residual balance — negative means Prepayment.
+    Waterfall over readings oldest → newest. The surplus (negative balance)
+    on any reading becomes the carry-forward credit for the next reading.
 
-    Raw DB values are not modified. This only affects the consumer page's
-    readings table and the individual bill page reached from the Status link.
+    Each row shows:
+        paid            — the raw amount the customer paid against this bill
+        prepaid_credit  — credit carried forward from the previous reading
+        balance         — amount_kes − paid − prepaid_credit
+        status          — Prepayment | Cleared | Due | Overdue
 
-    Returns {reading_id: {"paid": float, "balance": float, "status": str}}
+    Raw DB values are not modified. This drives the consumer page's readings
+    table, the individual bill page, and (via latest_balance_override) the
+    overall status label on both the consumer page and the report.
+
+    Returns {reading_id: {"paid", "prepaid_credit", "balance", "status"}}
     """
     result = {}
     running_credit = 0.0
-    n = len(all_r)
-    for i, r in enumerate(all_r):
+    for r in all_r:
         raw_charge = round(float(r.amount_kes or 0.0), 2)
         raw_paid   = round(float(r.amount_paid or 0.0), 2)
-        credit_in  = running_credit
+        credit_in  = round(running_credit, 2)
 
-        display_paid = round(raw_paid + credit_in, 2)
-        remaining    = round(raw_charge - display_paid, 2)
-        is_last      = (i == n - 1)
+        balance = round(raw_charge - raw_paid - credit_in, 2)
 
-        if remaining < 0:
-            if is_last:
-                display_balance = remaining
-                running_credit  = 0.0
-            else:
-                display_balance = 0.0
-                running_credit  = -remaining
-        else:
-            display_balance = remaining
-            running_credit  = 0.0
+        # Next reading's credit comes from THIS reading's surplus
+        running_credit = -balance if balance < 0 else 0.0
 
-        if display_balance < 0:
+        if balance < 0:
             status = "Prepayment"
-        elif display_balance == 0:
+        elif balance == 0:
             status = "Cleared"
         else:
             age_days = (_nairobi_today() - r.reading_date).days
             status = "Due" if age_days <= 20 else "Overdue"
 
         result[r.id] = {
-            "paid":    display_paid,
-            "balance": display_balance,
-            "status":  status,
+            "paid":           raw_paid,
+            "prepaid_credit": credit_in,
+            "balance":        balance,
+            "status":         status,
         }
     return result
 
@@ -1206,9 +1199,10 @@ def get_consumer_details(consumer_id):
             "consumption_m3": cons_by_id.get(r.id, 0.0),
             "reading_date": r.reading_date.isoformat(),
             "amount_kes": r.amount_kes,
-            "amount_paid": display_by_id.get(r.id, {}).get("paid", r.amount_paid),
-            "balance":    display_by_id.get(r.id, {}).get("balance", r.balance),
-            "bill_status": display_by_id.get(r.id, {}).get(
+            "amount_paid":    display_by_id.get(r.id, {}).get("paid", r.amount_paid),
+            "prepaid_credit": display_by_id.get(r.id, {}).get("prepaid_credit", 0.0),
+            "balance":        display_by_id.get(r.id, {}).get("balance", r.balance),
+            "bill_status":    display_by_id.get(r.id, {}).get(
                 "status", get_reading_bill_status(r)),
         } for r in latest5],
         "chart_readings": [{
@@ -1280,9 +1274,10 @@ def get_reading_bill(reading_id):
             "reading_date": reading.reading_date.isoformat(),
             "bill_month": reading.reading_date.strftime("%B %Y"),
             "amount_kes": reading.amount_kes,
-            "amount_paid": _disp.get("paid", reading.amount_paid),
-            "balance":    _disp.get("balance", reading.balance),
-            "bill_status": _disp.get("status", get_reading_bill_status(reading)),
+            "amount_paid":    _disp.get("paid", reading.amount_paid),
+            "prepaid_credit": _disp.get("prepaid_credit", 0.0),
+            "balance":        _disp.get("balance", reading.balance),
+            "bill_status":    _disp.get("status", get_reading_bill_status(reading)),
         },
     })
 
