@@ -1120,11 +1120,20 @@ def _carry_forward_display(all_r, all_p=None):
     if not all_r:
         return {}
 
-    # ── Chronological event stream (readings at midnight of reading_date) ──
+    # ── Chronological event stream ──
+    # Readings are timestamped by their real created_at (when they were
+    # saved into the system), NOT by reading_date — several readings can
+    # share one reading_date, so reading_date alone destroys the true
+    # sequence against payments. Falls back to reading_date only for
+    # legacy rows whose created_at is missing.
     events = []
     for r in all_r:
-        rd = r.reading_date
-        rdt = rd if isinstance(rd, _dt) else _dt.combine(rd, _time.min)
+        ct = getattr(r, "created_at", None)
+        if ct is not None:
+            rdt = ct
+        else:
+            rd = r.reading_date
+            rdt = rd if isinstance(rd, _dt) else _dt.combine(rd, _time.min)
         events.append((rdt, 0, r))            # 0 = reading
 
     for p in (all_p or []):
@@ -1132,8 +1141,9 @@ def _carry_forward_display(all_r, all_p=None):
             continue
         events.append((p.created_at, 1, p))   # 1 = payment
 
-    # Reading sorts before payment at identical timestamps
-    events.sort(key=lambda e: (e[0], e[1]))
+    # Reading sorts before payment at identical timestamps; id is a stable
+    # tiebreaker for events that share a timestamp to the microsecond.
+    events.sort(key=lambda e: (e[0], e[1], getattr(e[2], "id", 0)))
 
     eff_paid        = {}
     credit_in       = {}
