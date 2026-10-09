@@ -648,6 +648,13 @@ def _build_report_snapshot(year: int, month: int) -> dict:
         # Overall status + outstanding balance (all-time)
         info = get_consumer_status(list(reversed(all_readings)))
         outstanding = float(info.get("total_due", 0.0))
+        # Signed display balance:
+        #   positive → amount due
+        #   negative → prepayment credit (over-payment)
+        #   zero     → cleared
+        # `outstanding` above is unchanged, so summary totals are unaffected.
+        _prepaid     = float(info.get("total_prepaid", 0.0))
+        _net_balance = round(outstanding - _prepaid, 2)
 
         row = {
             "id": c.id,
@@ -657,7 +664,7 @@ def _build_report_snapshot(year: int, month: int) -> dict:
             "cm3": f"{cm3:.2f}",
             "amt": _fmt_money(amt),
             "paid": _fmt_money(paid),
-            "bal": f"{_fmt_money(outstanding)} · {info['label']}",
+            "bal": f"{_fmt_money(_net_balance)} · {info['label']}",
         }
 
         if c.is_active:
