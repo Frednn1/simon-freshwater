@@ -67,6 +67,16 @@ def get_consumer_status(readings: list,
         balance = latest.balance
     age_days = (_nairobi_today() - latest.reading_date).days
 
+    # Compute status FIRST — the totals block below reads `status`.
+    if balance < 0:
+        status, label = "PREPAYMENT", "Prepayment"
+    elif balance == 0:
+        status, label = "CLEARED", "Cleared"
+    elif age_days <= 20:
+        status, label = "DUE", "Due"
+    else:
+        status, label = "OVERDUE", "Overdue"
+
     # Consumer-level totals.
     #
     # When `display_balances` (the full carry-forward map) is supplied,
@@ -95,15 +105,6 @@ def get_consumer_status(readings: list,
         total_credit      = sum(max(r.amount_paid - r.amount_kes, 0.0)
                                 for r in readings)
         total_outstanding = sum(max(r.balance, 0.0) for r in readings)
-
-    if balance < 0:
-        status, label = "PREPAYMENT", "Prepayment"
-    elif balance == 0:
-        status, label = "CLEARED", "Cleared"
-    elif age_days <= 20:
-        status, label = "DUE", "Due"
-    else:
-        status, label = "OVERDUE", "Overdue"
 
     return {
         "status": status, "label": label,
