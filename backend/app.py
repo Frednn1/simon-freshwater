@@ -1057,7 +1057,14 @@ def search_consumer():
 
     out = []
     for c in consumers:
-        info = get_consumer_status(_all_readings(c.id))
+        # Carry-forward display balance — same source as the consumer page
+        # badge, so search results and the destination page agree.
+        _r_desc = _all_readings(c.id)
+        _pays   = _consumer_payments(c.id)
+        _disp   = _carry_forward_display(_r_desc, _pays)
+        _newest_id = _r_desc[0].id if _r_desc else None
+        _newest_disp = _disp.get(_newest_id, {}).get("balance") if _newest_id else None
+        info = get_consumer_status(_r_desc, latest_balance_override=_newest_disp)
         out.append({
             "id": c.id, "cust_name": c.cust_name, "acc_name": c.acc_name,
             "meter_acc_no": c.meter_acc_no,
@@ -1243,7 +1250,13 @@ def get_consumer_details(consumer_id):
     # status decision — so the badge matches the readings table below it.
     _newest_id = latest5[0].id if latest5 else None
     _newest_display = display_by_id.get(_newest_id, {}).get("balance") if _newest_id else None
-    info = get_consumer_status(latest5, latest_balance_override=_newest_display)
+    # Pass the full display-balance map so the summary totals reflect every
+    # bill (Outstanding = sum of positive balances when the badge is Due/Overdue).
+    _display_balances = {rid: v.get("balance", 0.0)
+                         for rid, v in display_by_id.items()}
+    info = get_consumer_status(latest5,
+                               latest_balance_override=_newest_display,
+                               display_balances=_display_balances)
 
     last_sms = (NotificationLog.query
                 .filter_by(consumer_id=consumer.id, channel="sms", status="sent")

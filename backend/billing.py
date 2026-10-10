@@ -38,7 +38,8 @@ def compute_amount(current_m3: float,
 
 
 def get_consumer_status(readings: list,
-                       latest_balance_override: float | None = None) -> dict:
+                       latest_balance_override: float | None = None,
+                       display_balances: dict | None = None) -> dict:
     """
     Overall water bill status — driven solely by the latest reading.
 
@@ -68,14 +69,26 @@ def get_consumer_status(readings: list,
 
     # Consumer-level totals.
     #
-    # When the carry-forward display balance is supplied, it already
-    # represents the net position of the whole account:
-    #   negative  → that amount is credit on file
-    #   positive  → that amount is owed
-    # Older readings have already been settled or folded forward into it,
-    # so we must not re-add the raw per-reading balances on top.
-    # Derived from the carry-forward display balance when supplied.
-    if latest_balance_override is not None:
+    # When `display_balances` (the full carry-forward map) is supplied,
+    # totals reflect the true bill position across every reading:
+    #   Due / Overdue → Outstanding = sum of positive display balances
+    #   Prepayment    → Outstanding suppressed; Prepaid Credit = newest credit
+    #   Cleared       → both zero
+    #
+    # Otherwise, fall back to the earlier behaviour — the newest display
+    # balance (via latest_balance_override) or the raw per-reading sums.
+    if display_balances is not None:
+        if status in ("DUE", "OVERDUE"):
+            total_outstanding = round(
+                sum(max(b, 0.0) for b in display_balances.values()), 2)
+            total_credit = 0.0
+        elif status == "PREPAYMENT":
+            total_outstanding = 0.0
+            total_credit = round(max(-balance, 0.0), 2)
+        else:  # CLEARED or NO_READINGS
+            total_outstanding = 0.0
+            total_credit = 0.0
+    elif latest_balance_override is not None:
         total_outstanding = round(max(balance, 0.0), 2)
         total_credit      = round(max(-balance, 0.0), 2)
     else:
