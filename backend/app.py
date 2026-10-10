@@ -659,6 +659,21 @@ def _build_report_snapshot(year: int, month: int) -> dict:
                                    latest_balance_override=_newest_display)
         outstanding = float(info.get("total_due", 0.0))
 
+        # Row's Outstanding — same rules as the consumer page summary block:
+        #   Due / Overdue  → sum of all positive display balances
+        #   Prepayment     → the negative credit (newest display balance)
+        #   Cleared        → 0.00
+        _display_balances = {rid: v.get("balance", 0.0)
+                             for rid, v in _disp_all.items()}
+        _status = info["status"]
+        if _status in ("DUE", "OVERDUE"):
+            _row_amount = round(
+                sum(max(b, 0.0) for b in _display_balances.values()), 2)
+        elif _status == "PREPAYMENT":
+            _row_amount = round(_newest_display or 0.0, 2)   # negative
+        else:  # CLEARED
+            _row_amount = 0.0
+
         row = {
             "id": c.id,
             "name": c.cust_name,
@@ -667,7 +682,7 @@ def _build_report_snapshot(year: int, month: int) -> dict:
             "cm3": f"{cm3:.2f}",
             "amt": _fmt_money(amt),
             "paid": _fmt_money(paid),
-            "bal": f"{_fmt_money(_newest_display or 0.0)} · {info['label']}",
+            "bal": f"{_fmt_money(_row_amount)} · {info['label']}",
         }
 
         if c.is_active:
