@@ -1589,7 +1589,7 @@ def download_statement(consumer_id):
         e["balance"] = round(bal, 2)
 
     events_desc = list(reversed(events))
-    rows = events_desc[:20]
+    rows = events_desc[:30]
 
     # ── Totals ──
     total_billed = round(sum(float(r.amount_kes or 0.0) for r in readings_asc), 2)
@@ -1635,7 +1635,7 @@ def download_statement(consumer_id):
         "outstanding_balance":  _fmt_money(outstanding),
     }
 
-    for idx in range(1, 21):
+    for idx in range(1, 31):
         if idx - 1 < len(rows):
             e = rows[idx - 1]
             snapshot[f"t{idx}_date"] = e["date"].strftime("%d %b %Y")
