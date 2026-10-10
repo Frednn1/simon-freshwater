@@ -11,6 +11,7 @@ The snapshot dict is expected to already contain ALL 137 keys
 missing keys render as an em-dash.
 """
 import os
+import re as _re
 from io import BytesIO
 
 
@@ -134,9 +135,21 @@ def generate_statement_pdf(snapshot: dict) -> BytesIO:
 
     # Process EVERY page — placeholders may span page boundaries.
     # On a 2-page statement, page 2 holds the overflow rows + totals.
+    _GREEN = (0.0, 0.5, 0.0)
+
     for page in doc.pages():
         placeholders = _find_placeholders(page)
-        pairs = [(ph, _scalar_value(snapshot, ph["name"])) for ph in placeholders]
+        pairs = []
+        for ph in placeholders:
+            text = _scalar_value(snapshot, ph["name"])
+            nm = ph["name"].lower()
+            m = _re.match(r"t(\d+)_(type|ref|cr|dr|bal)$", nm)
+            if m:
+                idx = m.group(1)
+                if snapshot.get(f"t{idx}_is_credit") == "1":
+                    ph = dict(ph)
+                    ph["color"] = _GREEN
+            pairs.append((ph, text))
         _apply_replacements(page, pairs)
 
     out = BytesIO()

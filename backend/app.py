@@ -1525,54 +1525,88 @@ def download_statement(consumer_id):
                               PaymentLog.id.asc())
                     .all())
 
-    # ── Build the unified ledger ──
+    # ── Carry-forward display map (for prepaid credit rows + status) ──
+    _disp = _carry_forward_display(readings_asc, payments_asc)
+
+    # ── Chronological ledger — created_at ordering ──
+    from datetime import datetime as _dt, time as _time
     events = []
     for r in readings_asc:
+        _ts = r.created_at if r.created_at else _dt.combine(r.reading_date, _time.min)
         events.append({
-            "date": r.reading_date,
-            "type": "Water Bill",
-            "ref":  f"Reading {r.reading_m3:.2f} M³",
-            "dr":   float(r.amount_kes or 0.0),
-            "cr":   0.0,
-            "sort": (r.reading_date, 0, r.id),
+            "ts":        _ts,
+            "date":      r.reading_date,
+            "kind":      "reading",
+            "type":      "Water Bill",
+            "ref":       f"Reading {r.reading_m3:.2f} M³",
+            "dr":        float(r.amount_kes or 0.0),
+            "cr":        0.0,
+            "sort_id":   r.id,
+            "affects":   True,
+            "is_credit": False,
         })
+        _cr_used = float(_disp.get(r.id, {}).get("prepaid_credit", 0.0) or 0.0)
+        if _cr_used > 0:
+            events.append({
+                "ts":        _ts,
+                "date":      r.reading_date,
+                "kind":      "prepaid",
+                "type":      "Prepaid Credit",
+                "ref":       f"Applied to Reading {r.reading_m3:.2f} M³",
+                "dr":        0.0,
+                "cr":        _cr_used,
+                "sort_id":   r.id,
+                "affects":   False,
+                "is_credit": True,
+            })
+
     for p in payments_asc:
-        pdate = p.created_at.date() if p.created_at else _nairobi_today()
-        ref = (p.method or "Payment").title()
+        _ts = p.created_at if p.created_at else _dt.combine(_nairobi_today(), _time.min)
+        _pdate = _ts.date() if hasattr(_ts, "date") else _nairobi_today()
+        _ref = (p.method or "Payment").title()
         if p.reference:
-            ref += f" · {p.reference}"
+            _ref += f" · {p.reference}"
         events.append({
-            "date": pdate,
-            "type": "Payment",
-            "ref":  ref,
-            "dr":   0.0,
-            "cr":   float(p.amount_kes or 0.0),
-            "sort": (pdate, 1, p.id),
+            "ts":        _ts,
+            "date":      _pdate,
+            "kind":      "payment",
+            "type":      "Payment",
+            "ref":       _ref,
+            "dr":        0.0,
+            "cr":        float(p.amount_kes or 0.0),
+            "sort_id":   p.id,
+            "affects":   True,
+            "is_credit": False,
         })
 
-    events.sort(key=lambda e: e["sort"])
+    _KIND_ORDER = {"prepaid": 0, "reading": 1, "payment": 2}
+    events.sort(key=lambda e: (e["ts"], _KIND_ORDER.get(e["kind"], 99), e["sort_id"]))
 
-    # Running balance (oldest → newest)
     bal = 0.0
     for e in events:
-        bal += e["dr"] - e["cr"]
+        if e["affects"]:
+            bal += e["dr"] - e["cr"]
         e["balance"] = round(bal, 2)
 
-    # Newest first
     events_desc = list(reversed(events))
     rows = events_desc[:20]
 
     # ── Totals ──
     total_billed = round(sum(float(r.amount_kes or 0.0) for r in readings_asc), 2)
     total_paid   = round(sum(float(p.amount_kes or 0.0) for p in payments_asc), 2)
-    outstanding  = round(max(total_billed - total_paid, 0.0), 2)
+    outstanding  = round(total_billed - total_paid, 2)   # signed — carries credit
     total_consumption_m3 = round(sum(cons_by_id.values()), 2)
 
     latest_r = readings_asc[-1] if readings_asc else None
 
-    # Newest-first list for status calc
-    info = get_consumer_status(list(reversed(readings_asc))) if readings_asc \
-           else get_consumer_status([])
+    # Overall status — same source as the consumer page badge
+    _newest_r = readings_asc[-1] if readings_asc else None
+    _newest_disp = _disp.get(_newest_r.id, {}).get("balance") if _newest_r else None
+    _disp_balances = {rid: v.get("balance", 0.0) for rid, v in _disp.items()}
+    info = (get_consumer_status(list(reversed(readings_asc)),
+                                latest_balance_override=_newest_disp,
+                                display_balances=_disp_balances)
+            if readings_asc else get_consumer_status([]))
 
     # Period
     if events:
@@ -1610,6 +1644,7 @@ def download_statement(consumer_id):
             snapshot[f"t{idx}_dr"]   = _fmt_money(e["dr"]) if e["dr"] > 0 else ""
             snapshot[f"t{idx}_cr"]   = _fmt_money(e["cr"]) if e["cr"] > 0 else ""
             snapshot[f"t{idx}_bal"]  = _fmt_money(e["balance"])
+            snapshot[f"t{idx}_is_credit"] = "1" if e.get("is_credit") else ""
         else:
             snapshot[f"t{idx}_date"] = ""
             snapshot[f"t{idx}_type"] = ""
@@ -1617,6 +1652,7 @@ def download_statement(consumer_id):
             snapshot[f"t{idx}_dr"]   = ""
             snapshot[f"t{idx}_cr"]   = ""
             snapshot[f"t{idx}_bal"]  = ""
+            snapshot[f"t{idx}_is_credit"] = ""
 
     try:
         pdf_buf = generate_statement_pdf(snapshot)
