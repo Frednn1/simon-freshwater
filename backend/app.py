@@ -651,20 +651,27 @@ def _build_report_snapshot(year: int, month: int) -> dict:
         _newest_display = (_disp_all.get(_newest.id, {}).get("balance")
                            if _newest else None)
 
+        # Build the display-balance map BEFORE the status call, so the
+        # report KPI card (via info["total_due"]) and the row both see the
+        # same source of truth.
+        _display_balances = {rid: v.get("balance", 0.0)
+                             for rid, v in _disp_all.items()}
+
         # Overall status + outstanding balance (all-time).
+        # Pass display_balances so KPI Outstanding uses display_balances
+        # (sum of positive balances when Due/Overdue, 0 otherwise).
         # The override feeds the carry-forward display balance of the newest
         # reading into the status decision, so the report label is always
         # identical to the consumer page badge.
         info = get_consumer_status(list(reversed(all_readings)),
-                                   latest_balance_override=_newest_display)
+                                   latest_balance_override=_newest_display,
+                                   display_balances=_display_balances)
         outstanding = float(info.get("total_due", 0.0))
 
         # Row's Outstanding — same rules as the consumer page summary block:
         #   Due / Overdue  → sum of all positive display balances
         #   Prepayment     → the negative credit (newest display balance)
         #   Cleared        → 0.00
-        _display_balances = {rid: v.get("balance", 0.0)
-                             for rid, v in _disp_all.items()}
         _status = info["status"]
         if _status in ("DUE", "OVERDUE"):
             _row_amount = round(
