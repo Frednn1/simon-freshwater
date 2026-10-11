@@ -178,6 +178,52 @@ def _tenant_slug():
     return t.slug if t is not None else None
 
 
+def _serve_frontend(filename):
+    """Serve a frontend HTML file with tenant-brand substitution.
+
+    The HTML files carry {{brand_*}} tokens in place of hardcoded brand
+    strings. This helper reads the file and replaces each token with the
+    current tenant's value. For tenant 1 (Simon Fresh Water), the
+    substituted values match the original hardcoded strings, so the
+    rendered output is unchanged.
+    """
+    path = os.path.join(FRONTEND_DIR, filename)
+    if not os.path.exists(path):
+        return f"Template not found: {filename}", 404
+    with open(path, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    t = getattr(g, "tenant", None)
+    if t is None:
+        try:
+            t = Tenant.query.filter_by(slug="simon-freshwater").first()
+        except Exception:
+            t = None
+
+    brand_name  = t.org_name if t and t.org_name else "Simon Fresh Water"
+    brand_phone = t.phone    if t and t.phone    else "+254 700 719311"
+    brand_email = t.email    if t and t.email    else "simonchege84@gmail.com"
+    brand_tag   = t.tagline  if t and t.tagline  else "Pure, Reliable & Sustainable Water Supply"
+    brand_addr  = t.address  if t and t.address  else "Kikuyu, Kenya"
+
+    logo = (t.logo_key if t and t.logo_key else "images/SimonW_Logo.png").strip()
+    if not logo.startswith("/"):
+        logo = "/" + logo
+
+    subs = {
+        "{{brand_name}}":     brand_name,
+        "{{brand_phone}}":    brand_phone,
+        "{{brand_email}}":    brand_email,
+        "{{brand_tagline}}":  brand_tag,
+        "{{brand_address}}":  brand_addr,
+        "{{brand_logo_url}}": logo,
+    }
+    for token, value in subs.items():
+        html = html.replace(token, value)
+
+    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///simon_freshwater.db")
 
 # ─── Cloudflare D1 credentials (build the URL from parts if not already set) ───
@@ -685,53 +731,53 @@ def _ensure_all_columns():
 
 @app.route("/")
 def home():
-    return send_from_directory(FRONTEND_DIR, "index.html")
+    return _serve_frontend("index.html")
 
 @app.route("/consumer")
 def consumer_page():
-    return send_from_directory(FRONTEND_DIR, "consumer.html")
+    return _serve_frontend("consumer.html")
 
 @app.route("/bill")
 def bill_page():
-    return send_from_directory(FRONTEND_DIR, "bill.html")
+    return _serve_frontend("bill.html")
 
 @app.route("/privacy")
 def privacy_page():
-    return send_from_directory(FRONTEND_DIR, "privacy.html")
+    return _serve_frontend("privacy.html")
 
 
 @app.route("/terms")
 def terms_page():
-    return send_from_directory(FRONTEND_DIR, "terms.html")
+    return _serve_frontend("terms.html")
 
 
 @app.route("/admin/login")
 def admin_login_page():
-    return send_from_directory(FRONTEND_DIR, "admin_login.html")
+    return _serve_frontend("admin_login.html")
 
 @app.route("/admin/setup")
 def admin_setup_page():
-    return send_from_directory(FRONTEND_DIR, "admin_setup.html")
+    return _serve_frontend("admin_setup.html")
 
 @app.route("/admin/forgot")
 def admin_forgot_page():
-    return send_from_directory(FRONTEND_DIR, "admin_forgot.html")
+    return _serve_frontend("admin_forgot.html")
 
 @app.route("/admin/settings")
 def admin_settings_page():
-    return send_from_directory(FRONTEND_DIR, "admin_settings.html")
+    return _serve_frontend("admin_settings.html")
 
 @app.route("/admin/mpesa")
 def admin_mpesa_page():
-    return send_from_directory(FRONTEND_DIR, "admin_mpesa.html")
+    return _serve_frontend("admin_mpesa.html")
 
 @app.route("/admin/reports")
 def admin_reports_page():
-    return send_from_directory(FRONTEND_DIR, "admin_reports.html")
+    return _serve_frontend("admin_reports.html")
 
 @app.route("/admin/bulk_sms")
 def admin_bulk_sms_page():
-    return send_from_directory(FRONTEND_DIR, "admin_bulk_sms.html")
+    return _serve_frontend("admin_bulk_sms.html")
 
 
 # ═══════════════════════════════════════════════
