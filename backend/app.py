@@ -108,6 +108,30 @@ def _before_request_resolve_tenant():
     g.tenant = _resolve_tenant_from_request()
 
 
+# ═══════════════════════════════════════════════
+#  TENANTS — explicit query scoping (Phase 3b)
+# ═══════════════════════════════════════════════
+# The sqlalchemy-cloudflare-d1 dialect does not honour the ORM
+# `with_loader_criteria` event, so automatic scoping is impossible.
+# Every route that reads tenant data calls this helper at its entry
+# point instead. `first_or_404()` respects the filter (unlike
+# `get_or_404()`, which bypasses it via session.get).
+
+def _tenant_query(model):
+    """Base query on `model` scoped to the current request's tenant.
+
+    - Resolved tenant  -> WHERE tenant_id = <tid>
+    - Unknown tenant   -> WHERE tenant_id = -1 (returns nothing)
+    - No request ctx   -> unfiltered (background tasks, boot)
+    """
+    try:
+        t = g.tenant
+    except (RuntimeError, AttributeError):
+        return model.query
+    tid = t.id if t is not None else -1
+    return model.query.filter_by(tenant_id=tid)
+
+
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///simon_freshwater.db")
 
 # ─── Cloudflare D1 credentials (build the URL from parts if not already set) ───
@@ -684,7 +708,7 @@ def _build_report_snapshot(year: int, month: int) -> dict:
     month_names = ["January","February","March","April","May","June",
                    "July","August","September","October","November","December"]
 
-    consumers = Consumer.query.order_by(Consumer.cust_name.asc()).all()
+    consumers = _tenant_query(Consumer).order_by(Consumer.cust_name.asc()).all()
 
     total_consumers = len(consumers)
     active_consumers = sum(1 for c in consumers if c.is_active)
@@ -921,12 +945,12 @@ def billing_report_preview():
         return jsonify({"error": str(e)}), 500
 
     # ─── No-data guard ───
-    month_has_readings = (MeterReading.query
+    month_has_readings = (_tenant_query(MeterReading)
                           .filter(db.extract('year', MeterReading.reading_date) == year)
                           .filter(db.extract('month', MeterReading.reading_date) == month)
                           .first())
     month_has_payments = None
-    for p in PaymentLog.query.all():
+    for p in _tenant_query(PaymentLog).all():
         if p.created_at and p.created_at.year == year and p.created_at.month == month:
             month_has_payments = p
             break
@@ -1155,7 +1179,7 @@ def search_consumer():
         return jsonify({"results": []}), 400
 
     pattern = f"%{q}%"
-    consumers = (Consumer.query.filter(db.or_(
+    consumers = (_tenant_query(Consumer).filter(db.or_(
         Consumer.cust_name.ilike(pattern),
         Consumer.meter_acc_no.ilike(pattern),
     )).limit(20).all())
@@ -1331,7 +1355,7 @@ def _carry_forward_display(all_r, all_p=None):
 
 @app.route("/api/consumer/<int:consumer_id>")
 def get_consumer_details(consumer_id):
-    consumer = Consumer.query.get_or_404(consumer_id)
+    consumer = _tenant_query(Consumer).filter_by(id=consumer_id).first_or_404()
     all_r = (MeterReading.query.filter_by(consumer_id=consumer.id)
              .order_by(MeterReading.reading_date.asc(),
                        MeterReading.id.asc()).all())
@@ -1429,7 +1453,7 @@ def get_consumer_details(consumer_id):
 
 @app.route("/api/reading/<int:reading_id>")
 def get_reading_bill(reading_id):
-    reading = MeterReading.query.get_or_404(reading_id)
+    reading = _tenant_query(MeterReading).filter_by(id=reading_id).first_or_404()
     consumer = reading.consumer
     # Compute carry-forward display values for the selected reading
     _all_asc = (MeterReading.query
@@ -1585,7 +1609,7 @@ def download_statement(consumer_id):
     if u:
         return u
 
-    consumer = Consumer.query.get_or_404(consumer_id)
+    consumer = _tenant_query(Consumer).filter_by(id=consumer_id).first_or_404()
 
     # ── Readings, oldest first ──
     readings_asc = (MeterReading.query
