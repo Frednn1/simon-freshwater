@@ -132,14 +132,16 @@ def get_available_channels() -> list:
 
 
 # ─── Payment info (paybill + account for the current mode) ───
-def _payment_info(consumer) -> dict:
+def _payment_info(consumer, tenant=None) -> dict:
     """
     Return {'paybill': '...', 'account': '...'} for the current payment mode.
 
       PAYMENT_MODE=fixed  → FIXED_PAYBILL / FIXED_PAYMENT_ACCOUNT (temporary)
-      otherwise           → PAYBILL env + consumer.meter_acc_no (dynamic, preserved)
+      otherwise           → tenant.paybill if set, else PAYBILL env; account = meter no.
 
-    Switching modes is a single env-var change — no code deploy.
+    When `tenant` is provided and has a paybill, it takes precedence over the
+    global PAYBILL env in dynamic mode — so multi-tenant deployments each use
+    their own paybill without any env-var conflict.
     """
     mode = os.environ.get("PAYMENT_MODE", "").strip().lower()
     if mode == "fixed":
@@ -147,8 +149,13 @@ def _payment_info(consumer) -> dict:
             "paybill": os.environ.get("FIXED_PAYBILL", "").strip() or "—",
             "account": os.environ.get("FIXED_PAYMENT_ACCOUNT", "").strip() or "—",
         }
+    paybill = os.environ.get("PAYBILL", "XXXXXX")
+    if tenant is not None:
+        t_pb = (getattr(tenant, "paybill", None) or "").strip()
+        if t_pb:
+            paybill = t_pb
     return {
-        "paybill": os.environ.get("PAYBILL", "XXXXXX"),
+        "paybill": paybill,
         "account": consumer.meter_acc_no,
     }
 
@@ -295,11 +302,27 @@ def send_whatsapp(to_phone: str, message: str) -> dict:
 
 
 # ─── Message builder (unchanged) ───
-def build_bill_message(consumer, status_info: dict, channel: str = "sms") -> dict:
+def build_bill_message(consumer, status_info: dict, channel: str = "sms", tenant=None) -> dict:
     amount  = status_info.get("total_due", 0.0)
     label   = status_info.get("label", "Due")
     cons    = status_info.get("consumption_m3", 0.0)
-    pay     = _payment_info(consumer)
+    pay     = _payment_info(consumer, tenant=tenant)
+
+    # Brand name + location for the message header. With tenant info, the
+    # org name replaces the hardcoded "SIMON FRESH WATER" and the optional
+    # location field replaces the channel-specific defaults. Without tenant
+    # info, or when a field is unset, the current values are preserved.
+    _org_upper = "SIMON FRESH WATER"
+    _loc_sms   = "Gikambura"
+    _loc_wa    = "Kikuyu"
+    if tenant is not None:
+        _t_org = (getattr(tenant, "org_name", None) or "").strip()
+        if _t_org:
+            _org_upper = _t_org.upper()
+        _t_loc = (getattr(tenant, "location", None) or "").strip()
+        if _t_loc:
+            _loc_sms = _t_loc
+            _loc_wa  = _t_loc
 
     if channel == "sms":
         current_m3        = status_info.get("current_reading_m3", 0.0)
@@ -313,7 +336,7 @@ def build_bill_message(consumer, status_info: dict, channel: str = "sms") -> dic
         paid       = status_info.get("paid", 0.0)
 
         body = (
-            f"SIMON FRESH WATER - Gikambura\n"
+            f"{_org_upper} - {_loc_sms}\n"
             f"Water Bill Due: {bill_month}\n"
             f"--------------------------\n"
             f"Dear {consumer.cust_name},\n"
@@ -338,7 +361,7 @@ def build_bill_message(consumer, status_info: dict, channel: str = "sms") -> dic
         )
     else:
         body = (
-            f"SIMON FRESH WATER - Kikuyu\n"
+            f"{_org_upper} - {_loc_wa}\n"
             f"Dear {consumer.cust_name},\n"
             f"Your water bill ({consumer.meter_acc_no}) status: {label}. "
             f"Outstanding: KES {amount:,.2f}. "

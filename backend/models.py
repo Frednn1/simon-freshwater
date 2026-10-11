@@ -235,6 +235,7 @@ class Tenant(db.Model):
     email = db.Column(db.String(120))
     phone = db.Column(db.String(30))
     address = db.Column(db.String(255))
+    location = db.Column(db.String(60))
     paybill = db.Column(db.String(30))
     payment_account = db.Column(db.String(60))
     logo_key = db.Column(db.String(255))

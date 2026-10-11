@@ -737,6 +737,13 @@ def _ensure_all_columns():
             db.session.commit()
             app.logger.info("[Migration] Added receipt_json to payment_log")
 
+    if "tenants" in tables:
+        existing = {c["name"] for c in insp.get_columns("tenants")}
+        if "location" not in existing:
+            db.session.execute(text("ALTER TABLE tenants ADD COLUMN location VARCHAR(60) NULL"))
+            db.session.commit()
+            app.logger.warning("[Migration] Added location to tenants")
+
     # ─── Phase 3a: tenant_id on all data tables ───
     # Adds the column with a default of 1 so every existing row is
     # scoped to Simon Fresh Water (tenant id 1). Idempotent — skips
@@ -1699,7 +1706,7 @@ def download_water_bill(reading_id):
     # Previous Outstanding = Total − current bill's display balance
     prev_outstanding = round(total_outstanding - current_display_balance, 2)
 
-    _pay = _payment_info(consumer)
+    _pay = _payment_info(consumer, tenant=g.tenant)
     snapshot = {
         "bill_no":              f"{reading.id:06d}",
         "date":                 reading.reading_date.strftime("%d %b %Y"),
@@ -1983,7 +1990,7 @@ def send_whatsapp_bill(consumer_id):
     # Previous Outstanding = Total − current bill's display balance
     prev_outstanding = round(total_outstanding - current_display_balance, 2)
 
-    _pay = _payment_info(consumer)
+    _pay = _payment_info(consumer, tenant=g.tenant)
     snapshot = {
         "bill_no":              f"{reading.id:06d}",
         "date":                 reading.reading_date.strftime("%d %b %Y"),
@@ -2255,7 +2262,7 @@ def notify_consumer(consumer_id):
         wait = max(NOTIFY_COOLDOWN_SECONDS - elapsed, 1)
         return jsonify({"error": f"Please wait {wait}s before resending via {channel}."}), 429
 
-    payload = build_bill_message(consumer, info, channel=channel)
+    payload = build_bill_message(consumer, info, channel=channel, tenant=g.tenant)
 
     # ── Build recipients list — main + alt (if requested & available) ──
     recipients = []
