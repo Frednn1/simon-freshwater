@@ -492,6 +492,19 @@ def _total_uncleared_consumption(consumer) -> float:
     return round(total, 2)
 
 
+def _clear_session_preserve_tenant():
+    """Clear the session but keep __tenant_slug so the next request
+    still resolves the same tenant. Used by any code path that needs
+    to log out the admin (or fail-safe) without losing tenant context.
+    Without this, the browser would fall back to Simon Fresh Water's
+    login page after every logout/timeout/failed-admin check.
+    """
+    _slug = session.get("__tenant_slug")
+    session.clear()
+    if _slug:
+        session["__tenant_slug"] = _slug
+
+
 def _current_admin():
     """Return the authenticated AdminUser or None. Enforces idle timeout."""
     aid = session.get("admin_id")
@@ -505,12 +518,12 @@ def _current_admin():
         try:
             last_dt = datetime.fromisoformat(last)
         except (ValueError, TypeError):
-            session.clear()
+            _clear_session_preserve_tenant()
             return None
         if now - last_dt > timedelta(minutes=SESSION_IDLE_MINUTES):
             _uname = session.get("admin_username")
             _aid = session.get("admin_id")
-            session.clear()
+            _clear_session_preserve_tenant()
             if _uname:
                 _audit("session_timeout",
                        _admin_id=_aid, _admin_username=_uname)
@@ -518,7 +531,7 @@ def _current_admin():
 
     a = _tenant_query(AdminUser).filter_by(id=aid).first()
     if not a or not a.is_active:
-        session.clear()
+        _clear_session_preserve_tenant()
         return None
 
     # Roll the activity timestamp forward on each authenticated request
@@ -2744,11 +2757,24 @@ def admin_setup_route():
         tenant_id=_tid_setup,
     )
     if result.get("ok"):
+        # Preserve the tenant slug so the admin lands on their own portal
+        # after the setup flow completes. Fall back to the tenant id used
+        # to create the admin when the session has no slug yet.
+        _slug = session.get("__tenant_slug")
+        if not _slug:
+            try:
+                _t = Tenant.query.get(_tid_setup)
+                if _t:
+                    _slug = _t.slug
+            except Exception:
+                pass
         session.clear()
         session.permanent = True
         session["admin_id"] = result["admin_id"]
         session["admin_username"] = result["username"]
         session["last_activity"] = datetime.utcnow().isoformat()
+        if _slug:
+            session["__tenant_slug"] = _slug
         return jsonify({"ok": True, "username": result["username"]}), 200
     return jsonify(result), 400
 
@@ -3021,7 +3047,7 @@ def admin_update_password():
 
     _audit("update_settings_password")
 
-    session.clear()
+    _clear_session_preserve_tenant()
     return jsonify({"ok": True, "message": "Password updated. Please log in again."})
 
 
