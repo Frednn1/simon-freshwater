@@ -120,6 +120,45 @@
     </div>
   </div>
 
+  <!-- Create-Admin modal -->
+  <div id="adminModal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="adminModalTitle">🔑 Create First Admin</h3>
+        <button class="modal-close" onclick="closeAdminModal()" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="form-hint-small" style="margin-bottom:.75rem;">
+          This creates the tenant's first admin account. Share the login URL
+          <code>/admin/login?__tenant=&lt;slug&gt;</code> and the credentials with
+          the tenant owner.
+        </p>
+        <form id="adminForm" autocomplete="off">
+          <div class="form-row">
+            <label for="afUsername">Username *</label>
+            <input type="text" id="afUsername" required minlength="3" placeholder="e.g. kwc_admin">
+          </div>
+          <div class="form-row">
+            <label for="afPassword">Password * (min 8 chars)</label>
+            <input type="password" id="afPassword" required minlength="8" autocomplete="new-password">
+          </div>
+          <div class="form-row">
+            <label for="afPhone">Phone * (Kenyan)</label>
+            <input type="tel" id="afPhone" required placeholder="e.g. 0712345678">
+          </div>
+          <div class="form-row">
+            <label for="afEmail">Email</label>
+            <input type="email" id="afEmail" placeholder="e.g. owner@example.com">
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button id="adminCancelBtn" type="button" class="btn-secondary" onclick="closeAdminModal()">Cancel</button>
+        <button id="adminSaveBtn" type="submit" form="adminForm" class="btn-primary">Create Admin</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     let _tenants = [];
     let _editingId = null;
@@ -177,6 +216,8 @@
             </div>
             <div class="tenant-card-actions">
               <a class="btn-secondary btn-fit" href="/?__tenant=${encodeURIComponent(t.slug)}" target="_blank" rel="noopener">↗ Preview</a>
+              ${t.is_active ?
+                `<button class="btn-secondary btn-fit" type="button" onclick="openCreateAdmin(${t.id})">🔑 Create Admin</button>` : ''}
               <button class="btn-secondary btn-fit" type="button" onclick="openEditTenant(${t.id})">✏️ Edit</button>
               ${isDefault ? '' :
                 `<button class="btn-secondary btn-fit" type="button" onclick="toggleTenant(${t.id}, ${!t.is_active})">${toggleLabel}</button>
@@ -292,6 +333,52 @@
       } catch { alert('❌ Network error.'); }
     }
 
+    let _adminTenantId = null;
+
+    function openCreateAdmin(id) {
+      _adminTenantId = id;
+      document.getElementById('adminForm').reset();
+      document.getElementById('adminModal').classList.remove('hidden');
+    }
+    function closeAdminModal() {
+      document.getElementById('adminModal').classList.add('hidden');
+      _adminTenantId = null;
+    }
+    async function submitAdmin(e) {
+      e.preventDefault();
+      if (!_adminTenantId) return;
+      const btn = document.getElementById('adminSaveBtn');
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Creating…';
+      const body = {
+        username: document.getElementById('afUsername').value.trim().toLowerCase(),
+        password: document.getElementById('afPassword').value,
+        phone:    document.getElementById('afPhone').value.trim(),
+        email:    document.getElementById('afEmail').value.trim(),
+      };
+      try {
+        const r = await fetch(`/api/admin/tenants/${_adminTenantId}/create_admin`, {
+          method: 'POST', credentials: 'same-origin',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(body),
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) {
+          alert('✅ Admin created: ' + d.admin.username);
+          closeAdminModal();
+          await loadTenants();
+        } else {
+          alert('❌ ' + (d.error || 'Failed.'));
+        }
+      } catch {
+        alert('❌ Network error.');
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
+    }
+
+    window.openCreateAdmin = openCreateAdmin;
+    window.closeAdminModal = closeAdminModal;
     window.openEditTenant = openEditTenant;
     window.closeTenantModal = closeTenantModal;
     window.toggleTenant = toggleTenant;
@@ -299,6 +386,7 @@
 
     document.getElementById('openCreateBtn').addEventListener('click', openCreateTenant);
     document.getElementById('tenantForm').addEventListener('submit', submitTenant);
+    document.getElementById('adminForm').addEventListener('submit', submitAdmin);
     loadTenants();
   </script>
 </body>

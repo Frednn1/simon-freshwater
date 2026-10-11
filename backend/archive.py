@@ -74,6 +74,34 @@ def make_key(consumer_id: int, reading_id: int, sent_at: datetime,
     return f"{prefix}bills/{year}/{month}/consumer-{consumer_id}-reading-{reading_id}-{uniq}.pdf"
 
 
+def upload_object(key: str, data: bytes, content_type: str) -> bool:
+    """Upload an arbitrary object to R2 with an explicit content type."""
+    if not is_configured():
+        return False
+    try:
+        c = _client()
+        c.put_object(Bucket=R2_BUCKET, Key=key, Body=data,
+                     ContentType=content_type or "application/octet-stream")
+        return True
+    except Exception as e:
+        print(f"[Archive] R2 upload_object failed: {e}")
+        return False
+
+
+def download_object(key: str):
+    """Fetch an arbitrary object's bytes (and content type if available).
+    Returns (bytes, content_type) or (None, None)."""
+    if not is_configured() or not key:
+        return None, None
+    try:
+        c = _client()
+        obj = c.get_object(Bucket=R2_BUCKET, Key=key)
+        return obj["Body"].read(), obj.get("ContentType") or "application/octet-stream"
+    except Exception as e:
+        print(f"[Archive] R2 download_object failed: {e}")
+        return None, None
+
+
 def upload_pdf(key: str, data: bytes) -> bool:
     """Upload PDF bytes to R2. Returns True on success."""
     if not is_configured():

@@ -1005,6 +1005,59 @@ def admin_tenants_update(tenant_id):
     return jsonify({"ok": True, "tenant": _tenant_to_dict(t)})
 
 
+@app.route("/api/admin/tenants/<int:tenant_id>/create_admin", methods=["POST"])
+def admin_tenants_create_admin(tenant_id):
+    """Create the first admin for a tenant (super-admin only).
+    Bypasses ADMIN_SETUP_CODE — the super-admin is the authority."""
+    u = _require_super_admin()
+    if u: return u
+    if not _rate_limit("tenant_admin_create", 10, 60):
+        return _too_many(60)
+
+    t = Tenant.query.get(tenant_id)
+    if not t:
+        return jsonify({"error": "Tenant not found."}), 404
+    if not t.is_active:
+        return jsonify({"error": "Activate the tenant first."}), 400
+    if AdminUser.query.filter_by(tenant_id=t.id).count() > 0:
+        return jsonify({"error": "This tenant already has an admin."}), 409
+
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip().lower()
+    password = data.get("password") or ""
+    phone    = (data.get("phone") or "").strip()
+    email    = (data.get("email") or "").strip() or None
+
+    if len(username) < 3:
+        return jsonify({"error": "Username must be at least 3 characters."}), 400
+    if len(password) < 8:
+        return jsonify({"error": "Password must be at least 8 characters."}), 400
+    if not phone:
+        return jsonify({"error": "Phone is required for password reset."}), 400
+    if AdminUser.query.filter_by(username=username).first():
+        return jsonify({"error": "Username already taken."}), 409
+
+    admin = AdminUser(
+        tenant_id=t.id,
+        username=username,
+        password_hash=generate_password_hash(password),
+        phone=phone,
+        email=email,
+        is_active=True,
+        is_super=False,
+    )
+    db.session.add(admin)
+    db.session.commit()
+
+    _audit("tenant_admin_created",
+           target_type="tenant", target_id=t.id,
+           target_label=f"{t.org_name} · {t.slug}",
+           detail=f"admin_username={username}")
+
+    return jsonify({"ok": True,
+                    "admin": {"id": admin.id, "username": admin.username}}), 201
+
+
 @app.route("/api/admin/tenants/<int:tenant_id>/toggle_active", methods=["POST"])
 def admin_tenants_toggle_active(tenant_id):
     u = _require_super_admin()
