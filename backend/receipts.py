@@ -184,29 +184,78 @@ def _apply_replacements(page, pairs):
       1. Redact every placeholder's bbox with no fill.
       2. Insert the replacement text at each origin, preserving font size.
       3. For `_applied` placeholders with a positive value, use RED.
+      4. Reflow only lines where ALL placeholders are brand_* (the branding
+         footer) as a single string — fixes wide spacing after substitution.
     """
     if not pairs:
         return
     import fitz
 
+    # Group by y coordinate
+    groups = {}
     for ph, _text in pairs:
+        y_key = round(ph["origin"][1], 1)
+        groups.setdefault(y_key, []).append((ph, _text))
+
+    # Reflow only lines where ALL placeholders are brand_*
+    reflow_keys = set()
+    for k, g in groups.items():
+        if len(g) < 3:
+            continue
+        names = [p[0]["name"].lower() for p in g]
+        if all(n.startswith("brand_") for n in names):
+            reflow_keys.add(k)
+
+    # Redact non-reflow placeholders individually
+    for ph, _text in pairs:
+        y_key = round(ph["origin"][1], 1)
+        if y_key in reflow_keys:
+            continue
         page.add_redact_annot(fitz.Rect(ph["bbox"]), fill=None, text=None)
+
+    # Redact the full bbox for each reflow line
+    for y_key in reflow_keys:
+        g = sorted(groups[y_key], key=lambda p: p[0]["origin"][0])
+        x0 = g[0][0]["bbox"][0]
+        x1 = g[-1][0]["bbox"][2]
+        y0 = min(p[0]["bbox"][1] for p in g)
+        y1 = max(p[0]["bbox"][3] for p in g)
+        page.add_redact_annot(fitz.Rect(x0, y0, x1, y1),
+                              fill=None, text=None)
 
     page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
 
+    # Insert non-reflow placeholders (preserves the _applied RED rule)
     for ph, text in pairs:
+        y_key = round(ph["origin"][1], 1)
+        if y_key in reflow_keys:
+            continue
         if not text:
             continue
         name = ph["name"].lower()
         color = ph["color"]
         if name.endswith("_applied") and _is_positive_amount(text):
             color = RED
-        x, y = ph["origin"]
         page.insert_text(
-            (x, y), text,
+            (ph["origin"][0], ph["origin"][1]), text,
             fontsize=ph["size"],
             fontname="helv",
             color=color,
+        )
+
+    # Insert each reflow line as one continuous string
+    for y_key in reflow_keys:
+        g = sorted(groups[y_key], key=lambda p: p[0]["origin"][0])
+        parts = [str(txt) for _, txt in g if txt]
+        if not parts:
+            continue
+        line = " \u00b7 ".join(parts)
+        first_ph = g[0][0]
+        page.insert_text(
+            (first_ph["origin"][0], first_ph["origin"][1]), line,
+            fontsize=first_ph["size"],
+            fontname="helv",
+            color=first_ph["color"],
         )
 
 
