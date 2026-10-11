@@ -99,14 +99,17 @@ def _resolve_tenant_from_request():
         slug = (request.headers.get("X-Tenant-Slug") or "").strip()
         explicit = bool(slug)
     if not slug:
-        slug = _DEFAULT_TENANT_SLUG
+        slug = session.get("__tenant_slug") or _DEFAULT_TENANT_SLUG
     try:
         q = Tenant.query.filter_by(slug=slug)
-        if not explicit:
+        if not explicit and slug != (session.get("__tenant_slug") or ""):
             q = q.filter_by(is_active=True)
-        return q.first()
+        t = q.first()
     except Exception:
         return None
+    if explicit and t is not None:
+        session["__tenant_slug"] = t.slug
+    return t
 
 
 @app.before_request
@@ -881,6 +884,12 @@ def _tenant_to_dict(t):
 
 
 @app.route("/admin/tenants")
+@app.route("/api/tenant/reset", methods=["POST"])
+def tenant_reset():
+    session.pop("__tenant_slug", None)
+    return jsonify({"ok": True, "tenant": _DEFAULT_TENANT_SLUG})
+
+
 def admin_tenants_page():
     admin = _current_admin()
     if not admin:
