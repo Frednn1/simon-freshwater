@@ -543,6 +543,17 @@ def _require_admin():
     return jsonify({"error": "Unauthorized. Please log in."}), 401
 
 
+def _require_super_admin():
+    """Return an error response unless the current admin is a super admin.
+    Non-super admins receive 403; unauthenticated callers receive 401."""
+    admin = _current_admin()
+    if admin is None:
+        return jsonify({"error": "Unauthorized. Please log in."}), 401
+    if not getattr(admin, "is_super", False):
+        return jsonify({"error": "Forbidden. Super-admin only."}), 403
+    return None
+
+
 def _safe_filename(name: str) -> str:
     """Sanitize a consumer name for a download filename.
     'Sheila Wangu' -> 'SheilaWangu'. ASCII letters + digits only.
@@ -743,6 +754,23 @@ def _ensure_all_columns():
             db.session.execute(text("ALTER TABLE tenants ADD COLUMN location VARCHAR(60) NULL"))
             db.session.commit()
             app.logger.warning("[Migration] Added location to tenants")
+
+    if "admin_users" in tables:
+        existing = {c["name"] for c in insp.get_columns("admin_users")}
+        if "is_super" not in existing:
+            if dialect == "sqlite":
+                db.session.execute(text("ALTER TABLE admin_users ADD COLUMN is_super INTEGER NOT NULL DEFAULT 0"))
+            else:
+                db.session.execute(text("ALTER TABLE admin_users ADD COLUMN is_super BOOLEAN NOT NULL DEFAULT FALSE"))
+            db.session.commit()
+            # Promote the first admin (id=1) to super so the current owner
+            # retains access to tenant management.
+            if dialect == "sqlite":
+                db.session.execute(text("UPDATE admin_users SET is_super = 1 WHERE id = 1"))
+            else:
+                db.session.execute(text("UPDATE admin_users SET is_super = TRUE WHERE id = 1"))
+            db.session.commit()
+            app.logger.warning("[Migration] Added is_super to admin_users; promoted admin id=1")
 
     # ─── Phase 3a: tenant_id on all data tables ───
     # Adds the column with a default of 1 so every existing row is

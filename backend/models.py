@@ -119,6 +119,7 @@ class AdminUser(db.Model):
     phone = db.Column(db.String(20), nullable=False)
     email = db.Column(db.String(120))
     is_active = db.Column(db.Boolean, default=True, nullable=False)
+    is_super = db.Column(db.Boolean, nullable=False, default=False)
     failed_attempts = db.Column(db.Integer, default=0, nullable=False)
     locked_until = db.Column(db.DateTime)
     last_login_at = db.Column(db.DateTime)
