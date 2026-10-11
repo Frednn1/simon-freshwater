@@ -3636,28 +3636,6 @@ def admin_backup_run():
     return jsonify(result), 502
 
 
-@app.route("/api/admin/_debug/tenants", methods=["GET"])
-def _debug_tenants():
-    """TEMPORARY diagnostic — remove after Phase 1 verification."""
-    u = _require_admin()
-    if u: return u
-    rows = Tenant.query.order_by(Tenant.id.asc()).all()
-    return jsonify({
-        "count": len(rows),
-        "tenants": [{
-            "id": t.id,
-            "slug": t.slug,
-            "org_name": t.org_name,
-            "email": t.email,
-            "phone": t.phone,
-            "paybill": t.paybill,
-            "logo_key": t.logo_key,
-            "is_active": t.is_active,
-            "created_at": t.created_at.isoformat() if t.created_at else None,
-        } for t in rows],
-    })
-
-
 @app.route("/api/admin/consumers/all", methods=["GET"])
 def admin_consumers_all():
     """Return all consumers (active + terminated), alphabetically.
