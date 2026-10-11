@@ -388,13 +388,22 @@ def _r2_client():
     )
 
 
-def _r2_key(filename: str) -> str:
-    """Fixed object key — every backup overwrites the previous one for this env.
+def _r2_key(filename: str, tenant_slug: str = None) -> str:
+    """Fixed object key — every backup overwrites the previous one for this
+    (env, tenant) pair. The dated filename is only shown in the UI.
 
-    The path is prefixed by BACKUP_ENV (default 'production') so staging and
-    production keep separate files. The dated filename is only shown in the UI.
+    Default tenant (Simon Fresh Water, slug 'simon-freshwater' or None)
+    keeps the original path — no migration, existing files unchanged:
+        backups/{env}/SimonFreshWater_Backup_LATEST.xlsx
+
+    Other tenants get a slug subfolder so their backup never overwrites
+    another tenant's file:
+        backups/{env}/{slug}/SimonFreshWater_Backup_LATEST.xlsx
     """
     env = (os.environ.get("BACKUP_ENV", "production").strip().lower() or "production")
+    slug = (tenant_slug or "").strip()
+    if slug and slug != "simon-freshwater":
+        return f"backups/{env}/{slug}/SimonFreshWater_Backup_LATEST.xlsx"
     return f"backups/{env}/SimonFreshWater_Backup_LATEST.xlsx"
 
 
@@ -402,7 +411,7 @@ def _r2_configured() -> bool:
     return bool(R2_ACCOUNT_ID and R2_ACCESS_KEY and R2_SECRET_KEY and R2_BUCKET)
 
 
-def upload_to_r2(filename: str, data: bytes) -> dict:
+def upload_to_r2(filename: str, data: bytes, tenant_slug: str = None) -> dict:
     """Upload the .xlsx bytes to R2 under the backups/ prefix.
     Returns {'ok', 'key', 'bucket', 'filename', 'size_bytes'} or {'ok': False, 'error'}."""
     if not _r2_configured():
@@ -410,7 +419,7 @@ def upload_to_r2(filename: str, data: bytes) -> dict:
                 "error": "R2 is not configured on this service "
                          "(need R2_ACCOUNT_ID, R2_ACCESS_KEY, R2_SECRET_KEY, R2_BUCKET)."}
 
-    key = _r2_key(filename)
+    key = _r2_key(filename, tenant_slug=tenant_slug)
     try:
         c = _r2_client()
         c.put_object(
@@ -432,8 +441,13 @@ def upload_to_r2(filename: str, data: bytes) -> dict:
     }
 
 
-def build_and_upload() -> dict:
-    """Build the workbook and upload it to R2. Returns metadata dict."""
+def build_and_upload(tenant_slug: str = None) -> dict:
+    """Build the workbook and upload it to R2. Returns metadata dict.
+
+    tenant_slug — passed through from the request context so each tenant's
+    backup lands under its own key. Default tenant (None or 'simon-freshwater')
+    keeps the original path.
+    """
     filename = f"SimonFreshWater_Backup_{_now_nbo().strftime('%Y-%m-%d_%H%M')}.xlsx"
 
     try:
@@ -441,4 +455,4 @@ def build_and_upload() -> dict:
     except Exception as e:
         return {"ok": False, "error": f"Workbook build failed: {e}"}
 
-    return upload_to_r2(filename, data)
+    return upload_to_r2(filename, data, tenant_slug=tenant_slug)

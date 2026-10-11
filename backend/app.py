@@ -4291,7 +4291,7 @@ def admin_backup_run():
                         "error": "R2 is not configured on this service."}), 500
 
     try:
-        result = backup.build_and_upload()
+        result = backup.build_and_upload(tenant_slug=_tenant_slug())
     except Exception as e:
         app.logger.exception("[Backup] run failed")
         _audit("backup_run_failed", detail=str(e)[:200])
