@@ -2769,6 +2769,19 @@ def admin_login_route():
                detail=f"attempted_username={(data.get('username') or '')[:40]}")
         return jsonify({"ok": False, "error": result["error"]}), 401
 
+    # Compute the tenant slug the session must carry after login.
+    # The admin's own tenant_id is the definitive source — this makes the
+    # flow robust even if the login POST arrives without ?__tenant=.
+    _admin_slug = _DEFAULT_TENANT_SLUG
+    try:
+        _admin_row = AdminUser.query.get(result["admin_id"])
+        if _admin_row and _admin_row.tenant_id:
+            _t_row = Tenant.query.get(_admin_row.tenant_id)
+            if _t_row:
+                _admin_slug = _t_row.slug
+    except Exception:
+        pass
+
     # ── 2FA branch ──
     two_fa_on = os.environ.get("ADMIN_2FA_ENABLED", "false").strip().lower() in ("1","true","yes","on")
     if two_fa_on:
@@ -2786,6 +2799,7 @@ def admin_login_route():
         session.permanent = True
         session["pending_2fa_admin_id"] = admin.id
         session["last_activity"] = datetime.utcnow().isoformat()
+        session["__tenant_slug"] = _admin_slug
 
         return jsonify({
             "ok": True,
@@ -2799,6 +2813,7 @@ def admin_login_route():
     session["admin_id"] = result["admin_id"]
     session["admin_username"] = result["username"]
     session["last_activity"] = datetime.utcnow().isoformat()
+    session["__tenant_slug"] = _admin_slug
     _audit("login")
     return jsonify({"ok": True, "username": result["username"]}), 200
 
