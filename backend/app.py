@@ -140,6 +140,20 @@ def _write_tenant_id():
     return t.id if t is not None else -1
 
 
+def _audit_tenant_id():
+    """Tenant id to stamp on an audit row.
+    - 1 when there is no request context (boot / background) — the default
+    - <tid> when the request resolved a tenant
+    - -1 when the request context exists but the tenant did not resolve
+      (audit writes should then be flagged rather than attributed to 1)
+    """
+    try:
+        t = g.tenant
+    except (RuntimeError, AttributeError):
+        return 1
+    return t.id if t is not None else -1
+
+
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///simon_freshwater.db")
 
 # ─── Cloudflare D1 credentials (build the URL from parts if not already set) ───
@@ -494,6 +508,7 @@ def _audit(action, target_type=None, target_id=None, target_label=None,
             return v[:n]
 
         row = AdminAuditLog(
+            tenant_id=_audit_tenant_id(),
             admin_id=aid,
             admin_username=_clean(uname, 60) or "unknown",
             action=_clean(action, 40) or "unknown",
@@ -3265,7 +3280,7 @@ def admin_bulk_sms_overdue():
     if include_due:
         allowed.add("DUE")
 
-    consumers = (Consumer.query
+    consumers = (_tenant_query(Consumer)
                  .filter_by(is_active=True)
                  .order_by(Consumer.cust_name.asc())
                  .all())
@@ -3320,7 +3335,7 @@ def admin_bulk_sms_send():
     items = []
     missing = []
     for cid in ids:
-        c = Consumer.query.get(cid)
+        c = _tenant_query(Consumer).filter_by(id=cid).first()
         if not c or not c.is_active:
             missing.append(cid)
             continue
@@ -3563,7 +3578,7 @@ def admin_mpesa_simulate():
 def admin_mpesa_payments():
     u = _require_admin()
     if u: return u
-    logs = (MpesaLog.query
+    logs = (_tenant_query(MpesaLog)
             .order_by(MpesaLog.received_at.desc())
             .limit(50)
             .all())
@@ -3683,7 +3698,7 @@ def admin_audit_list():
     days = max(1, min(days, 7))
 
     cutoff = datetime.utcnow() - timedelta(days=days)
-    rows = (AdminAuditLog.query
+    rows = (_tenant_query(AdminAuditLog)
             .filter(AdminAuditLog.created_at >= cutoff)
             .order_by(AdminAuditLog.created_at.desc())
             .limit(500)
@@ -3767,7 +3782,7 @@ def admin_consumers_all():
     if not _rate_limit("consumers_all", 30, 60):
         return _too_many(60)
 
-    consumers = (Consumer.query
+    consumers = (_tenant_query(Consumer)
                  .order_by(db.func.lower(Consumer.cust_name).asc())
                  .all())
 
@@ -3798,7 +3813,7 @@ def admin_consumers_search():
         return jsonify({"results": []})
 
     pattern = f"%{q}%"
-    consumers = (Consumer.query.filter(db.or_(
+    consumers = (_tenant_query(Consumer).filter(db.or_(
         Consumer.cust_name.ilike(pattern),
         Consumer.meter_acc_no.ilike(pattern),
         Consumer.contact.ilike(pattern),
