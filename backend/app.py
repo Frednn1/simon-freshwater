@@ -9,7 +9,7 @@ from time import time as _time_now
 
 from flask import (
     Flask, request, jsonify, send_from_directory, session, send_file,
-    redirect, render_template_string,
+    redirect, render_template_string, g,
 )
 from flask_cors import CORS
 from sqlalchemy import text, inspect
@@ -57,6 +57,55 @@ NOTIFY_COOLDOWN_SECONDS = int(os.environ.get("NOTIFY_COOLDOWN_SECONDS", "300"))
 
 app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path="")
 CORS(app, supports_credentials=True)
+
+
+# ═══════════════════════════════════════════════
+#  TENANTS — request-scoped tenant resolution (Phase 2)
+# ═══════════════════════════════════════════════
+# Phase 2 installs the plumbing: every request resolves a Tenant and
+# stores it in `g.tenant`. Nothing reads g.tenant yet, so behaviour is
+# unchanged. The routing strategy (subdomain vs path prefix) is a
+# separate decision, deferred to a later phase.
+#
+# Resolution order:
+#   1. `?__tenant=<slug>` query param   — dev/testing
+#   2. `X-Tenant-Slug` request header   — API clients
+#   3. Fallback to the default tenant   — Simon Fresh Water
+
+_DEFAULT_TENANT_SLUG = "simon-freshwater"
+
+# Path prefixes that never need tenant context (pure static assets)
+_STATIC_PATH_EXACT = {
+    "/style.css", "/app.js", "/favicon.ico", "/manifest.webmanifest",
+    "/favicon-32x32.png", "/favicon-16x16.png",
+    "/apple-touch-icon.png", "/icon-192.png", "/icon-512.png",
+}
+_STATIC_PATH_PREFIXES = ("/images/",)
+
+
+def _resolve_tenant_from_request():
+    """Return the Tenant for the current request, or None if not found.
+    Never raises — a lookup failure falls back to None and the request
+    proceeds without tenant context."""
+    slug = (request.args.get("__tenant") or "").strip()
+    if not slug:
+        slug = (request.headers.get("X-Tenant-Slug") or "").strip()
+    if not slug:
+        slug = _DEFAULT_TENANT_SLUG
+    try:
+        return (Tenant.query
+                .filter_by(slug=slug, is_active=True)
+                .first())
+    except Exception:
+        return None
+
+
+@app.before_request
+def _before_request_resolve_tenant():
+    p = request.path or ""
+    if p in _STATIC_PATH_EXACT or p.startswith(_STATIC_PATH_PREFIXES):
+        return
+    g.tenant = _resolve_tenant_from_request()
 
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///simon_freshwater.db")
@@ -3634,6 +3683,21 @@ def admin_backup_run():
     _audit("backup_run_failed",
            detail=(result.get("error") or "")[:200])
     return jsonify(result), 502
+
+
+@app.route("/api/admin/_debug/tenant-context", methods=["GET"])
+def _debug_tenant_context():
+    """TEMPORARY — returns the request-scoped tenant. Remove after Phase 2 verification."""
+    u = _require_admin()
+    if u: return u
+    t = getattr(g, "tenant", None)
+    return jsonify({
+        "resolved": t is not None,
+        "slug": t.slug if t else None,
+        "org_name": t.org_name if t else None,
+        "via": "query" if request.args.get("__tenant") else
+               "header" if request.headers.get("X-Tenant-Slug") else "default",
+    })
 
 
 @app.route("/api/admin/consumers/all", methods=["GET"])
