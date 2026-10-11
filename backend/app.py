@@ -238,11 +238,11 @@ def _serve_template(filename):
 def _serve_frontend(filename):
     """Serve a frontend HTML file with tenant-brand substitution.
 
-    The HTML files carry {{brand_*}} tokens in place of hardcoded brand
-    strings. This helper reads the file and replaces each token with the
-    current tenant's value. For tenant 1 (Simon Fresh Water), the
-    substituted values match the original hardcoded strings, so the
-    rendered output is unchanged.
+    Rewritten to use _brand_context() as the single source of truth, so
+    any token added to that helper is automatically substituted on every
+    frontend page. For tenant 1 (Simon Fresh Water), the substituted
+    values match the original hardcoded strings, so the rendered output
+    is unchanged.
     """
     path = os.path.join(FRONTEND_DIR, filename)
     if not os.path.exists(path):
@@ -250,33 +250,8 @@ def _serve_frontend(filename):
     with open(path, "r", encoding="utf-8") as f:
         html = f.read()
 
-    t = getattr(g, "tenant", None)
-    if t is None:
-        try:
-            t = Tenant.query.filter_by(slug="simon-freshwater").first()
-        except Exception:
-            t = None
-
-    brand_name  = t.org_name if t and t.org_name else "Simon Fresh Water"
-    brand_phone = t.phone    if t and t.phone    else "+254 700 719311"
-    brand_email = t.email    if t and t.email    else "simonchege84@gmail.com"
-    brand_tag   = t.tagline  if t and t.tagline  else "Pure, Reliable & Sustainable Water Supply"
-    brand_addr  = t.address  if t and t.address  else "Kikuyu, Kenya"
-
-    logo = (t.logo_key if t and t.logo_key else "images/SimonW_Logo.png").strip()
-    if not logo.startswith("/"):
-        logo = "/" + logo
-
-    subs = {
-        "{{brand_name}}":     brand_name,
-        "{{brand_phone}}":    brand_phone,
-        "{{brand_email}}":    brand_email,
-        "{{brand_tagline}}":  brand_tag,
-        "{{brand_address}}":  brand_addr,
-        "{{brand_logo_url}}": logo,
-    }
-    for token, value in subs.items():
-        html = html.replace(token, value)
+    for token, value in _brand_context().items():
+        html = html.replace("{{" + token + "}}", value)
 
     return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
