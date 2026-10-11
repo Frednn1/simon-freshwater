@@ -44,6 +44,17 @@ function badge(status, label) {
 }
 
 /* ─── Global state ─── */
+function _tenantLoginSuffix() {
+  /* Return '&__tenant=<slug>' (or '') for the current page's tenant,
+     so login redirects keep the user on the correct portal. */
+  try {
+    const p = new URLSearchParams(location.search);
+    const t = p.get('__tenant');
+    if (t) return '&__tenant=' + encodeURIComponent(t);
+  } catch (_) {}
+  return '';
+}
+
 let AUTH_STATE = { authenticated: false, username: null, setup_required: false };
 let CURRENT_CONSUMER = null;
 let CURRENT_PAYMENTS = [];
@@ -71,7 +82,7 @@ function startSessionIdleWatch() {
         // Session expired (idle) or was revoked. Bounce to login.
         AUTH_STATE = { authenticated: false, username: null, setup_required: false };
         const next = encodeURIComponent(location.pathname + location.search);
-        location.href = `/admin/login?next=${next}`;
+        location.href = `/admin/login?next=${next}${_tenantLoginSuffix()}`;
       }
     } catch { /* network blip — ignore, retry next interval */ }
   }, 60000);
@@ -79,7 +90,7 @@ function startSessionIdleWatch() {
 
 function requireLoginRedirect() {
   const next = encodeURIComponent(location.pathname + location.search);
-  location.href = `/admin/login?next=${next}`;
+  location.href = `/admin/login?next=${next}${_tenantLoginSuffix()}`;
 }
 
 async function adminFetch(url, options = {}) {
@@ -176,7 +187,7 @@ function renderAuthTab() {
     icon.textContent = '🔐';
     btn.onclick = () => {
       const next = encodeURIComponent(location.pathname + location.search);
-      location.href = `/admin/login?next=${next}`;
+      location.href = `/admin/login?next=${next}${_tenantLoginSuffix()}`;
     };
   }
 }

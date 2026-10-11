@@ -85,31 +85,57 @@ _STATIC_PATH_PREFIXES = ("/images/",)
 
 def _resolve_tenant_from_request():
     """Return the Tenant for the current request, or None if not found.
-    Never raises — a lookup failure falls back to None and the request
-    proceeds without tenant context.
+    Never raises — a lookup failure falls back to None.
 
-    An explicit slug (from ?__tenant= or X-Tenant-Slug) resolves whether
-    or not the tenant is active, so operators can preview an inactive
-    tenant's branding before activating it. The default fallback still
-    requires an active tenant.
+    Rules (this is the security boundary — do not weaken):
+
+      • Authenticated admin → session["__tenant_slug"] is authoritative.
+        The URL param is IGNORED so a logged-in admin cannot be moved to
+        another tenant by a shared link.
+
+      • Anonymous + ?__tenant=<slug> → use the URL slug for THIS request
+        only. Never write to session. Lets /admin/login?__tenant=x render
+        tenant x's login page without pinning the visitor to x.
+
+      • Anonymous, no param → default tenant (must be active).
     """
-    slug = (request.args.get("__tenant") or "").strip()
-    explicit = bool(slug)
-    if not slug:
-        slug = (request.headers.get("X-Tenant-Slug") or "").strip()
-        explicit = bool(slug)
-    if not slug:
+    aid = session.get("admin_id")
+
+    # ── Authenticated admin: session is authoritative ──
+    if aid:
         slug = session.get("__tenant_slug") or _DEFAULT_TENANT_SLUG
+        try:
+            return Tenant.query.filter_by(slug=slug).first()
+        except Exception:
+            return None
+
+    # ── Anonymous visitor: preview override (super-admin only) ──
+    # `?__preview=<slug>` bypasses the session for one request so a
+    # super-admin can preview any tenant without leaving their own.
+    preview_slug = (request.args.get("__preview") or "").strip()
+    if preview_slug:
+        try:
+            return Tenant.query.filter_by(slug=preview_slug).first()
+        except Exception:
+            return None
+
+    # ── Anonymous visitor — no persistence ──
+    url_slug = (request.args.get("__tenant") or "").strip()
+    if not url_slug:
+        url_slug = (request.headers.get("X-Tenant-Slug") or "").strip()
+    if url_slug:
+        try:
+            return Tenant.query.filter_by(slug=url_slug).first()
+        except Exception:
+            return None
+
+    # ── Anonymous visitor, no param — default tenant (must be active) ──
     try:
-        q = Tenant.query.filter_by(slug=slug)
-        if not explicit and slug != (session.get("__tenant_slug") or ""):
-            q = q.filter_by(is_active=True)
-        t = q.first()
+        return (Tenant.query
+                .filter_by(slug=_DEFAULT_TENANT_SLUG, is_active=True)
+                .first())
     except Exception:
         return None
-    if explicit and t is not None:
-        session["__tenant_slug"] = t.slug
-    return t
 
 
 @app.before_request

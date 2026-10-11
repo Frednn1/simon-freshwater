@@ -59,6 +59,11 @@
   </main>
 
   <script>
+    const _params = new URLSearchParams(location.search);
+    const TENANT_QS = _params.get('__tenant')
+      ? '?__tenant=' + encodeURIComponent(_params.get('__tenant'))
+      : '';
+
     document.getElementById('setupForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('setupBtn');
@@ -68,7 +73,7 @@
       msg.classList.add('hidden');
 
       try {
-        const r = await fetch('/api/admin/setup', {
+        const r = await fetch('/api/admin/setup' + TENANT_QS, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

@@ -70,6 +70,11 @@
   </main>
 
   <script>
+    const _fparams = new URLSearchParams(location.search);
+    const TENANT_QS = _fparams.get('__tenant')
+      ? '?__tenant=' + encodeURIComponent(_fparams.get('__tenant'))
+      : '';
+
     // localStorage survives Android Chrome killing the tab.
     const LS_TOKEN_KEY  = 'sfw_pwResetToken';
     const LS_EXPIRY_KEY = 'sfw_pwResetExpiry';
@@ -150,7 +155,7 @@
       btn.disabled = true; btn.textContent = 'Sending…';
       hideMsg();
       try {
-        const r = await fetch('/api/admin/forgot', {
+        const r = await fetch('/api/admin/forgot' + TENANT_QS, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ identifier: document.getElementById('identifier').value.trim() }),
@@ -181,7 +186,7 @@
       btn.disabled = true; btn.textContent = 'Resetting…';
       hideMsg();
       try {
-        const r = await fetch('/api/admin/reset', {
+        const r = await fetch('/api/admin/reset' + TENANT_QS, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

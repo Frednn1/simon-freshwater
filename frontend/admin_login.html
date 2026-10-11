@@ -68,6 +68,12 @@
   <script>
     const params = new URLSearchParams(location.search);
     const NEXT = params.get('next') || '/';
+    // Propagate ?__tenant= to every auth fetch so anonymous requests
+    // resolve the right tenant without needing session persistence.
+    const TENANT_QS = (() => {
+      const t = params.get('__tenant');
+      return t ? '?__tenant=' + encodeURIComponent(t) : '';
+    })();
 
     const loginForm = document.getElementById('loginForm');
     const otpForm   = document.getElementById('otpForm');
@@ -89,7 +95,7 @@
       btn.disabled = true; btn.textContent = 'Signing in…';
       hideMsg();
       try {
-        const r = await fetch('/api/admin/login', {
+        const r = await fetch('/api/admin/login' + TENANT_QS, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -125,7 +131,7 @@
       btn.disabled = true; btn.textContent = 'Verifying…';
       hideMsg();
       try {
-        const r = await fetch('/api/admin/login/verify-otp', {
+        const r = await fetch('/api/admin/login/verify-otp' + TENANT_QS, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ otp: document.getElementById('otpCode').value.trim() }),
@@ -149,7 +155,7 @@
       e.preventDefault();
       hideMsg();
       try {
-        const r = await fetch('/api/admin/login/resend-otp', { method: 'POST' });
+        const r = await fetch('/api/admin/login/resend-otp' + TENANT_QS, { method: 'POST' });
         const d = await r.json();
         if (r.ok && d.ok) {
           showMsg('success', d.message || 'Code resent.');
