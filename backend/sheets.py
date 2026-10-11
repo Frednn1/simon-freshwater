@@ -27,18 +27,23 @@ def _get_client():
     return gspread.authorize(creds)
 
 
-def sync_consumer_to_sheet(consumer, readings):
+def sync_consumer_to_sheet(consumer, readings, spreadsheet_name=None):
     """
     Create/update a worksheet tab named after the consumer's Cust. Name.
     Columns: Full Name | Acc. Name | Contact | Address | Reading (M3) | Date | Amount | Paid | Balance.
     Safe to call repeatedly — clears and rewrites the tab.
+
+    spreadsheet_name — optional override. Used by multi-tenant callers to
+    target a per-tenant Google Sheet. When omitted, SPREADSHEET_NAME is used.
     """
     client = _get_client()
 
+    name = spreadsheet_name or SPREADSHEET_NAME
+
     try:
-        spreadsheet = client.open(SPREADSHEET_NAME)
+        spreadsheet = client.open(name)
     except gspread.SpreadsheetNotFound:
-        spreadsheet = client.create(SPREADSHEET_NAME)
+        spreadsheet = client.create(name)
         try:
             spreadsheet.share(None, perm_type="anyone", role="reader")
         except Exception:

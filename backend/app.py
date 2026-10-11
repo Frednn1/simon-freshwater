@@ -154,6 +154,20 @@ def _audit_tenant_id():
     return t.id if t is not None else -1
 
 
+def _tenant_sheet_name():
+    """Google Sheet name to use for the current tenant.
+    - None → use the module default (Simon Fresh Water's existing sheet)
+    - "<slug> - Consumer Records" → separate sheet for other tenants
+    """
+    try:
+        t = g.tenant
+    except (RuntimeError, AttributeError):
+        return None
+    if t is None or t.slug == "simon-freshwater":
+        return None
+    return f"{t.slug} - Consumer Records"
+
+
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///simon_freshwater.db")
 
 # ─── Cloudflare D1 credentials (build the URL from parts if not already set) ───
@@ -507,8 +521,9 @@ def _audit(action, target_type=None, target_id=None, target_label=None,
             v = str(v).replace("\x00", "")
             return v[:n]
 
+        _tid = _audit_tenant_id()
         row = AdminAuditLog(
-            tenant_id=_audit_tenant_id(),
+            tenant_id=_tid,
             admin_id=aid,
             admin_username=_clean(uname, 60) or "unknown",
             action=_clean(action, 40) or "unknown",
@@ -528,7 +543,7 @@ def _audit(action, target_type=None, target_id=None, target_label=None,
             if (_audit_last_purge is None or
                 (now - _audit_last_purge).total_seconds() > AUDIT_PURGE_INTERVAL_SEC):
                 _audit_last_purge = now
-                _audit_purge_run()
+                _audit_purge_run(tenant_id=_tid)
     except Exception:
         try:
             app.logger.exception("[Audit] insert failed")
@@ -537,18 +552,23 @@ def _audit(action, target_type=None, target_id=None, target_label=None,
             pass
 
 
-def _audit_purge_run():
-    """Delete audit rows older than AUDIT_RETENTION_DAYS. Never raises."""
+def _audit_purge_run(tenant_id=None):
+    """Delete audit rows older than AUDIT_RETENTION_DAYS for one tenant.
+    Never raises. tenant_id must be a positive int — otherwise returns 0
+    (fails closed; refuses to purge across tenants)."""
+    if tenant_id is None or tenant_id < 1:
+        return 0
     try:
         cutoff = datetime.utcnow() - timedelta(days=AUDIT_RETENTION_DAYS)
         deleted = (AdminAuditLog.query
+                   .filter(AdminAuditLog.tenant_id == tenant_id)
                    .filter(AdminAuditLog.created_at < cutoff)
                    .delete(synchronize_session=False))
         db.session.commit()
         if deleted:
             app.logger.info(
-                f"[Audit] purge removed {deleted} rows older than "
-                f"{AUDIT_RETENTION_DAYS} days"
+                f"[Audit] purge removed {deleted} rows for tenant "
+                f"{tenant_id} older than {AUDIT_RETENTION_DAYS} days"
             )
         return deleted
     except Exception:
@@ -1940,6 +1960,7 @@ def send_whatsapp_bill(consumer_id):
                     key = None
             row = SentBillArchive(
                 consumer_id=consumer.id,
+                tenant_id=consumer.tenant_id,
                 reading_id=reading.id,
                 channel="whatsapp",
                 kind="bill_pdf",
@@ -2046,7 +2067,8 @@ def submit_reading():
         latest = (MeterReading.query.filter_by(consumer_id=consumer.id)
                   .order_by(MeterReading.reading_date.desc(),
                             MeterReading.id.desc()).limit(5).all())
-        sync_consumer_to_sheet(consumer, latest)
+        sync_consumer_to_sheet(consumer, latest,
+                               spreadsheet_name=_tenant_sheet_name())
     except Exception as e:
         app.logger.warning(f"[Sheets sync] {e}")
 
@@ -2181,6 +2203,7 @@ def notify_consumer(consumer_id):
         for r in results:
             arch_row = SentBillArchive(
                 consumer_id=consumer.id,
+                tenant_id=consumer.tenant_id,
                 reading_id=None,
                 channel=channel,
                 kind="reminder_text",
@@ -3732,7 +3755,7 @@ def admin_audit_purge():
         return _too_many(300)
 
     _audit_last_purge = datetime.utcnow()   # suppress opportunistic purge
-    deleted = _audit_purge_run()
+    deleted = _audit_purge_run(tenant_id=_audit_tenant_id())
     _audit("purge_audit", detail=f"deleted={deleted}")
     return jsonify({"ok": True, "deleted": deleted})
 
