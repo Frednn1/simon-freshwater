@@ -51,13 +51,27 @@ def _client():
     )
 
 
-def make_key(consumer_id: int, reading_id: int, sent_at: datetime) -> str:
-    """Namespaced R2 object key, e.g.
-    bills/2026/10/consumer-42-reading-187-a3f9c2e1.pdf"""
+def make_key(consumer_id: int, reading_id: int, sent_at: datetime,
+             tenant_slug: str = None) -> str:
+    """Namespaced R2 object key.
+
+    Tenant 1 (slug 'simon-freshwater' or None) keeps the original layout:
+        bills/2026/10/consumer-42-reading-187-a3f9c2e1.pdf
+
+    Other tenants get a slug prefix so their objects live in a separate
+    virtual folder inside the same bucket:
+        <slug>/bills/2026/10/consumer-42-reading-187-a3f9c2e1.pdf
+
+    Existing keys are never rewritten — callers fetch by the stored
+    storage_key verbatim, so adding this prefix is safe.
+    """
     year = sent_at.strftime("%Y")
     month = sent_at.strftime("%m")
     uniq = uuid.uuid4().hex[:8]
-    return f"bills/{year}/{month}/consumer-{consumer_id}-reading-{reading_id}-{uniq}.pdf"
+    prefix = ""
+    if tenant_slug and tenant_slug != "simon-freshwater":
+        prefix = f"{tenant_slug}/"
+    return f"{prefix}bills/{year}/{month}/consumer-{consumer_id}-reading-{reading_id}-{uniq}.pdf"
 
 
 def upload_pdf(key: str, data: bytes) -> bool:

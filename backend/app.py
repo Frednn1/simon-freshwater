@@ -168,6 +168,16 @@ def _tenant_sheet_name():
     return f"{t.slug} - Consumer Records"
 
 
+def _tenant_slug():
+    """Current tenant slug for R2 key prefixing.
+    Returns None when there is no request context (background / boot)."""
+    try:
+        t = g.tenant
+    except (RuntimeError, AttributeError):
+        return None
+    return t.slug if t is not None else None
+
+
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///simon_freshwater.db")
 
 # ─── Cloudflare D1 credentials (build the URL from parts if not already set) ───
@@ -1955,7 +1965,8 @@ def send_whatsapp_bill(consumer_id):
         for r in results:
             key = None
             if r["ok"] and archive.is_configured():
-                key = archive.make_key(consumer.id, reading.id, sent_at)
+                key = archive.make_key(consumer.id, reading.id, sent_at,
+                                            tenant_slug=_tenant_slug())
                 if not archive.upload_pdf(key, pdf_bytes):
                     key = None
             row = SentBillArchive(
