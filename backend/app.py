@@ -132,6 +132,14 @@ def _tenant_query(model):
     return model.query.filter_by(tenant_id=tid)
 
 
+def _write_tenant_id():
+    """Tenant id to stamp on a new row.
+    -1 means no tenant resolved — the caller should reject the request
+    rather than accidentally writing into tenant 1."""
+    t = getattr(g, "tenant", None)
+    return t.id if t is not None else -1
+
+
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///simon_freshwater.db")
 
 # ─── Cloudflare D1 credentials (build the URL from parts if not already set) ───
@@ -1524,7 +1532,7 @@ def download_water_bill(reading_id):
     if u:
         return u
 
-    reading = MeterReading.query.get_or_404(reading_id)
+    reading = _tenant_query(MeterReading).filter_by(id=reading_id).first_or_404()
     consumer = reading.consumer
 
     # Consumption for this specific reading
@@ -1799,7 +1807,7 @@ def send_whatsapp_bill(consumer_id):
     data = request.get_json(silent=True) or {}
     send_to_alt = bool(data.get("send_to_alt"))
 
-    consumer = Consumer.query.get_or_404(consumer_id)
+    consumer = _tenant_query(Consumer).filter_by(id=consumer_id).first_or_404()
     if not consumer.is_active:
         return jsonify({"error": "Consumer is terminated. No reminders sent."}), 403
     if not consumer.contact:
@@ -1988,7 +1996,7 @@ def submit_reading():
     if reading_m3 < 0 or reading_m3 > 1_000_000:
         return jsonify({"error": "reading_m3 out of range"}), 400
 
-    consumer = Consumer.query.get(consumer_id)
+    consumer = _tenant_query(Consumer).filter_by(id=consumer_id).first()
     if not consumer:
         return jsonify({"error": "Consumer not found"}), 404
     if not consumer.is_active:
@@ -2014,6 +2022,7 @@ def submit_reading():
     new_reading = MeterReading(
         consumer_id=consumer.id, reading_m3=reading_m3,
         reading_date=_nairobi_today(), amount_kes=amount, amount_paid=0.0,
+        tenant_id=consumer.tenant_id,
     )
     db.session.add(new_reading)
     db.session.commit()
@@ -2052,7 +2061,7 @@ def notify_consumer(consumer_id):
         return jsonify({"error": "channel must be 'sms' or 'whatsapp'"}), 400
     send_to_alt = bool(data.get("send_to_alt"))
 
-    consumer = Consumer.query.get_or_404(consumer_id)
+    consumer = _tenant_query(Consumer).filter_by(id=consumer_id).first_or_404()
     if not consumer.is_active:
         return jsonify({"error": "Consumer is terminated. No reminders sent."}), 403
 
@@ -2480,6 +2489,10 @@ def admin_create_consumer():
     u = _require_admin()
     if u: return u
 
+    _tid = _write_tenant_id()
+    if _tid < 0:
+        return jsonify({"error": "No tenant context for this request."}), 400
+
     data = request.get_json(silent=True) or {}
     cust_name = (data.get("cust_name") or "").strip()
     acc_name = (data.get("acc_name") or "").strip()
@@ -2496,7 +2509,7 @@ def admin_create_consumer():
 
     if not (cust_name and acc_name and meter_acc_no and contact):
         return jsonify({"error": "cust_name, acc_name, meter_acc_no, and contact are required."}), 400
-    if Consumer.query.filter_by(meter_acc_no=meter_acc_no).first():
+    if _tenant_query(Consumer).filter_by(meter_acc_no=meter_acc_no).first():
         return jsonify({"error": f"Meter account {meter_acc_no} already exists."}), 409
 
     try:
@@ -2523,7 +2536,8 @@ def admin_create_consumer():
                  meter_initial_reading_m3=initial, is_active=True,
                  whatsapp_opt_in=whatsapp_opt_in,
                  alt_contact=alt_contact or None,
-                 alt_whatsapp_opt_in=alt_whatsapp_opt_in)
+                 alt_whatsapp_opt_in=alt_whatsapp_opt_in,
+                 tenant_id=_tid)
     db.session.add(c)
     db.session.commit()
 
@@ -2552,7 +2566,7 @@ def admin_update_consumer(consumer_id):
     u = _require_admin()
     if u: return u
 
-    consumer = Consumer.query.get(consumer_id)
+    consumer = _tenant_query(Consumer).filter_by(id=consumer_id).first()
     if not consumer:
         return jsonify({"error": "Consumer not found"}), 404
 
@@ -2572,7 +2586,7 @@ def admin_update_consumer(consumer_id):
             if not new_no:
                 return jsonify({"error": "meter_acc_no cannot be empty."}), 400
             if new_no != consumer.meter_acc_no:
-                dup = Consumer.query.filter_by(meter_acc_no=new_no).first()
+                dup = _tenant_query(Consumer).filter_by(meter_acc_no=new_no).first()
                 if dup and dup.id != consumer.id:
                     return jsonify({"error": f"Meter account {new_no} already exists."}), 409
             setattr(consumer, f, new_no)
@@ -2754,6 +2768,7 @@ def _apply_fifo_payment(consumer, amount: float, method: str,
         method=method,
         reference=reference or None,
         recorded_by=recorded_by[:60],
+        tenant_id=consumer.tenant_id,
     )
     db.session.add(log)
     db.session.flush()
@@ -2817,7 +2832,7 @@ def admin_record_payment(consumer_id):
     u = _require_admin()
     if u: return u
 
-    consumer = Consumer.query.get(consumer_id)
+    consumer = _tenant_query(Consumer).filter_by(id=consumer_id).first()
     if not consumer:
         return jsonify({"error": "Consumer not found"}), 404
 
@@ -3054,7 +3069,7 @@ def admin_terminate_consumer(consumer_id):
     u = _require_admin()
     if u: return u
 
-    consumer = Consumer.query.get(consumer_id)
+    consumer = _tenant_query(Consumer).filter_by(id=consumer_id).first()
     if not consumer:
         return jsonify({"error": "Consumer not found"}), 404
     if not consumer.is_active:
@@ -3078,7 +3093,7 @@ def admin_reactivate_consumer(consumer_id):
     u = _require_admin()
     if u: return u
 
-    consumer = Consumer.query.get(consumer_id)
+    consumer = _tenant_query(Consumer).filter_by(id=consumer_id).first()
     if not consumer:
         return jsonify({"error": "Consumer not found"}), 404
 
@@ -3099,7 +3114,7 @@ def admin_delete_consumer(consumer_id):
     u = _require_admin()
     if u: return u
 
-    consumer = Consumer.query.get(consumer_id)
+    consumer = _tenant_query(Consumer).filter_by(id=consumer_id).first()
     if not consumer:
         return jsonify({"error": "Consumer not found"}), 404
 
@@ -3581,8 +3596,8 @@ def admin_consumer_bills_archive(consumer_id):
     if not _rate_limit("bills_archive", 30, 60):
         return _too_many(60)
 
-    consumer = Consumer.query.get_or_404(consumer_id)
-    rows = (SentBillArchive.query
+    consumer = _tenant_query(Consumer).filter_by(id=consumer_id).first_or_404()
+    rows = (_tenant_query(SentBillArchive)
             .filter_by(consumer_id=consumer.id)
             .order_by(SentBillArchive.sent_at.desc())
             .limit(200)
@@ -3811,13 +3826,13 @@ def admin_mpesa_assign():
     if not log_id or not consumer_id:
         return jsonify({"error": "log_id and consumer_id required"}), 400
 
-    log = MpesaLog.query.get(log_id)
+    log = _tenant_query(MpesaLog).filter_by(id=log_id).first()
     if not log:
         return jsonify({"error": "M-Pesa log not found"}), 404
     if log.status == "matched":
         return jsonify({"error": "Already assigned"}), 409
 
-    consumer = Consumer.query.get(consumer_id)
+    consumer = _tenant_query(Consumer).filter_by(id=consumer_id).first()
     if not consumer:
         return jsonify({"error": "Consumer not found"}), 404
 
