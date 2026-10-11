@@ -961,7 +961,16 @@ def admin_tenants_list():
     rows = (Tenant.query
             .order_by(Tenant.org_name.asc())
             .all())
-    return jsonify({"tenants": [_tenant_to_dict(t) for t in rows]})
+    # Tenants admin hint — has_admin per row so the UI can hide the
+    # "Create Admin" button once the tenant's first admin exists.
+    out = []
+    for t in rows:
+        d = _tenant_to_dict(t)
+        d["has_admin"] = (AdminUser.query
+                          .filter_by(tenant_id=t.id)
+                          .count() > 0)
+        out.append(d)
+    return jsonify({"tenants": out})
 
 
 @app.route("/api/admin/tenants", methods=["POST"])

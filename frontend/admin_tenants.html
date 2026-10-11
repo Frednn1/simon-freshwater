@@ -236,7 +236,7 @@
             </div>
             <div class="tenant-card-actions">
               <a class="btn-secondary btn-fit" href="/?__tenant=${encodeURIComponent(t.slug)}" target="_blank" rel="noopener">↗ Preview</a>
-              ${t.is_active ?
+              ${(t.is_active && !t.has_admin) ?
                 `<button class="btn-secondary btn-fit" type="button" onclick="openCreateAdmin(${t.id})">🔑 Create Admin</button>` : ''}
               <button class="btn-secondary btn-fit" type="button" onclick="openLogoUpload(${t.id})">🖼️ Logo</button>
               <button class="btn-secondary btn-fit" type="button" onclick="openEditTenant(${t.id})">✏️ Edit</button>
