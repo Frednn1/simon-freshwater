@@ -12,7 +12,8 @@ from flask import (
     redirect, render_template_string, g,
 )
 from flask_cors import CORS
-from sqlalchemy import text, inspect
+from sqlalchemy import text, inspect, event
+from sqlalchemy.orm import Session as _SASession, with_loader_criteria
 
 from models import (
     db, Consumer, MeterReading, NotificationLog,
@@ -106,6 +107,53 @@ def _before_request_resolve_tenant():
     if p in _STATIC_PATH_EXACT or p.startswith(_STATIC_PATH_PREFIXES):
         return
     g.tenant = _resolve_tenant_from_request()
+
+
+# ═══════════════════════════════════════════════
+#  TENANTS — automatic query scoping (Phase 3b)
+# ═══════════════════════════════════════════════
+# Every ORM SELECT against a tenant-scoped model is automatically
+# filtered by the current request's tenant_id. Enforced centrally at
+# the SQLAlchemy level, so no individual query can forget the filter.
+
+_TENANT_MODELS = (
+    Consumer, MeterReading, PaymentLog, NotificationLog,
+    MpesaLog, SentBillArchive, AdminAuditLog, AdminUser,
+)
+
+
+def _current_query_tenant_id():
+    """Return the tenant id for the current request's queries.
+    -1 → no tenant resolved (filter to nothing)
+    None → no request context (skip filtering)
+    """
+    try:
+        t = g.tenant
+    except (RuntimeError, AttributeError):
+        return None
+    if t is None:
+        return -1
+    return t.id
+
+
+@event.listens_for(_SASession, "do_orm_execute")
+def _tenant_scoped_query(execute_state):
+    if not execute_state.is_select:
+        return
+    if execute_state.is_column_load or execute_state.is_relationship_load:
+        return
+
+    tid = _current_query_tenant_id()
+    if tid is None:
+        return
+
+    for mdl in _TENANT_MODELS:
+        execute_state.statement = execute_state.statement.options(
+            with_loader_criteria(
+                mdl,
+                lambda cls, _tid=tid: cls.tenant_id == _tid,
+            )
+        )
 
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///simon_freshwater.db")
