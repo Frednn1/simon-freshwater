@@ -178,6 +178,53 @@ def _tenant_slug():
     return t.slug if t is not None else None
 
 
+def _brand_context():
+    """Brand fields for PDF snapshots and template substitution.
+    Uses the current request's tenant, or falls back to Simon Fresh Water
+    when there is no request context (background tasks, boot).
+    """
+    t = getattr(g, "tenant", None)
+    if t is None:
+        try:
+            t = Tenant.query.filter_by(slug="simon-freshwater").first()
+        except Exception:
+            t = None
+
+    name = (t.org_name if t and t.org_name else "Simon Fresh Water")
+    addr = (t.address if t and t.address else "Kikuyu, Kenya")
+    logo = (t.logo_key if t and t.logo_key else "images/SimonW_Logo.png").strip()
+    if not logo.startswith("/"):
+        logo = "/" + logo
+
+    return {
+        "brand_name":       name,
+        "brand_name_upper": name.upper(),
+        "brand_tagline":    (t.tagline if t and t.tagline else "Pure, Reliable & Sustainable Water Supply"),
+        "brand_address":    addr,
+        "brand_city_upper": (addr.split(",")[0].strip().upper() if addr else "KIKUYU"),
+        "brand_phone":      (t.phone if t and t.phone else "+254 700 719311"),
+        "brand_email":      (t.email if t and t.email else "simonchege84@gmail.com"),
+        "brand_logo_url":   logo,
+    }
+
+
+def _serve_template(filename):
+    """Serve a template HTML file (from TEMPLATES_DIR) with brand substitution.
+    Used by the manual Chrome -> Save as PDF workflow.
+    """
+    path = os.path.join(TEMPLATES_DIR, filename)
+    if not os.path.exists(path):
+        return f"Template not found: {filename}", 404
+
+    with open(path, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    for token, value in _brand_context().items():
+        html = html.replace("{{" + token + "}}", value)
+
+    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
 def _serve_frontend(filename):
     """Serve a frontend HTML file with tenant-brand substitution.
 
@@ -979,6 +1026,7 @@ def download_billing_report():
         return jsonify({"error": f"Report data failed: {e}"}), 500
 
     try:
+        snapshot.update(_brand_context())
         pdf_buf = generate_report_pdf(snapshot)
     except Exception as e:
         app.logger.exception("[Report] PDF generation failed")
@@ -1099,11 +1147,7 @@ def waterbill_template_view():
     """Serve the water bill template HTML for manual Chrome -> Save as PDF."""
     if not _current_admin():
         return redirect("/admin/login?next=/template/waterbill")
-    return send_from_directory(
-        TEMPLATES_DIR,
-        "water_bill_template.html",
-        mimetype="text/html",
-    )
+    return _serve_template("water_bill_template.html")
 
 
 @app.route("/template/report")
@@ -1136,6 +1180,7 @@ def report_template_view():
     with open(html_path, "r", encoding="utf-8") as f:
         html = f.read()
 
+    snapshot.update(_brand_context())
     rendered = render_template_string(html, **snapshot)
     return rendered, 200, {"Content-Type": "text/html; charset=utf-8"}
 
@@ -1214,11 +1259,7 @@ def statement_template_view():
     """
     if not _current_admin():
         return redirect("/admin/login?next=/template/statement")
-    return send_from_directory(
-        TEMPLATES_DIR,
-        "SimonWater_StatementTemplate.html",
-        mimetype="text/html",
-    )
+    return _serve_template("SimonWater_StatementTemplate.html")
 
 
 @app.route("/template/receipt")
@@ -1229,11 +1270,7 @@ def receipt_template_view():
     """
     if not _current_admin():
         return redirect("/admin/login?next=/template/receipt")
-    return send_from_directory(
-        TEMPLATES_DIR,
-        "SimonWater_ReceiptTemplate.html",
-        mimetype="text/html",
-    )
+    return _serve_template("SimonWater_ReceiptTemplate.html")
 
 
 # ═══════════════════════════════════════════════
@@ -1683,6 +1720,7 @@ def download_water_bill(reading_id):
     }
 
     try:
+        snapshot.update(_brand_context())
         pdf_buf = generate_water_bill_pdf(snapshot)
     except Exception as e:
         app.logger.exception("[WaterBill] PDF generation failed")
@@ -1861,6 +1899,7 @@ def download_statement(consumer_id):
             snapshot[f"t{idx}_is_credit"] = ""
 
     try:
+        snapshot.update(_brand_context())
         pdf_buf = generate_statement_pdf(snapshot)
     except Exception as e:
         app.logger.exception("[Statement] PDF generation failed")
@@ -1965,6 +2004,7 @@ def send_whatsapp_bill(consumer_id):
     }
 
     try:
+        snapshot.update(_brand_context())
         pdf_buf = generate_water_bill_pdf(snapshot)
     except Exception as e:
         app.logger.exception("[WhatsApp Bill] PDF generation failed")
@@ -2795,6 +2835,7 @@ def public_receipt_pdf(token):
 
     try:
         snapshot = json.loads(log.receipt_json)
+        snapshot.update(_brand_context())
         pdf_buf = generate_receipt_pdf(snapshot)
     except Exception:
         app.logger.exception("[Public Receipt] generation failed")
@@ -3117,6 +3158,7 @@ def download_receipt(payment_id):
         return jsonify({"error": "Receipt data corrupted."}), 500
 
     try:
+        snapshot.update(_brand_context())
         pdf_buf = generate_receipt_pdf(snapshot)
     except Exception as e:
         app.logger.exception("[Receipt] PDF generation failed")
@@ -3152,6 +3194,7 @@ def receipt_browser_view(payment_id):
         return "Receipt data corrupted.", 500
 
     try:
+        snapshot.update(_brand_context())
         pdf_buf = generate_receipt_pdf(snapshot)
     except Exception:
         app.logger.exception("[Receipt] PDF generation failed")
