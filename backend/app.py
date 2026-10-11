@@ -204,7 +204,11 @@ def _brand_context():
 
     name = (t.org_name if t and t.org_name else "Simon Fresh Water")
     addr = (t.address if t and t.address else "Kikuyu, Kenya")
-    logo = (t.logo_key if t and t.logo_key else "images/SimonW_Logo.png").strip()
+    _lk = (t.logo_key if t and t.logo_key else "").strip()
+    if _lk.startswith("logos/"):
+        logo = "/tenant/logo/" + (t.slug if t else "")
+    else:
+        logo = _lk or "images/SimonW_Logo.png"
     if not logo.startswith("/"):
         logo = "/" + logo
 
@@ -897,6 +901,55 @@ def admin_tenants_page():
     if not getattr(admin, "is_super", False):
         return "Forbidden. Super-admin only.", 403
     return _serve_frontend("admin_tenants.html")
+
+
+@app.route("/tenant/logo/<slug>")
+def tenant_logo_serve(slug):
+    """Stream a tenant's custom logo (public, active tenants only)."""
+    t = Tenant.query.filter_by(slug=slug, is_active=True).first()
+    if not t or not t.logo_key or not t.logo_key.startswith("logos/"):
+        return redirect("/images/SimonW_Logo.png")
+    data, ctype = archive.download_object(t.logo_key)
+    if data is None:
+        return redirect("/images/SimonW_Logo.png")
+    from io import BytesIO
+    return send_file(BytesIO(data), mimetype=ctype, as_attachment=False,
+                     download_name=f"{slug}-logo")
+
+
+@app.route("/api/admin/tenants/<int:tenant_id>/upload_logo", methods=["POST"])
+def admin_tenants_upload_logo(tenant_id):
+    """Upload/replace a tenant's logo. Super-admin only.
+    Multipart form-data, field name 'logo'."""
+    u = _require_super_admin()
+    if u: return u
+    if not _rate_limit("tenant_logo_upload", 10, 60):
+        return _too_many(60)
+    t = Tenant.query.get(tenant_id)
+    if not t:
+        return jsonify({"error": "Tenant not found."}), 404
+    f = request.files.get("logo")
+    if not f or not f.filename:
+        return jsonify({"error": "No file uploaded (field name must be 'logo')."}), 400
+    ALLOWED = {"image/png":".png","image/jpeg":".jpg","image/webp":".webp","image/gif":".gif"}
+    ctype = (f.mimetype or "").lower().strip()
+    if ctype not in ALLOWED:
+        return jsonify({"error": f"Unsupported content type {ctype!r}. Allowed: PNG, JPEG, WEBP, GIF."}), 400
+    data = f.read()
+    if len(data) > 500_000:
+        return jsonify({"error": "Logo exceeds 500 KB."}), 400
+    if len(data) == 0:
+        return jsonify({"error": "Empty file."}), 400
+    key = f"logos/{t.slug}/logo{ALLOWED[ctype]}"
+    if not archive.upload_object(key, data, ctype):
+        return jsonify({"error": "Storage upload failed."}), 502
+    t.logo_key = key
+    db.session.commit()
+    _audit("tenant_logo_uploaded",
+           target_type="tenant", target_id=t.id,
+           target_label=f"{t.org_name} · {t.slug}",
+           detail=f"key={key}, size={len(data)}, ctype={ctype}")
+    return jsonify({"ok": True, "logo_key": key, "logo_url": f"/tenant/logo/{t.slug}"})
 
 
 @app.route("/api/admin/tenants", methods=["GET"])

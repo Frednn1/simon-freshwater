@@ -159,6 +159,26 @@
     </div>
   </div>
 
+  <div id="logoModal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>🖼️ Upload Tenant Logo</h3>
+        <button class="modal-close" onclick="closeLogoModal()" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="form-hint-small" style="margin-bottom:.75rem;">PNG, JPEG, WEBP, or GIF. Max 500 KB. Replaces the tenant's logo in the portal header. (PDF template logos are separate.)</p>
+        <div class="form-row">
+          <label for="lfFile">Choose file</label>
+          <input type="file" id="lfFile" accept="image/png,image/jpeg,image/webp,image/gif">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" onclick="closeLogoModal()">Cancel</button>
+        <button id="logoUploadBtn" type="button" class="btn-primary">Upload</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     let _tenants = [];
     let _editingId = null;
@@ -218,6 +238,7 @@
               <a class="btn-secondary btn-fit" href="/?__tenant=${encodeURIComponent(t.slug)}" target="_blank" rel="noopener">↗ Preview</a>
               ${t.is_active ?
                 `<button class="btn-secondary btn-fit" type="button" onclick="openCreateAdmin(${t.id})">🔑 Create Admin</button>` : ''}
+              <button class="btn-secondary btn-fit" type="button" onclick="openLogoUpload(${t.id})">🖼️ Logo</button>
               <button class="btn-secondary btn-fit" type="button" onclick="openEditTenant(${t.id})">✏️ Edit</button>
               ${isDefault ? '' :
                 `<button class="btn-secondary btn-fit" type="button" onclick="toggleTenant(${t.id}, ${!t.is_active})">${toggleLabel}</button>
@@ -377,6 +398,38 @@
       }
     }
 
+    let _logoTenantId = null;
+    function openLogoUpload(id) {
+      _logoTenantId = id;
+      document.getElementById('lfFile').value = '';
+      document.getElementById('logoModal').classList.remove('hidden');
+    }
+    function closeLogoModal() {
+      document.getElementById('logoModal').classList.add('hidden');
+      _logoTenantId = null;
+    }
+    async function doLogoUpload() {
+      if (!_logoTenantId) return;
+      const inp = document.getElementById('lfFile');
+      if (!inp.files || !inp.files[0]) { alert('Choose a file first.'); return; }
+      const btn = document.getElementById('logoUploadBtn');
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Uploading…';
+      const fd = new FormData();
+      fd.append('logo', inp.files[0]);
+      try {
+        const r = await fetch(`/api/admin/tenants/${_logoTenantId}/upload_logo`, {
+          method: 'POST', credentials: 'same-origin', body: fd,
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) { alert('✅ Logo uploaded.'); closeLogoModal(); await loadTenants(); }
+        else { alert('❌ ' + (d.error || 'Upload failed.')); }
+      } catch { alert('❌ Network error.'); }
+      finally { btn.disabled = false; btn.textContent = orig; }
+    }
+    window.openLogoUpload = openLogoUpload;
+    window.closeLogoModal = closeLogoModal;
+
     window.openCreateAdmin = openCreateAdmin;
     window.closeAdminModal = closeAdminModal;
     window.openEditTenant = openEditTenant;
@@ -387,6 +440,7 @@
     document.getElementById('openCreateBtn').addEventListener('click', openCreateTenant);
     document.getElementById('tenantForm').addEventListener('submit', submitTenant);
     document.getElementById('adminForm').addEventListener('submit', submitAdmin);
+    document.getElementById('logoUploadBtn').addEventListener('click', doLogoUpload);
     loadTenants();
   </script>
 </body>
