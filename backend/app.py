@@ -3718,32 +3718,6 @@ def admin_backup_run():
     return jsonify(result), 502
 
 
-@app.route("/api/admin/_debug/tenant-columns", methods=["GET"])
-def _debug_tenant_columns():
-    """TEMPORARY — verifies tenant_id column exists and is backfilled."""
-    u = _require_admin()
-    if u: return u
-    from sqlalchemy import inspect as _insp
-    insp = _insp(db.engine)
-    out = {}
-    for tbl in ("consumers", "meter_readings", "payment_log",
-                "notification_log", "mpesa_log", "sent_bill_archive",
-                "admin_audit_log", "admin_users"):
-        try:
-            cols = {c["name"] for c in insp.get_columns(tbl)}
-            has_col = "tenant_id" in cols
-            n1 = db.session.execute(text(
-                f"SELECT COUNT(*) FROM {tbl} WHERE tenant_id = 1"
-            )).scalar() or 0
-            n_total = db.session.execute(text(
-                f"SELECT COUNT(*) FROM {tbl}"
-            )).scalar() or 0
-            out[tbl] = {"column": has_col, "tenant_1": n1, "total": n_total}
-        except Exception as e:
-            out[tbl] = {"error": str(e)[:120]}
-    return jsonify(out)
-
-
 @app.route("/api/admin/consumers/all", methods=["GET"])
 def admin_consumers_all():
     """Return all consumers (active + terminated), alphabetically.
