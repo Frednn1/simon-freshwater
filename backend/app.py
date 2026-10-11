@@ -3685,21 +3685,6 @@ def admin_backup_run():
     return jsonify(result), 502
 
 
-@app.route("/api/admin/_debug/tenant-context", methods=["GET"])
-def _debug_tenant_context():
-    """TEMPORARY — returns the request-scoped tenant. Remove after Phase 2 verification."""
-    u = _require_admin()
-    if u: return u
-    t = getattr(g, "tenant", None)
-    return jsonify({
-        "resolved": t is not None,
-        "slug": t.slug if t else None,
-        "org_name": t.org_name if t else None,
-        "via": "query" if request.args.get("__tenant") else
-               "header" if request.headers.get("X-Tenant-Slug") else "default",
-    })
-
-
 @app.route("/api/admin/consumers/all", methods=["GET"])
 def admin_consumers_all():
     """Return all consumers (active + terminated), alphabetically.
