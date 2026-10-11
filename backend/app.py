@@ -3468,6 +3468,18 @@ def mpesa_c2b_validation():
 
 
 @app.route("/api/mpesa/c2b/confirmation", methods=["POST"])
+def _resolve_callback_tenant(business_shortcode: str):
+    """Resolve the tenant a C2B callback belongs to, by paybill.
+    Returns the Tenant or None."""
+    code = (business_shortcode or "").strip()
+    if not code:
+        return None
+    try:
+        return Tenant.query.filter_by(paybill=code, is_active=True).first()
+    except Exception:
+        return None
+
+
 def mpesa_c2b_confirmation():
     """
     Safaricom calls this AFTER a payment is processed.
@@ -3482,8 +3494,15 @@ def mpesa_c2b_confirmation():
     if not trans_id:
         return jsonify({"ResultCode": 1, "ResultDesc": "Missing TransID"}), 400
 
-    # Idempotency: if we've seen this TransID, silently accept.
-    if MpesaLog.query.filter_by(trans_id=trans_id).first():
+    # Resolve tenant from the paybill in this callback.
+    _shortcode = str(data.get("BusinessShortCode") or "").strip()
+    _cb_tenant = _resolve_callback_tenant(_shortcode)
+
+    # Idempotency: if we've seen this TransID (for this tenant), silently accept.
+    _dup_q = MpesaLog.query.filter_by(trans_id=trans_id)
+    if _cb_tenant is not None:
+        _dup_q = _dup_q.filter_by(tenant_id=_cb_tenant.id)
+    if _dup_q.first():
         return jsonify({"ResultCode": 0, "ResultDesc": "Already processed"}), 200
 
     try:
@@ -3495,10 +3514,11 @@ def mpesa_c2b_confirmation():
     msisdn = (data.get("MSISDN") or "").strip()
 
     log = MpesaLog(
+        tenant_id=_cb_tenant.id if _cb_tenant else -1,
         trans_id=trans_id,
         trans_time=str(data.get("TransTime") or ""),
         trans_amount=amount,
-        business_shortcode=str(data.get("BusinessShortCode") or ""),
+        business_shortcode=_shortcode,
         bill_ref_number=bill_ref,
         msisdn=msisdn,
         first_name=data.get("FirstName"),
@@ -3511,15 +3531,21 @@ def mpesa_c2b_confirmation():
     db.session.flush()
 
     # ── Matching: bill_ref → meter_acc_no, then msisdn → contact ──
+    # Scoped to the tenant resolved from the paybill. If no tenant matched
+    # the paybill, no consumer lookup happens (orphan payment).
     consumer = None
-    if bill_ref:
-        consumer = Consumer.query.filter_by(meter_acc_no=bill_ref).first()
-    if not consumer and msisdn:
-        variants = _normalize_msisdn(msisdn)
-        if variants:
-            consumer = Consumer.query.filter(
-                Consumer.contact.in_(variants)
-            ).first()
+    if _cb_tenant is not None:
+        if bill_ref:
+            consumer = (Consumer.query
+                        .filter_by(tenant_id=_cb_tenant.id, meter_acc_no=bill_ref)
+                        .first())
+        if not consumer and msisdn:
+            variants = _normalize_msisdn(msisdn)
+            if variants:
+                consumer = (Consumer.query
+                            .filter(Consumer.tenant_id == _cb_tenant.id)
+                            .filter(Consumer.contact.in_(variants))
+                            .first())
 
     if not consumer:
         log.status = "unmatched"
