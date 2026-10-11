@@ -862,6 +862,191 @@ def admin_bulk_sms_page():
 
 
 # ═══════════════════════════════════════════════
+#  ADMIN — Tenant management (super-admin only)
+# ═══════════════════════════════════════════════
+
+def _valid_slug(slug: str) -> bool:
+    """Lowercase, 3-60 chars, alphanumeric + hyphen, ends alphanumeric."""
+    if not slug or not (3 <= len(slug) <= 60):
+        return False
+    if not slug[0].isalnum() or not slug[-1].isalnum():
+        return False
+    return all(c.isalnum() or c == "-" for c in slug)
+
+
+def _tenant_to_dict(t):
+    return {
+        "id": t.id,
+        "slug": t.slug,
+        "org_name": t.org_name,
+        "short_name": t.short_name,
+        "tagline": t.tagline,
+        "email": t.email,
+        "phone": t.phone,
+        "address": t.address,
+        "location": t.location,
+        "paybill": t.paybill,
+        "payment_account": t.payment_account,
+        "logo_key": t.logo_key,
+        "theme_primary": t.theme_primary,
+        "is_active": bool(t.is_active),
+        "created_at": t.created_at.isoformat() if t.created_at else None,
+    }
+
+
+@app.route("/admin/tenants")
+def admin_tenants_page():
+    admin = _current_admin()
+    if not admin:
+        return redirect("/admin/login?next=/admin/tenants")
+    if not getattr(admin, "is_super", False):
+        return "Forbidden. Super-admin only.", 403
+    return _serve_frontend("admin_tenants.html")
+
+
+@app.route("/api/admin/tenants", methods=["GET"])
+def admin_tenants_list():
+    u = _require_super_admin()
+    if u: return u
+    if not _rate_limit("tenants_list", 30, 60):
+        return _too_many(60)
+    rows = (Tenant.query
+            .order_by(Tenant.org_name.asc())
+            .all())
+    return jsonify({"tenants": [_tenant_to_dict(t) for t in rows]})
+
+
+@app.route("/api/admin/tenants", methods=["POST"])
+def admin_tenants_create():
+    u = _require_super_admin()
+    if u: return u
+    if not _rate_limit("tenants_create", 10, 60):
+        return _too_many(60)
+
+    data = request.get_json(silent=True) or {}
+
+    slug = (data.get("slug") or "").strip().lower()
+    org_name = (data.get("org_name") or "").strip()
+    if not _valid_slug(slug):
+        return jsonify({"error": "Slug must be 3-60 chars, lowercase, "
+                                 "letters/digits/hyphens, and start and end alphanumeric."}), 400
+    if not org_name:
+        return jsonify({"error": "org_name is required."}), 400
+    if Tenant.query.filter_by(slug=slug).first():
+        return jsonify({"error": f"Slug '{slug}' is already in use."}), 409
+
+    paybill = (data.get("paybill") or "").strip() or None
+    if paybill:
+        clash = Tenant.query.filter_by(paybill=paybill, is_active=True).first()
+        if clash:
+            return jsonify({"error": f"Paybill {paybill} is already used by "
+                                     f"active tenant '{clash.slug}'."}), 409
+
+    t = Tenant(
+        slug=slug,
+        org_name=org_name,
+        short_name=(data.get("short_name") or "").strip() or None,
+        tagline=(data.get("tagline") or "").strip() or None,
+        email=(data.get("email") or "").strip() or None,
+        phone=(data.get("phone") or "").strip() or None,
+        address=(data.get("address") or "").strip() or None,
+        location=(data.get("location") or "").strip() or None,
+        paybill=paybill,
+        payment_account=(data.get("payment_account") or "").strip() or None,
+        logo_key=(data.get("logo_key") or "").strip() or None,
+        theme_primary=(data.get("theme_primary") or "").strip() or "#0d47a1",
+        is_active=False,
+    )
+    db.session.add(t)
+    db.session.commit()
+
+    _audit("tenant_created",
+           target_type="tenant", target_id=t.id,
+           target_label=f"{t.org_name} · {t.slug}",
+           detail=f"paybill={t.paybill or '—'}, is_active=False")
+
+    return jsonify({"ok": True, "tenant": _tenant_to_dict(t)}), 201
+
+
+@app.route("/api/admin/tenants/<int:tenant_id>/update", methods=["POST"])
+def admin_tenants_update(tenant_id):
+    u = _require_super_admin()
+    if u: return u
+    if not _rate_limit("tenants_update", 30, 60):
+        return _too_many(60)
+
+    t = Tenant.query.get(tenant_id)
+    if not t:
+        return jsonify({"error": "Tenant not found."}), 404
+
+    data = request.get_json(silent=True) or {}
+    allowed = ("org_name", "short_name", "tagline", "email", "phone",
+               "address", "location", "paybill", "payment_account",
+               "logo_key", "theme_primary")
+    updated = []
+    for f in allowed:
+        if f not in data:
+            continue
+        v = (str(data[f]) or "").strip() if data[f] is not None else ""
+        if f == "paybill" and v:
+            clash = (Tenant.query
+                     .filter(Tenant.paybill == v, Tenant.id != t.id,
+                             Tenant.is_active == True)
+                     .first())
+            if clash:
+                return jsonify({"error": f"Paybill {v} is already used by "
+                                         f"active tenant '{clash.slug}'."}), 409
+        setattr(t, f, v or None)
+        updated.append(f)
+
+    if not updated:
+        return jsonify({"error": "No valid fields to update."}), 400
+
+    db.session.commit()
+    _audit("tenant_updated",
+           target_type="tenant", target_id=t.id,
+           target_label=f"{t.org_name} · {t.slug}",
+           detail=f"fields={','.join(updated)}")
+    return jsonify({"ok": True, "tenant": _tenant_to_dict(t)})
+
+
+@app.route("/api/admin/tenants/<int:tenant_id>/toggle_active", methods=["POST"])
+def admin_tenants_toggle_active(tenant_id):
+    u = _require_super_admin()
+    if u: return u
+    if not _rate_limit("tenants_toggle", 30, 60):
+        return _too_many(60)
+
+    t = Tenant.query.get(tenant_id)
+    if not t:
+        return jsonify({"error": "Tenant not found."}), 404
+    if t.slug == "simon-freshwater":
+        return jsonify({"error": "The default tenant cannot be deactivated."}), 400
+
+    data = request.get_json(silent=True) or {}
+    want_active = bool(data.get("active"))
+    if want_active == bool(t.is_active):
+        return jsonify({"ok": True, "tenant": _tenant_to_dict(t)})
+
+    if want_active and t.paybill:
+        clash = (Tenant.query
+                 .filter(Tenant.paybill == t.paybill, Tenant.id != t.id,
+                         Tenant.is_active == True)
+                 .first())
+        if clash:
+            return jsonify({"error": f"Cannot activate: paybill {t.paybill} "
+                                     f"is already used by active tenant '{clash.slug}'."}), 409
+
+    t.is_active = want_active
+    db.session.commit()
+    _audit("tenant_toggled",
+           target_type="tenant", target_id=t.id,
+           target_label=f"{t.org_name} · {t.slug}",
+           detail=f"is_active={t.is_active}")
+    return jsonify({"ok": True, "tenant": _tenant_to_dict(t)})
+
+
+# ═══════════════════════════════════════════════
 #  ADMIN — MONTHLY BILLING REPORT
 # ═══════════════════════════════════════════════
 
