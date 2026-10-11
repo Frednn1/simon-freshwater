@@ -2177,3 +2177,38 @@ body.drawer-open { overflow: hidden; }
   .audit-table tbody td { padding: .55rem .6rem; }
   .audit-table .audit-detail { min-width: 200px; }
 }
+
+
+/* ═══════════════════════════════════════════════
+   TENANT MANAGEMENT — cards
+   ═══════════════════════════════════════════════ */
+.tenant-card {
+  border: 1px solid #e3f2fd;
+  border-left: 4px solid #1976d2;
+  border-radius: 10px;
+  padding: .85rem 1rem;
+  margin-bottom: .75rem;
+  background: #fafcff;
+}
+.tenant-card-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: .75rem; margin-bottom: .35rem;
+}
+.tenant-card-name {
+  font-weight: 700; color: #0d47a1; font-size: 1rem;
+}
+.tenant-card-slug {
+  font-family: 'Courier New', monospace; font-size: .8rem; color: #455a64;
+  margin-top: .15rem;
+}
+.tenant-card-meta {
+  font-size: .82rem; color: #455a64; margin-bottom: .6rem; line-height: 1.4;
+}
+.tenant-card-actions {
+  display: flex; flex-wrap: wrap; gap: .5rem;
+}
+.tenant-card-actions .btn-secondary.btn-fit,
+.tenant-card-actions a.btn-secondary.btn-fit {
+  width: auto; display: inline-flex; align-items: center;
+  padding: .5rem .85rem; font-size: .82rem;
+}

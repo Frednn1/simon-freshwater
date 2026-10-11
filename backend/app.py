@@ -1046,6 +1046,53 @@ def admin_tenants_toggle_active(tenant_id):
     return jsonify({"ok": True, "tenant": _tenant_to_dict(t)})
 
 
+@app.route("/api/admin/tenants/<int:tenant_id>/delete", methods=["POST"])
+def admin_tenants_delete(tenant_id):
+    """Hard-delete a tenant. Only allowed when the tenant has no consumers.
+    The default tenant (simon-freshwater) can never be deleted."""
+    u = _require_super_admin()
+    if u: return u
+    if not _rate_limit("tenants_delete", 5, 60):
+        return _too_many(60)
+
+    t = Tenant.query.get(tenant_id)
+    if not t:
+        return jsonify({"error": "Tenant not found."}), 404
+    if t.slug == "simon-freshwater":
+        return jsonify({"error": "The default tenant cannot be deleted."}), 400
+
+    # Safety check: refuse if any consumers, readings, payments, or admins
+    # are associated with this tenant. Operator must deactivate instead.
+    counts = {
+        "consumers":       Consumer.query.filter_by(tenant_id=t.id).count(),
+        "meter_readings":  MeterReading.query.filter_by(tenant_id=t.id).count(),
+        "payment_log":     PaymentLog.query.filter_by(tenant_id=t.id).count(),
+        "notification_log": NotificationLog.query.filter_by(tenant_id=t.id).count(),
+        "mpesa_log":       MpesaLog.query.filter_by(tenant_id=t.id).count(),
+        "sent_bill_archive": SentBillArchive.query.filter_by(tenant_id=t.id).count(),
+        "admin_users":     AdminUser.query.filter_by(tenant_id=t.id).count(),
+        "admin_audit_log": AdminAuditLog.query.filter_by(tenant_id=t.id).count(),
+    }
+    blocking = {k: v for k, v in counts.items() if v > 0}
+    if blocking:
+        summary = ", ".join(f"{k}={v}" for k, v in blocking.items())
+        return jsonify({
+            "error": f"Cannot delete tenant with data: {summary}. "
+                     "Deactivate it instead."
+        }), 409
+
+    label = f"{t.org_name} · {t.slug}"
+    db.session.delete(t)
+    db.session.commit()
+
+    _audit("tenant_deleted",
+           target_type="tenant", target_id=tenant_id,
+           target_label=label,
+           detail="hard-delete; no associated rows")
+
+    return jsonify({"ok": True, "deleted": label})
+
+
 # ═══════════════════════════════════════════════
 #  ADMIN — MONTHLY BILLING REPORT
 # ═══════════════════════════════════════════════
@@ -2740,6 +2787,7 @@ def admin_get_settings():
     return jsonify({
         "username": admin.username,
         "phone": admin.phone,
+        "is_super": bool(getattr(admin, "is_super", False)),
     })
 
 

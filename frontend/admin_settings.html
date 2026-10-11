@@ -24,6 +24,18 @@
       </div>
     </a>
 
+    <!-- Super-admin: Tenant management -->
+    <div class="settings-card hidden" id="superAdminCard">
+      <h2>🏢 Billing Organizations</h2>
+      <p class="form-hint-small" style="margin-bottom:.75rem;">
+        Manage separate billing portals for other organizations.
+        Super-admin only.
+      </p>
+      <a href="/admin/tenants" class="btn-primary btn-fit" style="text-decoration:none;display:inline-flex;align-items:center;gap:.4rem;">
+        🏢 Manage Tenants
+      </a>
+    </div>
+
     <!-- Username -->
     <div class="settings-card">
       <h2>👤 Username</h2>
@@ -143,6 +155,9 @@
         const d = await r.json();
         document.getElementById('curUsername').textContent = d.username || '—';
         document.getElementById('curPhone').textContent = d.phone || '—';
+        if (d.is_super) {
+          document.getElementById('superAdminCard').classList.remove('hidden');
+        }
       } catch {
         alert('Failed to load settings.');
       }

@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tenants – {{brand_name}}</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0d47a1">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="settings-body">
+  <main class="settings-wrap" style="max-width: 900px;">
+    <a href="/" class="brand-link" aria-label="Go to home">
+      <div class="settings-header">
+        <img class="brand-logo" src="/images/SimonW_Logo.png" alt="{{brand_name}}">
+        <div class="settings-brand-text">
+          <h1>{{brand_name}}</h1>
+          <p>Tenant Management</p>
+        </div>
+      </div>
+    </a>
+
+    <div class="settings-card">
+      <h2>🏢 Billing Organizations</h2>
+      <p class="form-hint-small" style="margin-bottom:.75rem;">
+        Each tenant is a separate billing portal with fully isolated data
+        (consumers, readings, payments, admins, reports). They share the same
+        web service, database, and storage — no extra infrastructure per tenant.
+      </p>
+      <div id="tenantsList">
+        <p class="form-hint-small">Loading…</p>
+      </div>
+    </div>
+
+    <div class="settings-card">
+      <h2>➕ Create a New Tenant</h2>
+      <p class="form-hint-small" style="margin-bottom:.75rem;">
+        New tenants are created <strong>inactive</strong>. After creation, open
+        <code>?__tenant=&lt;slug&gt;</code> on the portal root to preview the tenant's
+        branding, then activate it.
+      </p>
+      <button id="openCreateBtn" class="btn-primary btn-fit" type="button">➕ New Tenant</button>
+      <div id="createMsg" class="alert hidden"></div>
+    </div>
+
+    <div class="settings-back">
+      <a href="/admin/settings">← Back to Settings</a>
+      &nbsp;·&nbsp;
+      <a href="/">← Back to Home</a>
+    </div>
+  </main>
+
+  <!-- Create / Edit modal -->
+  <div id="tenantModal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modalTitle">➕ New Tenant</h3>
+        <button class="modal-close" onclick="closeTenantModal()" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <form id="tenantForm" autocomplete="off">
+          <div class="form-row">
+            <label for="tfSlug">Slug * (lowercase, hyphens ok, immutable after creation)</label>
+            <input type="text" id="tfSlug" required placeholder="e.g. kikuyu-water" pattern="[a-z0-9][a-z0-9-]{1,58}[a-z0-9]">
+          </div>
+          <div class="form-row">
+            <label for="tfOrgName">Organization Name *</label>
+            <input type="text" id="tfOrgName" required placeholder="e.g. Kikuyu Water Co.">
+          </div>
+          <div class="form-row">
+            <label for="tfShortName">Short Name</label>
+            <input type="text" id="tfShortName" placeholder="e.g. KWC">
+          </div>
+          <div class="form-row">
+            <label for="tfTagline">Tagline</label>
+            <input type="text" id="tfTagline" placeholder="e.g. Pure, Reliable & Sustainable Water Supply">
+          </div>
+          <div class="form-row">
+            <label for="tfPhone">Phone</label>
+            <input type="text" id="tfPhone" placeholder="e.g. +254 700 000 001">
+          </div>
+          <div class="form-row">
+            <label for="tfEmail">Email</label>
+            <input type="email" id="tfEmail" placeholder="e.g. info@example.com">
+          </div>
+          <div class="form-row">
+            <label for="tfAddress">Address</label>
+            <input type="text" id="tfAddress" placeholder="e.g. Kikuyu, Kiambu County, Kenya">
+          </div>
+          <div class="form-row">
+            <label for="tfLocation">Location (used in SMS/WhatsApp header)</label>
+            <input type="text" id="tfLocation" placeholder="e.g. Kikuyu">
+          </div>
+          <div class="form-row">
+            <label for="tfPaybill">Paybill</label>
+            <input type="text" id="tfPaybill" placeholder="e.g. 123456">
+          </div>
+          <div class="form-row">
+            <label for="tfPaymentAccount">Payment Account (optional)</label>
+            <input type="text" id="tfPaymentAccount" placeholder="e.g. 255333K12">
+          </div>
+          <div class="form-row">
+            <label for="tfLogoKey">Logo Key (R2 object key, optional)</label>
+            <input type="text" id="tfLogoKey" placeholder="e.g. images/SimonW_Logo.png">
+          </div>
+          <div class="form-row">
+            <label for="tfThemePrimary">Theme Primary Colour</label>
+            <input type="text" id="tfThemePrimary" placeholder="#0d47a1">
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button id="modalCancelBtn" type="button" class="btn-secondary" onclick="closeTenantModal()">Cancel</button>
+        <button id="modalSaveBtn" type="submit" form="tenantForm" class="btn-primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let _tenants = [];
+    let _editingId = null;
+
+    function esc(s) {
+      const d = document.createElement('div');
+      d.textContent = s == null ? '' : String(s);
+      return d.innerHTML;
+    }
+    function show(el, kind, text) {
+      el.className = 'alert alert-' + kind;
+      el.textContent = text;
+      el.classList.remove('hidden');
+    }
+    function hide(el) { el.classList.add('hidden'); }
+
+    async function loadTenants() {
+      const list = document.getElementById('tenantsList');
+      try {
+        const r = await fetch('/api/admin/tenants', { credentials: 'same-origin' });
+        if (r.status === 401) { location.href = '/admin/login?next=/admin/tenants'; return; }
+        if (r.status === 403) { list.innerHTML = '<p class="form-hint-small">❌ Super-admin only.</p>'; return; }
+        const d = await r.json();
+        _tenants = d.tenants || [];
+        renderTenants();
+      } catch {
+        list.innerHTML = '<p class="form-hint-small">❌ Failed to load tenants.</p>';
+      }
+    }
+
+    function renderTenants() {
+      const list = document.getElementById('tenantsList');
+      if (_tenants.length === 0) {
+        list.innerHTML = '<p class="form-hint-small">No tenants yet.</p>';
+        return;
+      }
+      list.innerHTML = _tenants.map(t => {
+        const badgeClass = t.is_active ? 'badge-cleared' : 'badge-none';
+        const badgeLabel = t.is_active ? 'Active' : 'Inactive';
+        const isDefault = (t.slug === 'simon-freshwater');
+        const toggleLabel = t.is_active ? '⏸ Deactivate' : '▶ Activate';
+        return `
+          <div class="tenant-card">
+            <div class="tenant-card-head">
+              <div>
+                <div class="tenant-card-name">${esc(t.org_name)}</div>
+                <div class="tenant-card-slug">/${esc(t.slug)}</div>
+              </div>
+              <span class="badge ${badgeClass}">${badgeLabel}</span>
+            </div>
+            <div class="tenant-card-meta">
+              ${t.phone ? '📞 ' + esc(t.phone) + ' · ' : ''}
+              ${t.email ? '✉️ ' + esc(t.email) + ' · ' : ''}
+              ${t.paybill ? '💳 Paybill ' + esc(t.paybill) : ''}
+            </div>
+            <div class="tenant-card-actions">
+              <a class="btn-secondary btn-fit" href="/?__tenant=${encodeURIComponent(t.slug)}" target="_blank" rel="noopener">↗ Preview</a>
+              <button class="btn-secondary btn-fit" type="button" onclick="openEditTenant(${t.id})">✏️ Edit</button>
+              ${isDefault ? '' :
+                `<button class="btn-secondary btn-fit" type="button" onclick="toggleTenant(${t.id}, ${!t.is_active})">${toggleLabel}</button>
+                 <button class="btn-secondary btn-fit" type="button" style="border-color:#ef9a9a;color:#c62828;" onclick="deleteTenant(${t.id})">🗑 Delete</button>`}
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function openCreateTenant() {
+      _editingId = null;
+      document.getElementById('modalTitle').textContent = '➕ New Tenant';
+      document.getElementById('tenantForm').reset();
+      document.getElementById('tfSlug').disabled = false;
+      document.getElementById('tenantModal').classList.remove('hidden');
+    }
+
+    function openEditTenant(id) {
+      const t = _tenants.find(x => x.id === id);
+      if (!t) return;
+      _editingId = id;
+      document.getElementById('modalTitle').textContent = '✏️ Edit Tenant';
+      document.getElementById('tfSlug').value = t.slug || '';
+      document.getElementById('tfSlug').disabled = true;
+      document.getElementById('tfOrgName').value = t.org_name || '';
+      document.getElementById('tfShortName').value = t.short_name || '';
+      document.getElementById('tfTagline').value = t.tagline || '';
+      document.getElementById('tfPhone').value = t.phone || '';
+      document.getElementById('tfEmail').value = t.email || '';
+      document.getElementById('tfAddress').value = t.address || '';
+      document.getElementById('tfLocation').value = t.location || '';
+      document.getElementById('tfPaybill').value = t.paybill || '';
+      document.getElementById('tfPaymentAccount').value = t.payment_account || '';
+      document.getElementById('tfLogoKey').value = t.logo_key || '';
+      document.getElementById('tfThemePrimary').value = t.theme_primary || '';
+      document.getElementById('tenantModal').classList.remove('hidden');
+    }
+
+    function closeTenantModal() {
+      document.getElementById('tenantModal').classList.add('hidden');
+      _editingId = null;
+    }
+
+    async function submitTenant(e) {
+      e.preventDefault();
+      const btn = document.getElementById('modalSaveBtn');
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Saving…';
+
+      const body = {
+        slug:      document.getElementById('tfSlug').value.trim().toLowerCase(),
+        org_name:  document.getElementById('tfOrgName').value.trim(),
+        short_name:    document.getElementById('tfShortName').value.trim(),
+        tagline:       document.getElementById('tfTagline').value.trim(),
+        phone:         document.getElementById('tfPhone').value.trim(),
+        email:         document.getElementById('tfEmail').value.trim(),
+        address:       document.getElementById('tfAddress').value.trim(),
+        location:      document.getElementById('tfLocation').value.trim(),
+        paybill:       document.getElementById('tfPaybill').value.trim(),
+        payment_account: document.getElementById('tfPaymentAccount').value.trim(),
+        logo_key:      document.getElementById('tfLogoKey').value.trim(),
+        theme_primary: document.getElementById('tfThemePrimary').value.trim(),
+      };
+
+      const url = _editingId
+        ? `/api/admin/tenants/${_editingId}/update`
+        : `/api/admin/tenants`;
+      try {
+        const r = await fetch(url, {
+          method: 'POST', credentials: 'same-origin',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(body),
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) {
+          closeTenantModal();
+          await loadTenants();
+        } else {
+          alert('❌ ' + (d.error || 'Save failed.'));
+        }
+      } catch {
+        alert('❌ Network error.');
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
+    }
+
+    async function toggleTenant(id, wantActive) {
+      try {
+        const r = await fetch(`/api/admin/tenants/${id}/toggle_active`, {
+          method: 'POST', credentials: 'same-origin',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({active: wantActive}),
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) { await loadTenants(); }
+        else { alert('❌ ' + (d.error || 'Failed.')); }
+      } catch { alert('❌ Network error.'); }
+    }
+
+    async function deleteTenant(id) {
+      const t = _tenants.find(x => x.id === id);
+      if (!t) return;
+      if (!confirm(`⚠️ Permanently delete tenant "${t.org_name}" (/${t.slug})?\n\n` +
+                   `This cannot be undone. The tenant must have no consumers.`)) return;
+      try {
+        const r = await fetch(`/api/admin/tenants/${id}/delete`, {
+          method: 'POST', credentials: 'same-origin',
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) { await loadTenants(); }
+        else { alert('❌ ' + (d.error || 'Delete failed.')); }
+      } catch { alert('❌ Network error.'); }
+    }
+
+    window.openEditTenant = openEditTenant;
+    window.closeTenantModal = closeTenantModal;
+    window.toggleTenant = toggleTenant;
+    window.deleteTenant = deleteTenant;
+
+    document.getElementById('openCreateBtn').addEventListener('click', openCreateTenant);
+    document.getElementById('tenantForm').addEventListener('submit', submitTenant);
+    loadTenants();
+  </script>
+</body>
+</html>
