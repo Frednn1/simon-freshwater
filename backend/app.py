@@ -86,16 +86,25 @@ _STATIC_PATH_PREFIXES = ("/images/",)
 def _resolve_tenant_from_request():
     """Return the Tenant for the current request, or None if not found.
     Never raises — a lookup failure falls back to None and the request
-    proceeds without tenant context."""
+    proceeds without tenant context.
+
+    An explicit slug (from ?__tenant= or X-Tenant-Slug) resolves whether
+    or not the tenant is active, so operators can preview an inactive
+    tenant's branding before activating it. The default fallback still
+    requires an active tenant.
+    """
     slug = (request.args.get("__tenant") or "").strip()
+    explicit = bool(slug)
     if not slug:
         slug = (request.headers.get("X-Tenant-Slug") or "").strip()
+        explicit = bool(slug)
     if not slug:
         slug = _DEFAULT_TENANT_SLUG
     try:
-        return (Tenant.query
-                .filter_by(slug=slug, is_active=True)
-                .first())
+        q = Tenant.query.filter_by(slug=slug)
+        if not explicit:
+            q = q.filter_by(is_active=True)
+        return q.first()
     except Exception:
         return None
 
@@ -196,12 +205,14 @@ def _brand_context():
     if not logo.startswith("/"):
         logo = "/" + logo
 
+    _city = (addr.split(",")[0].strip() if addr else "Kikuyu")
     return {
         "brand_name":       name,
         "brand_name_upper": name.upper(),
         "brand_tagline":    (t.tagline if t and t.tagline else "Pure, Reliable & Sustainable Water Supply"),
         "brand_address":    addr,
-        "brand_city_upper": (addr.split(",")[0].strip().upper() if addr else "KIKUYU"),
+        "brand_city":       _city,
+        "brand_city_upper": _city.upper(),
         "brand_phone":      (t.phone if t and t.phone else "+254 700 719311"),
         "brand_email":      (t.email if t and t.email else "simonchege84@gmail.com"),
         "brand_logo_url":   logo,
