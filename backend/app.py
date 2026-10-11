@@ -431,7 +431,7 @@ def _current_admin():
                        _admin_id=_aid, _admin_username=_uname)
             return None
 
-    a = AdminUser.query.get(aid)
+    a = _tenant_query(AdminUser).filter_by(id=aid).first()
     if not a or not a.is_active:
         session.clear()
         return None
@@ -2256,7 +2256,7 @@ def notify_consumer(consumer_id):
 
 @app.route("/api/admin/whoami")
 def admin_whoami():
-    setup_required = AdminUser.query.count() == 0
+    setup_required = _tenant_query(AdminUser).count() == 0
     admin = _current_admin()
     if admin:
         return jsonify({"authenticated": True, "username": admin.username,
@@ -2269,6 +2269,9 @@ def admin_setup_route():
     if not _rate_limit("setup", 10, 60):
         return _too_many(60)
 
+    _tid_setup = _write_tenant_id()
+    if _tid_setup < 0:
+        return jsonify({"ok": False, "error": "No tenant context for this request."}), 400
     data = request.get_json(silent=True) or {}
     result = create_first_admin(
         username=data.get("username", ""),
@@ -2276,6 +2279,7 @@ def admin_setup_route():
         phone=data.get("phone", ""),
         email=data.get("email"),
         setup_code=data.get("setup_code", ""),
+        tenant_id=_tid_setup,
     )
     if result.get("ok"):
         session.clear()
@@ -2292,8 +2296,12 @@ def admin_login_route():
     if not _rate_limit("login", 20, 60):
         return _too_many(60)
 
+    _tid_login = _write_tenant_id()
+    if _tid_login < 0:
+        return jsonify({"ok": False, "error": "No tenant context for this request."}), 401
     data = request.get_json(silent=True) or {}
-    result = admin_login_fn(data.get("username", ""), data.get("password", ""))
+    result = admin_login_fn(data.get("username", ""), data.get("password", ""),
+                            tenant_id=_tid_login)
     if not result.get("ok"):
         _audit("login_failed",
                detail=f"attempted_username={(data.get('username') or '')[:40]}")
@@ -2302,7 +2310,7 @@ def admin_login_route():
     # ── 2FA branch ──
     two_fa_on = os.environ.get("ADMIN_2FA_ENABLED", "false").strip().lower() in ("1","true","yes","on")
     if two_fa_on:
-        admin = AdminUser.query.get(result["admin_id"])
+        admin = _tenant_query(AdminUser).filter_by(id=result["admin_id"]).first()
         if not admin or not admin.phone:
             return jsonify({"ok": False,
                             "error": "2FA is enabled but no phone is configured for this admin."}), 500
@@ -2342,7 +2350,7 @@ def admin_login_verify_otp():
     if not pending_id:
         return jsonify({"ok": False, "error": "No pending login. Please sign in again."}), 401
 
-    admin = AdminUser.query.get(pending_id)
+    admin = _tenant_query(AdminUser).filter_by(id=pending_id).first()
     if not admin or not admin.is_active:
         session.clear()
         return jsonify({"ok": False, "error": "Invalid session."}), 401
@@ -2370,7 +2378,7 @@ def admin_login_resend_otp():
     if not pending_id:
         return jsonify({"ok": False, "error": "No pending login. Please sign in again."}), 401
 
-    admin = AdminUser.query.get(pending_id)
+    admin = _tenant_query(AdminUser).filter_by(id=pending_id).first()
     if not admin or not admin.is_active:
         return jsonify({"ok": False, "error": "Invalid session."}), 401
 
@@ -2394,7 +2402,8 @@ def admin_forgot_route():
         return _too_many(60)
 
     data = request.get_json(silent=True) or {}
-    result = request_password_reset(data.get("identifier", ""))
+    result = request_password_reset(data.get("identifier", ""),
+                                    tenant_id=_write_tenant_id())
     return jsonify(result), (200 if result.get("ok") else 400)
 
 
@@ -2406,6 +2415,7 @@ def admin_reset_route():
     data = request.get_json(silent=True) or {}
     result = confirm_password_reset(
         data.get("token", ""), data.get("otp", ""), data.get("new_password", ""),
+        tenant_id=_write_tenant_id(),
     )
     return jsonify(result), (200 if result.get("ok") else 400)
 
@@ -2449,7 +2459,8 @@ def admin_update_username():
     if new_username == (admin.username or "").lower():
         return jsonify({"error": "That is already your username."}), 400
 
-    dup = AdminUser.query.filter_by(username=new_username).first()
+    dup = _tenant_query(AdminUser).filter_by(username=new_username).first()
+    # def admin_auth_tenant_call_sites_marker
     if dup and dup.id != admin.id:
         return jsonify({"error": "That username is already taken."}), 409
 

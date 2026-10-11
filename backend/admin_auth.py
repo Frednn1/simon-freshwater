@@ -32,12 +32,15 @@ def _hash_otp(o: str) -> str:
 
 
 # ─── Bootstrap ───
-def create_first_admin(username, password, phone, email, setup_code):
+def create_first_admin(username, password, phone, email, setup_code, tenant_id=1):
+    # _tenant_scope_marker
+    if tenant_id is None or tenant_id < 1:
+        return {"ok": False, "error": "No tenant context for this request."}
     if not ADMIN_SETUP_CODE:
         return {"ok": False, "error": "Setup disabled (ADMIN_SETUP_CODE not configured on server)."}
     if not secrets.compare_digest(setup_code or "", ADMIN_SETUP_CODE):
         return {"ok": False, "error": "Invalid setup code."}
-    if AdminUser.query.count() > 0:
+    if AdminUser.query.filter_by(tenant_id=tenant_id).count() > 0:
         return {"ok": False, "error": "An admin already exists. Please log in."}
 
     username = (username or "").strip().lower()
@@ -54,6 +57,7 @@ def create_first_admin(username, password, phone, email, setup_code):
         phone=phone.strip(),
         email=(email or "").strip() or None,
         is_active=True,
+        tenant_id=tenant_id,
     )
     db.session.add(admin)
     db.session.commit()
@@ -61,9 +65,11 @@ def create_first_admin(username, password, phone, email, setup_code):
 
 
 # ─── Login ───
-def login(username, password):
+def login(username, password, tenant_id=1):
+    if tenant_id is None or tenant_id < 1:
+        return {"ok": False, "error": "No tenant context for this request."}
     username = (username or "").strip().lower()
-    admin = AdminUser.query.filter_by(username=username).first()
+    admin = AdminUser.query.filter_by(username=username, tenant_id=tenant_id).first()
     if not admin or not admin.is_active:
         return {"ok": False, "error": "Invalid credentials."}
 
@@ -91,13 +97,15 @@ def login(username, password):
 
 
 # ─── Password reset ───
-def request_password_reset(identifier):
+def request_password_reset(identifier, tenant_id=1):
+    if tenant_id is None or tenant_id < 1:
+        return {"ok": False, "error": "No tenant context for this request."}
     q = (identifier or "").strip()
     if not q:
         return {"ok": False, "error": "Provide your username or phone number."}
 
-    admin = (AdminUser.query.filter_by(username=q.lower()).first()
-             or AdminUser.query.filter_by(phone=q).first())
+    admin = (AdminUser.query.filter_by(username=q.lower(), tenant_id=tenant_id).first()
+             or AdminUser.query.filter_by(phone=q, tenant_id=tenant_id).first())
     if not admin:
         # Don't reveal existence
         return {"ok": True, "message": "If the account exists, a code was sent.",
@@ -133,7 +141,9 @@ def request_password_reset(identifier):
             "sms_ok": bool(sms_result.get("ok"))}
 
 
-def confirm_password_reset(reset_token, otp, new_password):
+def confirm_password_reset(reset_token, otp, new_password, tenant_id=1):
+    if tenant_id is None or tenant_id < 1:
+        return {"ok": False, "error": "No tenant context for this request."}
     if not reset_token or not otp or not new_password:
         return {"ok": False, "error": "All fields are required."}
     if len(new_password) < 8:
@@ -151,7 +161,7 @@ def confirm_password_reset(reset_token, otp, new_password):
     if tok.otp_hash != _hash_otp(otp):
         return {"ok": False, "error": "Incorrect OTP code."}
 
-    admin = AdminUser.query.get(tok.admin_id)
+    admin = AdminUser.query.filter_by(id=tok.admin_id, tenant_id=tenant_id).first()
     if not admin:
         return {"ok": False, "error": "Admin no longer exists."}
 
