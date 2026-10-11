@@ -17,6 +17,7 @@ from sqlalchemy import text, inspect
 from models import (
     db, Consumer, MeterReading, NotificationLog,
     AdminUser, PaymentLog, MpesaLog, SentBillArchive, AdminAuditLog,
+    Tenant,
 )
 from billing import (
     compute_amount, compute_consumption,
@@ -3734,12 +3735,52 @@ def admin_mpesa_assign():
 
 
 # ═══════════════════════════════════════════════
+#  TENANTS — seed helper
+# ═══════════════════════════════════════════════
+
+def _seed_default_tenant():
+    """Create the Simon Fresh Water tenant row on first boot.
+
+    Idempotent — does nothing if any tenant already exists. This gives
+    every existing consumer/reading/payment an implicit owner so that
+    Phase 3 (tenant_id columns) can default to 1 without touching data.
+    """
+    try:
+        if Tenant.query.count() > 0:
+            return
+        t = Tenant(
+            slug="simon-freshwater",
+            org_name="Simon Fresh Water",
+            short_name="SFW",
+            tagline="Pure, Reliable & Sustainable Water Supply",
+            email="simonchege84@gmail.com",
+            phone="+254 700 719311",
+            address="Kikuyu, Kenya",
+            paybill=os.environ.get("PAYBBILL", "") or os.environ.get("PAYBILL", ""),
+            payment_account=None,
+            logo_key="images/SimonW_Logo.png",
+            theme_primary="#0d47a1",
+            is_active=True,
+        )
+        db.session.add(t)
+        db.session.commit()
+        app.logger.info("[Tenants] Seeded default tenant: simon-freshwater")
+    except Exception:
+        try:
+            app.logger.exception("[Tenants] seed failed")
+            db.session.rollback()
+        except Exception:
+            pass
+
+
+# ═══════════════════════════════════════════════
 #  INIT
 # ═══════════════════════════════════════════════
 
 with app.app_context():
     db.create_all()
     _ensure_all_columns()
+    _seed_default_tenant()
     try:
         start_scheduler(app, Consumer, MeterReading)
     except Exception as e:

@@ -208,3 +208,28 @@ class AdminAuditLog(db.Model):
     user_agent = db.Column(db.String(200))
     created_at = db.Column(db.DateTime, default=datetime.utcnow,
                            nullable=False, index=True)
+
+
+# ═══════════════════════════════════════════════
+#  TENANTS — one row per billing organization
+# ═══════════════════════════════════════════════
+# Phase 1 of the multi-tenant upgrade. The table is created and
+# seeded on first boot (see app.py init). Nothing reads it yet.
+
+
+class Tenant(db.Model):
+    __tablename__ = 'tenants'
+    id = db.Column(db.Integer, primary_key=True)
+    slug = db.Column(db.String(60), unique=True, nullable=False, index=True)
+    org_name = db.Column(db.String(120), nullable=False)
+    short_name = db.Column(db.String(60))
+    tagline = db.Column(db.String(200))
+    email = db.Column(db.String(120))
+    phone = db.Column(db.String(30))
+    address = db.Column(db.String(255))
+    paybill = db.Column(db.String(30))
+    payment_account = db.Column(db.String(60))
+    logo_key = db.Column(db.String(255))
+    theme_primary = db.Column(db.String(10), default="#0d47a1")
+    is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
