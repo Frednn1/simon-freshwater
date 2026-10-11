@@ -236,6 +236,8 @@
             </div>
             <div class="tenant-card-actions">
               <a class="btn-secondary btn-fit" href="/?__preview=${encodeURIComponent(t.slug)}" target="_blank" rel="noopener">↗ Preview</a>
+              ${!isDefault ?
+                `<button class="btn-secondary btn-fit" type="button" onclick="switchTenant(${t.id}, '${escAttr(t.org_name)}')">🔁 Sign In As</button>` : ''}
               ${(t.is_active && !t.has_admin) ?
                 `<button class="btn-secondary btn-fit" type="button" onclick="openCreateAdmin(${t.id})">🔑 Create Admin</button>` : ''}
               <button class="btn-secondary btn-fit" type="button" onclick="openLogoUpload(${t.id})">🖼️ Logo</button>
@@ -427,6 +429,24 @@
       } catch { alert('❌ Network error.'); }
       finally { btn.disabled = false; btn.textContent = orig; }
     }
+    async function switchTenant(id, name) {
+      if (!confirm(`Sign out and switch to "${name}"?\n\n` +
+                   `You will be redirected to ${name}'s login page. ` +
+                   `Sign in as that tenant's admin to continue.`)) return;
+      try {
+        const r = await fetch(`/api/admin/tenants/${id}/switch`, {
+          method: 'POST', credentials: 'same-origin',
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) {
+          location.href = d.redirect;
+        } else {
+          alert('❌ ' + (d.error || 'Switch failed.'));
+        }
+      } catch { alert('❌ Network error.'); }
+    }
+    window.switchTenant = switchTenant;
+
     window.openLogoUpload = openLogoUpload;
     window.closeLogoModal = closeLogoModal;
 

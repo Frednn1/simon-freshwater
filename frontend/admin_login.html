@@ -62,12 +62,25 @@
         <a href="/admin/forgot" class="auth-link">Forgot password?</a>
         <a href="/" class="auth-link">← Back to site</a>
       </div>
+      <a href="/admin/login" id="switchOrgLink" class="auth-link"
+         style="display:none;text-align:center;margin-top:.9rem;font-size:.82rem;opacity:.75;">
+        Sign in to a different organization →
+      </a>
     </div>
   </main>
 
   <script>
     const params = new URLSearchParams(location.search);
     const NEXT = params.get('next') || '/';
+    // Show "different organization" link when on a non-default tenant
+    (function () {
+      const t = params.get('__tenant');
+      if (t && t !== 'simon-freshwater') {
+        const el = document.getElementById('switchOrgLink');
+        if (el) el.style.display = 'block';
+      }
+    })();
+
     // Propagate ?__tenant= to every auth fetch so anonymous requests
     // resolve the right tenant without needing session persistence.
     const TENANT_QS = (() => {

@@ -1159,6 +1159,33 @@ def admin_tenants_create_admin(tenant_id):
                     "admin": {"id": admin.id, "username": admin.username}}), 201
 
 
+@app.route("/api/admin/tenants/<int:tenant_id>/switch", methods=["POST"])
+def admin_tenants_switch(tenant_id):
+    """Super-admin only. Clears the current session and returns the
+    target tenant's login URL. The super-admin then signs in as that
+    tenant's admin. This is the ONLY safe way to change tenants while
+    logged in — the resolver ignores URL params for authenticated users
+    on purpose, so cross-tenant redirection cannot happen via a link."""
+    u = _require_super_admin()
+    if u: return u
+    if not _rate_limit("tenant_switch", 10, 60):
+        return _too_many(60)
+
+    t = Tenant.query.get(tenant_id)
+    if not t or not t.is_active:
+        return jsonify({"error": "Tenant not found or inactive."}), 404
+
+    _audit("tenant_switch",
+           target_type="tenant", target_id=t.id,
+           target_label=f"{t.org_name} · {t.slug}")
+
+    session.clear()
+    return jsonify({
+        "ok": True,
+        "redirect": f"/admin/login?__tenant={t.slug}",
+    }), 200
+
+
 @app.route("/api/admin/tenants/<int:tenant_id>/toggle_active", methods=["POST"])
 def admin_tenants_toggle_active(tenant_id):
     u = _require_super_admin()
