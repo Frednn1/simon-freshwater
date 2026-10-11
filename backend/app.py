@@ -568,6 +568,39 @@ def _ensure_all_columns():
             db.session.commit()
             app.logger.info("[Migration] Added receipt_json to payment_log")
 
+    # ─── Phase 3a: tenant_id on all data tables ───
+    # Adds the column with a default of 1 so every existing row is
+    # scoped to Simon Fresh Water (tenant id 1). Idempotent — skips
+    # any table where the column already exists.
+    _TENANT_SCOPED_TABLES = (
+        "consumers",
+        "meter_readings",
+        "payment_log",
+        "notification_log",
+        "mpesa_log",
+        "sent_bill_archive",
+        "admin_audit_log",
+        "admin_users",
+    )
+    for tbl in _TENANT_SCOPED_TABLES:
+        if tbl not in tables:
+            continue
+        cols = {c["name"] for c in insp.get_columns(tbl)}
+        if "tenant_id" in cols:
+            continue
+        try:
+            db.session.execute(text(
+                f"ALTER TABLE {tbl} ADD COLUMN tenant_id INTEGER NOT NULL DEFAULT 1"
+            ))
+            db.session.commit()
+            app.logger.warning(f"[Migration] Added tenant_id to {tbl}")
+        except Exception as e:
+            try:
+                app.logger.warning(f"[Migration] tenant_id {tbl} skipped: {e}")
+                db.session.rollback()
+            except Exception:
+                pass
+
 
 # ═══════════════════════════════════════════════
 #  FRONTEND ROUTES

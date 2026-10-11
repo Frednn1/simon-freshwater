@@ -7,6 +7,7 @@ db = SQLAlchemy()
 class Consumer(db.Model):
     __tablename__ = 'consumers'
     id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, nullable=False, default=1, index=True)
     cust_name = db.Column(db.String(100), nullable=False, index=True)
     acc_name = db.Column(db.String(100), nullable=False)
     meter_acc_no = db.Column(db.String(50), unique=True, nullable=False, index=True)
@@ -32,6 +33,7 @@ class Consumer(db.Model):
 class MeterReading(db.Model):
     __tablename__ = 'meter_readings'
     id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, nullable=False, default=1, index=True)
     consumer_id = db.Column(db.Integer, db.ForeignKey('consumers.id'), nullable=False)
     reading_m3 = db.Column(db.Float, nullable=False)
     reading_date = db.Column(db.Date, nullable=False)
@@ -47,6 +49,7 @@ class MeterReading(db.Model):
 class PaymentLog(db.Model):
     __tablename__ = 'payment_log'
     id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, nullable=False, default=1, index=True)
     consumer_id = db.Column(db.Integer, db.ForeignKey('consumers.id'),
                             nullable=False, index=True)
     amount_kes = db.Column(db.Float, nullable=False)
@@ -62,6 +65,7 @@ class PaymentLog(db.Model):
 class NotificationLog(db.Model):
     __tablename__ = 'notification_log'
     id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, nullable=False, default=1, index=True)
     consumer_id = db.Column(db.Integer, db.ForeignKey('consumers.id'),
                             nullable=False, index=True)
     channel = db.Column(db.String(10), nullable=False)
@@ -75,6 +79,7 @@ class MpesaLog(db.Model):
     """Audit trail for every M-Pesa C2B callback received."""
     __tablename__ = 'mpesa_log'
     id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, nullable=False, default=1, index=True)
     trans_id = db.Column(db.String(40), unique=True, nullable=False, index=True)
     trans_time = db.Column(db.String(20))
     trans_amount = db.Column(db.Float, nullable=False, default=0.0)
@@ -108,6 +113,7 @@ class RateLimitBucket(db.Model):
 class AdminUser(db.Model):
     __tablename__ = 'admin_users'
     id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, nullable=False, default=1, index=True)
     username = db.Column(db.String(60), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
     phone = db.Column(db.String(20), nullable=False)
@@ -161,6 +167,7 @@ class PasswordResetToken(db.Model):
 class SentBillArchive(db.Model):
     __tablename__ = 'sent_bill_archive'
     id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, nullable=False, default=1, index=True)
     consumer_id = db.Column(db.Integer, db.ForeignKey('consumers.id'),
                             nullable=False, index=True)
     reading_id = db.Column(db.Integer, db.ForeignKey('meter_readings.id'),
@@ -195,6 +202,7 @@ class SentBillArchive(db.Model):
 class AdminAuditLog(db.Model):
     __tablename__ = 'admin_audit_log'
     id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, nullable=False, default=1, index=True)
     admin_id = db.Column(db.Integer,
                          db.ForeignKey('admin_users.id'),
                          nullable=True, index=True)
