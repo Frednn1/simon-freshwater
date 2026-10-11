@@ -3766,6 +3766,44 @@ def admin_backup_run():
     return jsonify(result), 502
 
 
+@app.route("/api/admin/_debug/tenant-hook", methods=["GET"])
+def _debug_tenant_hook():
+    """TEMPORARY — determines whether the do_orm_execute hook is applying."""
+    u = _require_admin()
+    if u: return u
+
+    # What the resolver thinks the current tenant is
+    try:
+        gt = g.tenant
+        g_desc = {"slug": gt.slug, "id": gt.id} if gt else None
+    except Exception as e:
+        g_desc = f"error: {e}"
+
+    tid = _current_query_tenant_id()
+
+    # What hook-scoped queries actually return
+    try:
+        n_orm = Consumer.query.count()
+        first_orm = Consumer.query.first()
+        first_id = first_orm.id if first_orm else None
+    except Exception as e:
+        n_orm, first_id = f"error: {e}", None
+
+    # What an explicit filter returns (ground truth)
+    try:
+        n_explicit = Consumer.query.filter_by(tenant_id=tid).count() if tid is not None else None
+    except Exception as e:
+        n_explicit = f"error: {e}"
+
+    return jsonify({
+        "resolved_tenant_id": tid,
+        "g_tenant": g_desc,
+        "orm_consumer_count": n_orm,
+        "orm_first_consumer_id": first_id,
+        "explicit_tenant_count": n_explicit,
+    })
+
+
 @app.route("/api/admin/consumers/all", methods=["GET"])
 def admin_consumers_all():
     """Return all consumers (active + terminated), alphabetically.
