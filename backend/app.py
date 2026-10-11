@@ -209,8 +209,10 @@ def _brand_context():
 
 
 def _serve_template(filename):
-    """Serve a template HTML file (from TEMPLATES_DIR) with brand substitution.
-    Used by the manual Chrome -> Save as PDF workflow.
+    """Serve a template HTML file (from TEMPLATES_DIR) RAW — tokens intact.
+    Used by the manual Chrome -> Save as PDF workflow. The {{placeholder}}
+    text must survive into the printed PDF so PyMuPDF can fill it at send
+    time from the snapshot. Do NOT substitute here.
     """
     path = os.path.join(TEMPLATES_DIR, filename)
     if not os.path.exists(path):
@@ -218,9 +220,6 @@ def _serve_template(filename):
 
     with open(path, "r", encoding="utf-8") as f:
         html = f.read()
-
-    for token, value in _brand_context().items():
-        html = html.replace("{{" + token + "}}", value)
 
     return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
