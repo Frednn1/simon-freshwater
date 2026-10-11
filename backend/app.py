@@ -2868,9 +2868,16 @@ def admin_login_resend_otp():
 
 @app.route("/api/admin/logout", methods=["POST"])
 def admin_logout_route():
+    # Capture the tenant slug BEFORE clearing the session, then return
+    # a tenant-scoped login URL so the post-logout redirect stays on the
+    # correct tenant's portal. Default tenant → plain /admin/login.
+    _slug = session.get("__tenant_slug") or _DEFAULT_TENANT_SLUG
     _audit("logout")
     session.clear()
-    return jsonify({"ok": True}), 200
+    redirect_url = "/admin/login"
+    if _slug and _slug != _DEFAULT_TENANT_SLUG:
+        redirect_url = f"/admin/login?__tenant={_slug}"
+    return jsonify({"ok": True, "redirect": redirect_url}), 200
 
 
 @app.route("/api/admin/forgot", methods=["POST"])

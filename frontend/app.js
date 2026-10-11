@@ -157,8 +157,17 @@ function renderAuthTab() {
     icon.textContent = '🚪';
     btn.onclick = async () => {
       if (!confirm('Log out of the admin panel?')) return;
-      try { await fetch('/api/admin/logout', { method: 'POST', credentials: 'same-origin' }); } catch {}
-      location.href = '/';
+      let redirect = '/admin/login';
+      try {
+        const r = await fetch('/api/admin/logout', {
+          method: 'POST', credentials: 'same-origin',
+        });
+        if (r.ok) {
+          const d = await r.json();
+          if (d && d.redirect) redirect = d.redirect;
+        }
+      } catch (_) { /* fall through to default */ }
+      location.href = redirect;
     };
   } else {
     btn.classList.remove('tab-logout');
