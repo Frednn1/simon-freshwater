@@ -883,13 +883,13 @@ def _tenant_to_dict(t):
     }
 
 
-@app.route("/admin/tenants")
 @app.route("/api/tenant/reset", methods=["POST"])
 def tenant_reset():
     session.pop("__tenant_slug", None)
     return jsonify({"ok": True, "tenant": _DEFAULT_TENANT_SLUG})
 
 
+@app.route("/admin/tenants")
 def admin_tenants_page():
     admin = _current_admin()
     if not admin:
