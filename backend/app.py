@@ -4410,6 +4410,39 @@ def admin_backup_run():
     return jsonify(result), 502
 
 
+@app.route("/api/admin/_debug/template_info", methods=["GET"])
+def _debug_template_info():
+    """TEMPORARY — image rects for the four PDF templates."""
+    u = _require_admin()
+    if u: return u
+    import fitz as _fitz
+    out = {}
+    for name in ("water_bill_template.pdf",
+                 "SimonWater_ReceiptTemplate.pdf",
+                 "SimonWater_ReportTemplate.pdf",
+                 "SimonWater_StatementTemplate.pdf"):
+        path = os.path.join(TEMPLATES_DIR, name)
+        if not os.path.exists(path):
+            out[name] = {"error": "missing"}; continue
+        doc = _fitz.open(path)
+        pages = []
+        for pno, page in enumerate(doc):
+            imgs = []
+            for img in page.get_images(full=True):
+                xref = img[0]
+                for r in page.get_image_rects(xref):
+                    imgs.append({
+                        "xref": int(xref),
+                        "x0": round(r.x0, 2), "y0": round(r.y0, 2),
+                        "x1": round(r.x1, 2), "y1": round(r.y1, 2),
+                        "w":  round(r.width, 2), "h": round(r.height, 2),
+                    })
+            pages.append({"page": pno + 1, "images": imgs})
+        out[name] = {"pages": pages}
+        doc.close()
+    return jsonify(out)
+
+
 @app.route("/api/admin/consumers/all", methods=["GET"])
 def admin_consumers_all():
     """Return all consumers (active + terminated), alphabetically.
