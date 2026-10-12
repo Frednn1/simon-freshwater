@@ -153,8 +153,17 @@ def _apply_replacements(page, pairs):
             continue
         line = " \u00b7 ".join(parts)
         first_ph = g[0][0]
+        try:
+            text_w = fitz.get_text_length(
+                line, fontname="helv", fontsize=first_ph["size"])
+        except Exception:
+            text_w = 0.0
+        if text_w > 0:
+            x = (page.rect.width - text_w) / 2.0
+        else:
+            x = first_ph["origin"][0]
         page.insert_text(
-            (first_ph["origin"][0], first_ph["origin"][1]), line,
+            (x, first_ph["origin"][1]), line,
             fontsize=first_ph["size"],
             fontname="helv",
             color=first_ph["color"],
