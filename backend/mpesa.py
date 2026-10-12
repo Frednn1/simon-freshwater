@@ -148,3 +148,140 @@ def simulate_c2b_payment(amount: int, msisdn: str, bill_ref_number: str) -> dict
         return {"ok": True, "response": r.json()}
     except Exception as e:
         return {"ok": False, "error": str(e)}
+
+
+# ═══════════════════════════════════════════════
+#  PER-TENANT CREDENTIALS (multi-tenant)
+# ═══════════════════════════════════════════════
+# Each tenant has its own Daraja app. Credentials live in Render env vars
+# named after the tenant slug:
+#
+#   MPESA_<SLUG_UPPER>_ENV             sandbox | production
+#   MPESA_<SLUG_UPPER>_CONSUMER_KEY    ...
+#   MPESA_<SLUG_UPPER>_CONSUMER_SECRET ...
+#   MPESA_<SLUG_UPPER>_SHORTCODE       ...
+#
+# <SLUG_UPPER> is the slug uppercased with '-' replaced by '_'.
+# Example: "demo-tenant-1" → "DEMO_TENANT_1"
+#
+# When a tenant has no per-tenant vars, or when no tenant is supplied,
+# the module-level globals (MPESA_*, Simon's current setup) are used —
+# so nothing changes for the existing deployment.
+
+
+def _slug_prefix(slug: str) -> str:
+    return (slug or "").strip().upper().replace("-", "_")
+
+
+def credentials_for_tenant(slug: str = None) -> dict:
+    """Return the M-Pesa credentials to use for the given tenant slug.
+
+    Falls back to the global MPESA_* env vars when the tenant has no
+    per-tenant configuration. Never raises.
+    """
+    globals_ = {
+        "env": MPESA_ENV,
+        "consumer_key": MPESA_CONSUMER_KEY,
+        "consumer_secret": MPESA_CONSUMER_SECRET,
+        "shortcode": MPESA_SHORTCODE,
+        "base_url": BASE_URL,
+    }
+    if not slug:
+        return globals_
+    p = _slug_prefix(slug)
+    env_  = os.environ.get(f"MPESA_{p}_ENV", "").strip().lower()
+    key   = os.environ.get(f"MPESA_{p}_CONSUMER_KEY", "").strip()
+    sec   = os.environ.get(f"MPESA_{p}_CONSUMER_SECRET", "").strip()
+    short = os.environ.get(f"MPESA_{p}_SHORTCODE", "").strip()
+    if not (key and sec and short):
+        return globals_
+    if env_ not in ("sandbox", "production"):
+        env_ = MPESA_ENV
+    base = ("https://api.safaricom.co.ke" if env_ == "production"
+            else "https://sandbox.safaricom.co.ke")
+    return {
+        "env": env_,
+        "consumer_key": key,
+        "consumer_secret": sec,
+        "shortcode": short,
+        "base_url": base,
+    }
+
+
+_token_cache_by_key = {}
+
+
+def _token_cache_key(creds: dict) -> str:
+    return f"{creds.get('env')}|{creds.get('shortcode')}|{creds.get('consumer_key', '')[:8]}"
+
+
+def get_access_token_for(creds: dict, force: bool = False) -> dict:
+    """Like get_access_token(), but keyed by a credential set."""
+    key = _token_cache_key(creds)
+    now = time.time()
+    with _token_lock:
+        entry = _token_cache_by_key.get(key)
+        if not force and entry and now < entry["expires_at"]:
+            return {"ok": True, "token": entry["token"]}
+
+        if not (creds.get("consumer_key") and creds.get("consumer_secret")):
+            return {"ok": False, "error": "M-Pesa not configured for this tenant."}
+
+        url = f"{creds['base_url']}/oauth/v1/generate?grant_type=client_credentials"
+        auth = base64.b64encode(
+            f"{creds['consumer_key']}:{creds['consumer_secret']}".encode()
+        ).decode()
+        try:
+            r = requests.get(url,
+                             headers={"Authorization": f"Basic {auth}"},
+                             timeout=20)
+            if r.status_code != 200:
+                return {"ok": False,
+                        "error": f"HTTP {r.status_code}: {r.text[:200]}"}
+            data = r.json()
+            token = data.get("access_token")
+            expires = int(data.get("expires_in", 3599))
+            if not token:
+                return {"ok": False, "error": "No token in response"}
+            _token_cache_by_key[key] = {
+                "token": token,
+                "expires_at": now + max(expires - 60, 60),
+            }
+            return {"ok": True, "token": token}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+
+def register_c2b_urls_for(creds: dict,
+                          confirmation_url: str,
+                          validation_url: str) -> dict:
+    """Register C2B URLs using a specific credential set."""
+    tok = get_access_token_for(creds)
+    if not tok.get("ok"):
+        return tok
+    if not creds.get("shortcode"):
+        return {"ok": False, "error": "No shortcode configured for this tenant."}
+    url = f"{creds['base_url']}/mpesa/c2b/v1/registerurl"
+    payload = {
+        "ShortCode": creds["shortcode"],
+        "ResponseType": "Completed",
+        "ConfirmationURL": confirmation_url,
+        "ValidationURL": validation_url,
+    }
+    try:
+        r = requests.post(
+            url, json=payload,
+            headers={
+                "Authorization": f"Bearer {tok['token']}",
+                "Content-Type": "application/json",
+            },
+            timeout=20,
+        )
+        if r.status_code not in (200, 201):
+            return {"ok": False, "error": f"HTTP {r.status_code}: {r.text[:200]}"}
+        data = r.json()
+        if str(data.get("ResponseCode", "")) == "0":
+            return {"ok": True, "response": data}
+        return {"ok": False, "error": data.get("ResponseDescription") or data}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
