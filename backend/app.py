@@ -41,6 +41,7 @@ from report import generate_report_pdf
 from bulk_sms import send_bulk_sms, BULK_SMS_MAX_BATCH
 from mpesa import (
     get_mpesa_config, register_c2b_urls, simulate_c2b_payment,
+    credentials_for_tenant, register_c2b_urls_for,
 )
 import archive
 import backup
@@ -933,6 +934,8 @@ def _tenant_to_dict(t):
         "location": t.location,
         "paybill": t.paybill,
         "payment_account": t.payment_account,
+        "mpesa_shortcode": t.mpesa_shortcode,
+        "mpesa_env": t.mpesa_env or "sandbox",
         "logo_key": t.logo_key,
         "theme_primary": t.theme_primary,
         "is_active": bool(t.is_active),
@@ -1051,6 +1054,10 @@ def admin_tenants_create():
         if clash:
             return jsonify({"error": f"Paybill {paybill} is already used by "
                                      f"active tenant '{clash.slug}'."}), 409
+    mpesa_shortcode = (data.get("mpesa_shortcode") or "").strip() or None
+    mpesa_env = (data.get("mpesa_env") or "sandbox").strip().lower()
+    if mpesa_env not in ("sandbox", "production"):
+        mpesa_env = "sandbox"
 
     t = Tenant(
         slug=slug,
@@ -1063,6 +1070,8 @@ def admin_tenants_create():
         location=(data.get("location") or "").strip() or None,
         paybill=paybill,
         payment_account=(data.get("payment_account") or "").strip() or None,
+        mpesa_shortcode=mpesa_shortcode,
+        mpesa_env=mpesa_env,
         logo_key=(data.get("logo_key") or "").strip() or None,
         theme_primary=(data.get("theme_primary") or "").strip() or "#0d47a1",
         is_active=False,
@@ -1092,6 +1101,7 @@ def admin_tenants_update(tenant_id):
     data = request.get_json(silent=True) or {}
     allowed = ("org_name", "short_name", "tagline", "email", "phone",
                "address", "location", "paybill", "payment_account",
+               "mpesa_shortcode", "mpesa_env",
                "logo_key", "theme_primary")
     updated = []
     for f in allowed:
@@ -1106,6 +1116,12 @@ def admin_tenants_update(tenant_id):
             if clash:
                 return jsonify({"error": f"Paybill {v} is already used by "
                                          f"active tenant '{clash.slug}'."}), 409
+        if f == "mpesa_env":
+            if v not in ("sandbox", "production"):
+                v = "sandbox"
+            setattr(t, f, v)
+            updated.append(f)
+            continue
         setattr(t, f, v or None)
         updated.append(f)
 
@@ -4018,13 +4034,19 @@ def mpesa_c2b_validation():
 
 @app.route("/api/mpesa/c2b/confirmation", methods=["POST"])
 def _resolve_callback_tenant(business_shortcode: str):
-    """Resolve the tenant a C2B callback belongs to, by paybill.
+    """Resolve the tenant a C2B callback belongs to. Matches the incoming
+    BusinessShortCode against either the tenant's display paybill or its
+    dedicated mpesa_shortcode — whichever is configured.
     Returns the Tenant or None."""
     code = (business_shortcode or "").strip()
     if not code:
         return None
     try:
-        return Tenant.query.filter_by(paybill=code, is_active=True).first()
+        return (Tenant.query
+                .filter(db.or_(Tenant.paybill == code,
+                               Tenant.mpesa_shortcode == code),
+                        Tenant.is_active == True)
+                .first())
     except Exception:
         return None
 
@@ -4159,15 +4181,33 @@ def admin_mpesa_register():
     conf = f"{base}/api/pay/c2b/confirmation"
     val  = f"{base}/api/pay/c2b/validation"
 
-    result = register_c2b_urls(conf, val)
+    # Resolve the current tenant's credentials. Falls back to Simon's
+    # globals when the tenant has no per-tenant env vars configured.
+    _t = getattr(g, "tenant", None)
+    _slug = _t.slug if _t else None
+    creds = credentials_for_tenant(_slug)
+    if _t and _t.mpesa_shortcode:
+        creds["shortcode"] = _t.mpesa_shortcode
+    if _t and _t.mpesa_env:
+        creds["env"] = _t.mpesa_env
+        creds["base_url"] = ("https://api.safaricom.co.ke"
+                             if creds["env"] == "production"
+                             else "https://sandbox.safaricom.co.ke")
+
+    result = register_c2b_urls_for(creds, conf, val)
     if not result.get("ok"):
-        _audit("register_mpesa", detail=f"FAILED: {result.get('error')}")
+        _audit("register_mpesa",
+               detail=f"FAILED (tenant={_slug or 'default'}): {result.get('error')}")
         return jsonify({"ok": False, "error": result.get("error")}), 502
-    _audit("register_mpesa", detail=f"conf={conf}")
+    _audit("register_mpesa",
+           detail=f"tenant={_slug or 'default'}, shortcode={creds.get('shortcode')}, "
+                  f"env={creds.get('env')}")
     return jsonify({
         "ok": True,
         "confirmation_url": conf,
         "validation_url": val,
+        "shortcode": creds.get("shortcode"),
+        "env": creds.get("env"),
         "response": result.get("response"),
     })
 

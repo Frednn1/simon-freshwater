@@ -108,6 +108,17 @@
             <input type="text" id="tfLogoKey" placeholder="e.g. images/SimonW_Logo.png">
           </div>
           <div class="form-row">
+            <label for="tfMpesaShortcode">M-Pesa Paybill / Shortcode</label>
+            <input type="text" id="tfMpesaShortcode" placeholder="e.g. 4082977">
+          </div>
+          <div class="form-row">
+            <label for="tfMpesaEnv">M-Pesa Environment</label>
+            <select id="tfMpesaEnv">
+              <option value="sandbox">Sandbox</option>
+              <option value="production">Production</option>
+            </select>
+          </div>
+          <div class="form-row">
             <label for="tfThemePrimary">Theme Primary Colour</label>
             <input type="text" id="tfThemePrimary" placeholder="#0d47a1">
           </div>
@@ -286,6 +297,8 @@
       document.getElementById('tfPaybill').value = t.paybill || '';
       document.getElementById('tfPaymentAccount').value = t.payment_account || '';
       document.getElementById('tfLogoKey').value = t.logo_key || '';
+      document.getElementById('tfMpesaShortcode').value = t.mpesa_shortcode || '';
+      document.getElementById('tfMpesaEnv').value = t.mpesa_env || 'sandbox';
       document.getElementById('tfThemePrimary').value = t.theme_primary || '';
       document.getElementById('tenantModal').classList.remove('hidden');
     }
@@ -312,6 +325,8 @@
         location:      document.getElementById('tfLocation').value.trim(),
         paybill:       document.getElementById('tfPaybill').value.trim(),
         payment_account: document.getElementById('tfPaymentAccount').value.trim(),
+        mpesa_shortcode: document.getElementById('tfMpesaShortcode').value.trim(),
+        mpesa_env:       document.getElementById('tfMpesaEnv').value,
         logo_key:      document.getElementById('tfLogoKey').value.trim(),
         theme_primary: document.getElementById('tfThemePrimary').value.trim(),
       };
