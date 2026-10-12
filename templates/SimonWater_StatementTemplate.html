@@ -199,13 +199,8 @@
   .brand-logo {
     width: 40px;
     height: 40px;
-    display: inline-flex;
-    align-items: flex-start;
-    justify-content: flex-start;
-    font-size: 6px;
-    line-height: 1;
-    color: #0a2540;
-    overflow: hidden;
+    object-fit: contain;
+    display: inline-block;
     vertical-align: middle;
     flex-shrink: 0;
   }
@@ -222,7 +217,7 @@
   <div class="statement">
     <div class="statement-header">
       <a href="/" class="brand-link" aria-label="Go to home"><div class="brand">
-        <span class="brand-logo">{{LGS}}</span>
+        <img class="brand-logo" src="/images/SimonW_Logo.png" alt="Simon Fresh Water">
         <div class="brand-text">
           <h1>{{brand_name_upper}}</h1>
           <p>{{brand_address}} · Water Utility Services</p>
