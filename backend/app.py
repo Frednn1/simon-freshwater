@@ -1453,48 +1453,16 @@ def _build_report_snapshot(year: int, month: int) -> dict:
 
 @app.route("/api/admin/report.pdf")
 def download_billing_report():
-    """Generate the monthly billing report PDF (admin-only)."""
+    """Deprecated — the report is now generated from the HTML preview
+    at /template/report and saved as PDF from the browser. This route
+    preserves old bookmarks by redirecting with the same period."""
     u = _require_admin()
     if u: return u
     if not _rate_limit("report", 10, 60):
         return _too_many(60)
 
     year, month = _parse_ym_from_request()
-
-    try:
-        snapshot, _truncated = _build_report_snapshot(year, month)
-        snapshot.pop("_terminated_rows", None)  # PDF only shows active consumers
-    except Exception as e:
-        app.logger.exception("[Report] snapshot failed")
-        return jsonify({"error": f"Report data failed: {e}"}), 500
-
-    try:
-        snapshot.update(_brand_context())
-        pdf_buf = generate_report_pdf(snapshot)
-    except Exception as e:
-        app.logger.exception("[Report] PDF generation failed")
-        return jsonify({"error": f"PDF generation failed: {e}"}), 500
-
-    _audit("download_report", target_type="system",
-           detail=f"period={year}-{month:02d}")
-
-    filename = f"SimonWater_Report_{year}-{month:02d}.pdf"
-    return send_file(
-        pdf_buf,
-        mimetype="application/pdf",
-        as_attachment=False,
-        download_name=filename,
-    )
-
-
-_MONTH_NAMES = ["January","February","March","April","May","June",
-                "July","August","September","October","November","December"]
-
-def _month_name(m: int) -> str:
-    """Return month name for 1-12 (safe fallback if out of range)."""
-    if 1 <= m <= 12:
-        return _MONTH_NAMES[m - 1]
-    return ""
+    return redirect(f"/template/report?year={year}&month={month:02d}")
 
 
 @app.route("/api/admin/report/preview")
