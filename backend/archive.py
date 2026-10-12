@@ -74,6 +74,17 @@ def make_key(consumer_id: int, reading_id: int, sent_at: datetime,
     return f"{prefix}bills/{year}/{month}/consumer-{consumer_id}-reading-{reading_id}-{uniq}.pdf"
 
 
+def fetch_logo_bytes(r2_key: str):
+    """Fetch the raw bytes of a tenant's logo from R2.
+    Returns (bytes, ctype) or (None, "") if not a logos/ key or fetch fails."""
+    if not r2_key or not r2_key.startswith("logos/"):
+        return None, ""
+    data, ctype = download_object(r2_key)
+    if data is None:
+        return None, ""
+    return data, (ctype or "image/png")
+
+
 def upload_object(key: str, data: bytes, content_type: str) -> bool:
     """Upload an arbitrary object to R2 with an explicit content type."""
     if not is_configured():

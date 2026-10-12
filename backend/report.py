@@ -10,6 +10,7 @@ The snapshot dict is expected to already contain ALL keys
 (scalars + r1_*..r20_*). Empty-string values render as blank cells.
 """
 import os
+import archive
 from io import BytesIO
 
 
@@ -112,6 +113,49 @@ def _apply_replacements(page, pairs):
         )
 
 
+# Rect of the baked-in brand logo in templates/SimonWater_ReportTemplate.pdf.
+# The report template also contains a large background image on page 1 —
+# the delete_image approach ensures we remove only the small logo.
+_LOGO_RECT = (23.21, 33.95, 45.02, 55.76)
+
+
+def _overlay_tenant_logo(page, snapshot):
+    """Replace the baked-in SFW logo with the tenant's uploaded logo.
+    No-op for the default tenant or when no logo is uploaded."""
+    r2_key = (snapshot.get("brand_logo_r2_key") or "").strip()
+    if not r2_key:
+        return
+    logo_bytes, _ctype = archive.fetch_logo_bytes(r2_key)
+    if not logo_bytes:
+        return
+
+    import fitz
+
+    target_xref = None
+    for img in page.get_images(full=True):
+        xref = img[0]
+        for r in page.get_image_rects(xref):
+            if (abs(r.x0 - _LOGO_RECT[0]) < 1.0
+                    and abs(r.y0 - _LOGO_RECT[1]) < 1.0
+                    and abs(r.x1 - _LOGO_RECT[2]) < 1.0
+                    and abs(r.y1 - _LOGO_RECT[3]) < 1.0):
+                target_xref = xref
+                break
+        if target_xref is not None:
+            break
+
+    if target_xref is None:
+        return
+
+    try:
+        page.delete_image(target_xref)
+    except Exception:
+        pass
+
+    rect = fitz.Rect(*_LOGO_RECT)
+    page.insert_image(rect, stream=logo_bytes)
+
+
 def generate_report_pdf(snapshot: dict) -> BytesIO:
     try:
         import fitz
@@ -130,6 +174,8 @@ def generate_report_pdf(snapshot: dict) -> BytesIO:
     placeholders = _find_placeholders(page)
     pairs = [(ph, _scalar_value(snapshot, ph["name"])) for ph in placeholders]
     _apply_replacements(page, pairs)
+
+    _overlay_tenant_logo(page, snapshot)
 
     out = BytesIO()
     doc.save(out, garbage=4, deflate=True, clean=True)

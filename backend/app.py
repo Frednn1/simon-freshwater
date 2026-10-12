@@ -249,6 +249,7 @@ def _brand_context():
         "brand_phone":      (t.phone if t and t.phone else "+254 700 719311"),
         "brand_email":      (t.email if t and t.email else "simonchege84@gmail.com"),
         "brand_logo_url":   logo,
+        "brand_logo_r2_key": _lk if _lk.startswith("logos/") else "",
     }
 
 
