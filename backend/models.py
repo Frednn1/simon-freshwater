@@ -239,6 +239,10 @@ class Tenant(db.Model):
     location = db.Column(db.String(60))
     paybill = db.Column(db.String(30))
     payment_account = db.Column(db.String(60))
+    # Per-tenant M-Pesa configuration (public identifiers only — the
+    # consumer key and secret live in Render env vars, one set per tenant).
+    mpesa_shortcode = db.Column(db.String(30))
+    mpesa_env = db.Column(db.String(20), default="sandbox")
     logo_key = db.Column(db.String(255))
     theme_primary = db.Column(db.String(10), default="#0d47a1")
     is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)

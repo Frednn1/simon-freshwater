@@ -774,6 +774,19 @@ def _ensure_all_columns():
             db.session.commit()
             app.logger.info(f"[Migration] Applied {len(alters)} column(s) to consumers")
 
+    if "tenants" in tables:
+        existing = {c["name"] for c in insp.get_columns("tenants")}
+        t_alters = []
+        if "mpesa_shortcode" not in existing:
+            t_alters.append("ADD COLUMN mpesa_shortcode VARCHAR(30) NULL")
+        if "mpesa_env" not in existing:
+            t_alters.append("ADD COLUMN mpesa_env VARCHAR(20) DEFAULT 'sandbox'")
+        for alt in t_alters:
+            db.session.execute(text(f"ALTER TABLE tenants {alt}"))
+        if t_alters:
+            db.session.commit()
+            app.logger.info(f"[Migration] Applied {len(t_alters)} column(s) to tenants")
+
     if "payment_log" in tables:
         existing = {c["name"] for c in insp.get_columns("payment_log")}
         if "receipt_json" not in existing:
