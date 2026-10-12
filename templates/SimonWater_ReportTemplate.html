@@ -153,8 +153,13 @@
   .brand-logo {
     width: 46px;
     height: 46px;
-    object-fit: contain;
-    display: inline-block;
+    display: inline-flex;
+    align-items: flex-start;
+    justify-content: flex-start;
+    font-size: 6px;
+    line-height: 1;
+    color: #0a2540;
+    overflow: hidden;
     vertical-align: middle;
     flex-shrink: 0;
   }
@@ -219,7 +224,7 @@
 
     <div class="r-header">
       <a href="/" class="brand-link" aria-label="Go to home"><div class="r-brand">
-        <img class="brand-logo" src="/images/SimonW_Logo.png" alt="Simon Fresh Water">
+        <span class="brand-logo">{{LGS}}</span>
         <div>
           <h1>{{brand_name_upper}}</h1>
           <p>{{brand_address}} · Monthly Billing Report</p>
