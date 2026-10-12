@@ -96,20 +96,76 @@ def _apply_replacements(page, pairs):
         return
     import fitz
 
+    # Group by y coordinate
+    groups = {}
     for ph, _text in pairs:
+        y_key = round(ph["origin"][1], 1)
+        groups.setdefault(y_key, []).append((ph, _text))
+
+    # Reflow only lines where ALL placeholders are brand_* (the branding
+    # footer). Substituted values shorter than their placeholders would
+    # otherwise leave wide gaps before the separator dots.
+    reflow_keys = set()
+    for k, g in groups.items():
+        if len(g) < 3:
+            continue
+        names = [p[0]["name"].lower() for p in g]
+        if all(n.startswith("brand_") for n in names):
+            reflow_keys.add(k)
+
+    # Redact non-reflow placeholders individually
+    for ph, _text in pairs:
+        y_key = round(ph["origin"][1], 1)
+        if y_key in reflow_keys:
+            continue
         page.add_redact_annot(fitz.Rect(ph["bbox"]), fill=None, text=None)
+
+    # Redact the full bbox for each reflow line
+    for y_key in reflow_keys:
+        g = sorted(groups[y_key], key=lambda p: p[0]["origin"][0])
+        x0 = g[0][0]["bbox"][0]
+        x1 = g[-1][0]["bbox"][2]
+        y0 = min(p[0]["bbox"][1] for p in g)
+        y1 = max(p[0]["bbox"][3] for p in g)
+        page.add_redact_annot(fitz.Rect(x0, y0, x1, y1),
+                              fill=None, text=None)
 
     page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
 
     for ph, text in pairs:
+        y_key = round(ph["origin"][1], 1)
+        if y_key in reflow_keys:
+            continue
         if not text:
             continue
-        x, y = ph["origin"]
         page.insert_text(
-            (x, y), text,
+            (ph["origin"][0], ph["origin"][1]), text,
             fontsize=ph["size"],
             fontname="helv",
             color=ph["color"],
+        )
+
+    for y_key in reflow_keys:
+        g = sorted(groups[y_key], key=lambda p: p[0]["origin"][0])
+        parts = [str(txt) for _, txt in g if txt]
+        if not parts:
+            continue
+        line = " \u00b7 ".join(parts)
+        first_ph = g[0][0]
+        try:
+            text_w = fitz.get_text_length(
+                line, fontname="helv", fontsize=first_ph["size"])
+        except Exception:
+            text_w = 0.0
+        if text_w > 0:
+            x = (page.rect.width - text_w) / 2.0
+        else:
+            x = first_ph["origin"][0]
+        page.insert_text(
+            (x, first_ph["origin"][1]), line,
+            fontsize=first_ph["size"],
+            fontname="helv",
+            color=first_ph["color"],
         )
 
 
