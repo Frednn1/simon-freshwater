@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Developer Portal – Sign In</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="login-body">
+  <main class="login-wrap">
+    <div class="login-card">
+      <h1>Developer Portal</h1>
+      <p class="login-sub">Restricted access. Enter the portal key to continue.</p>
+      <form id="devLoginForm" autocomplete="off">
+        <div class="form-row">
+          <label for="devSecret">Access Key</label>
+          <input type="password" id="devSecret" required autocomplete="off">
+        </div>
+        <button type="submit" class="btn-primary" id="devSubmitBtn">Sign In</button>
+      </form>
+      <div id="devMsg" class="alert hidden"></div>
+    </div>
+  </main>
+  <script>
+    function show(el, kind, text) {
+      el.className = 'alert alert-' + kind;
+      el.textContent = text;
+      el.classList.remove('hidden');
+    }
+    document.getElementById('devLoginForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('devSubmitBtn');
+      const msg = document.getElementById('devMsg');
+      btn.disabled = true; btn.textContent = 'Verifying…';
+      try {
+        const r = await fetch('/dev/login', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ secret: document.getElementById('devSecret').value }),
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) {
+          location.href = '/dev';
+        } else {
+          show(msg, 'error', d.error || 'Access denied.');
+          document.getElementById('devSecret').value = '';
+        }
+      } catch {
+        show(msg, 'error', 'Network error.');
+      } finally {
+        btn.disabled = false; btn.textContent = 'Sign In';
+      }
+    });
+  </script>
+</body>
+</html>

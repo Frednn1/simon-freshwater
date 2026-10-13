@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Developer Portal – {{brand_name}}</title>
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0d47a1">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="settings-body">
+  <main class="settings-wrap" style="max-width: 900px;">
+    <a href="/" class="brand-link" aria-label="Go to home">
+      <div class="settings-header">
+        <img class="brand-logo" src="/images/SimonW_Logo.png" alt="{{brand_name}}">
+        <div class="settings-brand-text">
+          <h1>Developer Portal</h1>
+          <p>Tenant Management · {{brand_name}}</p>
+        </div>
+      </div>
+    </a>
+
+    <div id="devEnvBanner" style="background:#eceff1;padding:.5rem .75rem;border-radius:6px;font-size:.85rem;margin-bottom:.75rem;">
+      Env: <strong id="devEnvName">…</strong> · DB: <strong id="devDbTail">…</strong>
+    </div>
+
+    <div class="settings-card">
+      <h2>🏢 Billing Organizations</h2>
+      <p class="form-hint-small" style="margin-bottom:.75rem;">
+        Each tenant is a separate billing portal with fully isolated data
+        (consumers, readings, payments, admins, reports). They share the same
+        web service, database, and storage — no extra infrastructure per tenant.
+      </p>
+      <div id="tenantsList">
+        <p class="form-hint-small">Loading…</p>
+      </div>
+    </div>
+
+    <div class="settings-card">
+      <h2>➕ Create a New Tenant</h2>
+      <p class="form-hint-small" style="margin-bottom:.75rem;">
+        New tenants are created <strong>inactive</strong>. After creation, open
+        <code>?__tenant=&lt;slug&gt;</code> on the portal root to preview the tenant's
+        branding, then activate it.
+      </p>
+      <button id="openCreateBtn" class="btn-primary btn-fit" type="button">➕ New Tenant</button>
+      <div id="createMsg" class="alert hidden"></div>
+    </div>
+
+    <div class="settings-back">
+      <button id="devLogoutBtn" class="btn-secondary" type="button">Logout</button>
+      &nbsp;·&nbsp;
+      <a href="/">← Back to Home</a>
+    </div>
+  </main>
+
+  <!-- Create / Edit modal -->
+  <div id="tenantModal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modalTitle">➕ New Tenant</h3>
+        <button class="modal-close" onclick="closeTenantModal()" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <form id="tenantForm" autocomplete="off">
+          <div class="form-row">
+            <label for="tfSlug">Slug * (lowercase, hyphens ok, immutable after creation)</label>
+            <input type="text" id="tfSlug" required placeholder="e.g. kikuyu-water" pattern="[a-z0-9][a-z0-9-]{1,58}[a-z0-9]">
+          </div>
+          <div class="form-row">
+            <label for="tfOrgName">Organization Name *</label>
+            <input type="text" id="tfOrgName" required placeholder="e.g. Kikuyu Water Co.">
+          </div>
+          <div class="form-row">
+            <label for="tfShortName">Short Name</label>
+            <input type="text" id="tfShortName" placeholder="e.g. KWC">
+          </div>
+          <div class="form-row">
+            <label for="tfTagline">Tagline</label>
+            <input type="text" id="tfTagline" placeholder="e.g. Pure, Reliable & Sustainable Water Supply">
+          </div>
+          <div class="form-row">
+            <label for="tfPhone">Phone</label>
+            <input type="text" id="tfPhone" placeholder="e.g. +254 700 000 001">
+          </div>
+          <div class="form-row">
+            <label for="tfEmail">Email</label>
+            <input type="email" id="tfEmail" placeholder="e.g. info@example.com">
+          </div>
+          <div class="form-row">
+            <label for="tfAddress">Address</label>
+            <input type="text" id="tfAddress" placeholder="e.g. Kikuyu, Kiambu County, Kenya">
+          </div>
+          <div class="form-row">
+            <label for="tfLocation">Location (used in SMS/WhatsApp header)</label>
+            <input type="text" id="tfLocation" placeholder="e.g. Kikuyu">
+          </div>
+          <div class="form-row">
+            <label for="tfPaybill">Paybill</label>
+            <input type="text" id="tfPaybill" placeholder="e.g. 123456">
+          </div>
+          <div class="form-row">
+            <label for="tfPaymentAccount">Payment Account (optional)</label>
+            <input type="text" id="tfPaymentAccount" placeholder="e.g. 255333K12">
+          </div>
+          <div class="form-row">
+            <label for="tfLogoKey">Logo Key (R2 object key, optional)</label>
+            <input type="text" id="tfLogoKey" placeholder="e.g. images/SimonW_Logo.png">
+          </div>
+          <div class="form-row">
+            <label for="tfMpesaShortcode">M-Pesa Paybill / Shortcode</label>
+            <input type="text" id="tfMpesaShortcode" placeholder="e.g. 4082977">
+          </div>
+          <div class="form-row">
+            <label for="tfMpesaEnv">M-Pesa Environment</label>
+            <select id="tfMpesaEnv">
+              <option value="sandbox">Sandbox</option>
+              <option value="production">Production</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label for="tfThemePrimary">Theme Primary Colour</label>
+            <input type="text" id="tfThemePrimary" placeholder="#0d47a1">
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button id="modalCancelBtn" type="button" class="btn-secondary" onclick="closeTenantModal()">Cancel</button>
+        <button id="modalSaveBtn" type="submit" form="tenantForm" class="btn-primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create-Admin modal -->
+  <div id="adminModal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="adminModalTitle">🔑 Create First Admin</h3>
+        <button class="modal-close" onclick="closeAdminModal()" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="form-hint-small" style="margin-bottom:.75rem;">
+          This creates the tenant's first admin account. Share the login URL
+          <code>/admin/login?__tenant=&lt;slug&gt;</code> and the credentials with
+          the tenant owner.
+        </p>
+        <form id="adminForm" autocomplete="off">
+          <div class="form-row">
+            <label for="afUsername">Username *</label>
+            <input type="text" id="afUsername" required minlength="3" placeholder="e.g. kwc_admin">
+          </div>
+          <div class="form-row">
+            <label for="afPassword">Password * (min 8 chars)</label>
+            <input type="password" id="afPassword" required minlength="8" autocomplete="new-password">
+          </div>
+          <div class="form-row">
+            <label for="afPhone">Phone * (Kenyan)</label>
+            <input type="tel" id="afPhone" required placeholder="e.g. 0712345678">
+          </div>
+          <div class="form-row">
+            <label for="afEmail">Email</label>
+            <input type="email" id="afEmail" placeholder="e.g. owner@example.com">
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button id="adminCancelBtn" type="button" class="btn-secondary" onclick="closeAdminModal()">Cancel</button>
+        <button id="adminSaveBtn" type="submit" form="adminForm" class="btn-primary">Create Admin</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="logoModal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>🖼️ Upload Tenant Logo</h3>
+        <button class="modal-close" onclick="closeLogoModal()" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="form-hint-small" style="margin-bottom:.75rem;">PNG, JPEG, WEBP, or GIF. Max 500 KB. Replaces the tenant's logo in the portal header. (PDF template logos are separate.)</p>
+        <div class="form-row">
+          <label for="lfFile">Choose file</label>
+          <input type="file" id="lfFile" accept="image/png,image/jpeg,image/webp,image/gif">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" onclick="closeLogoModal()">Cancel</button>
+        <button id="logoUploadBtn" type="button" class="btn-primary">Upload</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let _tenants = [];
+    let _editingId = null;
+
+    function esc(s) {
+      const d = document.createElement('div');
+      d.textContent = s == null ? '' : String(s);
+      return d.innerHTML;
+    }
+
+    // escAttr — escape a value for inclusion inside an HTML attribute
+    // AND inside a JS string literal. Handles quotes, ampersands, < >.
+    function escAttr(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+    function show(el, kind, text) {
+      el.className = 'alert alert-' + kind;
+      el.textContent = text;
+      el.classList.remove('hidden');
+    }
+    function hide(el) { el.classList.add('hidden'); }
+
+    async function loadTenants() {
+      const list = document.getElementById('tenantsList');
+      try {
+        const r = await fetch('/api/admin/tenants', { credentials: 'same-origin' });
+        if (r.status === 401) { location.href = '/dev/login?next=/dev'; return; }
+        if (r.status === 403) { list.innerHTML = '<p class="form-hint-small">❌ Super-admin only.</p>'; return; }
+        const d = await r.json();
+        _tenants = d.tenants || [];
+        renderTenants();
+      } catch {
+        list.innerHTML = '<p class="form-hint-small">❌ Failed to load tenants.</p>';
+      }
+    }
+
+    function renderTenants() {
+      const list = document.getElementById('tenantsList');
+      if (_tenants.length === 0) {
+        list.innerHTML = '<p class="form-hint-small">No tenants yet.</p>';
+        return;
+      }
+      list.innerHTML = _tenants.map(t => {
+        const badgeClass = t.is_active ? 'badge-cleared' : 'badge-none';
+        const badgeLabel = t.is_active ? 'Active' : 'Inactive';
+        const isDefault = (t.slug === 'simon-freshwater');
+        const toggleLabel = t.is_active ? '⏸ Deactivate' : '▶ Activate';
+        return `
+          <div class="tenant-card">
+            <div class="tenant-card-head">
+              <div>
+                <div class="tenant-card-name">${esc(t.org_name)}</div>
+                <div class="tenant-card-slug">/${esc(t.slug)}</div>
+              </div>
+              <span class="badge ${badgeClass}">${badgeLabel}</span>
+            </div>
+            <div class="tenant-card-meta">
+              ${t.phone ? '📞 ' + esc(t.phone) + ' · ' : ''}
+              ${t.email ? '✉️ ' + esc(t.email) + ' · ' : ''}
+              ${t.paybill ? '💳 Paybill ' + esc(t.paybill) : ''}
+            </div>
+            <div class="tenant-card-actions">
+              <a class="btn-secondary btn-fit" href="/?__preview=${encodeURIComponent(t.slug)}" target="_blank" rel="noopener">↗ Preview</a>
+              ${!isDefault ?
+                `<button class="btn-secondary btn-fit" type="button" onclick="switchTenant(${t.id}, '${escAttr(t.org_name)}')">🔁 Sign In As</button>` : ''}
+              ${(t.is_active && !t.has_admin) ?
+                `<button class="btn-secondary btn-fit" type="button" onclick="openCreateAdmin(${t.id})">🔑 Create Admin</button>` : ''}
+              <button class="btn-secondary btn-fit" type="button" onclick="openLogoUpload(${t.id})">🖼️ Logo</button>
+              <button class="btn-secondary btn-fit" type="button" onclick="openEditTenant(${t.id})">✏️ Edit</button>
+              ${isDefault ? '' :
+                `<button class="btn-secondary btn-fit" type="button" onclick="toggleTenant(${t.id}, ${!t.is_active})">${toggleLabel}</button>
+                 <button class="btn-secondary btn-fit" type="button" style="border-color:#ef9a9a;color:#c62828;" onclick="deleteTenant(${t.id})">🗑 Delete</button>`}
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function openCreateTenant() {
+      _editingId = null;
+      document.getElementById('modalTitle').textContent = '➕ New Tenant';
+      document.getElementById('tenantForm').reset();
+      document.getElementById('tfSlug').disabled = false;
+      document.getElementById('tenantModal').classList.remove('hidden');
+    }
+
+    function openEditTenant(id) {
+      const t = _tenants.find(x => x.id === id);
+      if (!t) return;
+      _editingId = id;
+      document.getElementById('modalTitle').textContent = '✏️ Edit Tenant';
+      document.getElementById('tfSlug').value = t.slug || '';
+      document.getElementById('tfSlug').disabled = true;
+      document.getElementById('tfOrgName').value = t.org_name || '';
+      document.getElementById('tfShortName').value = t.short_name || '';
+      document.getElementById('tfTagline').value = t.tagline || '';
+      document.getElementById('tfPhone').value = t.phone || '';
+      document.getElementById('tfEmail').value = t.email || '';
+      document.getElementById('tfAddress').value = t.address || '';
+      document.getElementById('tfLocation').value = t.location || '';
+      document.getElementById('tfPaybill').value = t.paybill || '';
+      document.getElementById('tfPaymentAccount').value = t.payment_account || '';
+      document.getElementById('tfLogoKey').value = t.logo_key || '';
+      document.getElementById('tfMpesaShortcode').value = t.mpesa_shortcode || '';
+      document.getElementById('tfMpesaEnv').value = t.mpesa_env || 'sandbox';
+      document.getElementById('tfThemePrimary').value = t.theme_primary || '';
+      document.getElementById('tenantModal').classList.remove('hidden');
+    }
+
+    function closeTenantModal() {
+      document.getElementById('tenantModal').classList.add('hidden');
+      _editingId = null;
+    }
+
+    async function submitTenant(e) {
+      e.preventDefault();
+      const btn = document.getElementById('modalSaveBtn');
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Saving…';
+
+      const body = {
+        slug:      document.getElementById('tfSlug').value.trim().toLowerCase(),
+        org_name:  document.getElementById('tfOrgName').value.trim(),
+        short_name:    document.getElementById('tfShortName').value.trim(),
+        tagline:       document.getElementById('tfTagline').value.trim(),
+        phone:         document.getElementById('tfPhone').value.trim(),
+        email:         document.getElementById('tfEmail').value.trim(),
+        address:       document.getElementById('tfAddress').value.trim(),
+        location:      document.getElementById('tfLocation').value.trim(),
+        paybill:       document.getElementById('tfPaybill').value.trim(),
+        payment_account: document.getElementById('tfPaymentAccount').value.trim(),
+        mpesa_shortcode: document.getElementById('tfMpesaShortcode').value.trim(),
+        mpesa_env:       document.getElementById('tfMpesaEnv').value,
+        logo_key:      document.getElementById('tfLogoKey').value.trim(),
+        theme_primary: document.getElementById('tfThemePrimary').value.trim(),
+      };
+
+      const url = _editingId
+        ? `/api/admin/tenants/${_editingId}/update`
+        : `/api/admin/tenants`;
+      try {
+        const r = await fetch(url, {
+          method: 'POST', credentials: 'same-origin',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(body),
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) {
+          closeTenantModal();
+          await loadTenants();
+        } else {
+          alert('❌ ' + (d.error || 'Save failed.'));
+        }
+      } catch {
+        alert('❌ Network error.');
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
+    }
+
+    async function toggleTenant(id, wantActive) {
+      try {
+        const r = await fetch(`/api/admin/tenants/${id}/toggle_active`, {
+          method: 'POST', credentials: 'same-origin',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({active: wantActive}),
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) { await loadTenants(); }
+        else { alert('❌ ' + (d.error || 'Failed.')); }
+      } catch { alert('❌ Network error.'); }
+    }
+
+    async function deleteTenant(id) {
+      const t = _tenants.find(x => x.id === id);
+      if (!t) return;
+      if (!confirm(`⚠️ Permanently delete tenant "${t.org_name}" (/${t.slug})?\n\n` +
+                   `This cannot be undone. The tenant must have no consumers.`)) return;
+      try {
+        const r = await fetch(`/api/admin/tenants/${id}/delete`, {
+          method: 'POST', credentials: 'same-origin',
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) { await loadTenants(); }
+        else { alert('❌ ' + (d.error || 'Delete failed.')); }
+      } catch { alert('❌ Network error.'); }
+    }
+
+    let _adminTenantId = null;
+
+    function openCreateAdmin(id) {
+      _adminTenantId = id;
+      document.getElementById('adminForm').reset();
+      document.getElementById('adminModal').classList.remove('hidden');
+    }
+    function closeAdminModal() {
+      document.getElementById('adminModal').classList.add('hidden');
+      _adminTenantId = null;
+    }
+    async function submitAdmin(e) {
+      e.preventDefault();
+      if (!_adminTenantId) return;
+      const btn = document.getElementById('adminSaveBtn');
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Creating…';
+      const body = {
+        username: document.getElementById('afUsername').value.trim().toLowerCase(),
+        password: document.getElementById('afPassword').value,
+        phone:    document.getElementById('afPhone').value.trim(),
+        email:    document.getElementById('afEmail').value.trim(),
+      };
+      try {
+        const r = await fetch(`/api/admin/tenants/${_adminTenantId}/create_admin`, {
+          method: 'POST', credentials: 'same-origin',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(body),
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) {
+          alert('✅ Admin created: ' + d.admin.username);
+          closeAdminModal();
+          await loadTenants();
+        } else {
+          alert('❌ ' + (d.error || 'Failed.'));
+        }
+      } catch {
+        alert('❌ Network error.');
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
+    }
+
+    let _logoTenantId = null;
+    function openLogoUpload(id) {
+      _logoTenantId = id;
+      document.getElementById('lfFile').value = '';
+      document.getElementById('logoModal').classList.remove('hidden');
+    }
+    function closeLogoModal() {
+      document.getElementById('logoModal').classList.add('hidden');
+      _logoTenantId = null;
+    }
+    async function doLogoUpload() {
+      if (!_logoTenantId) return;
+      const inp = document.getElementById('lfFile');
+      if (!inp.files || !inp.files[0]) { alert('Choose a file first.'); return; }
+      const btn = document.getElementById('logoUploadBtn');
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Uploading…';
+      const fd = new FormData();
+      fd.append('logo', inp.files[0]);
+      try {
+        const r = await fetch(`/api/admin/tenants/${_logoTenantId}/upload_logo`, {
+          method: 'POST', credentials: 'same-origin', body: fd,
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) { alert('✅ Logo uploaded.'); closeLogoModal(); await loadTenants(); }
+        else { alert('❌ ' + (d.error || 'Upload failed.')); }
+      } catch { alert('❌ Network error.'); }
+      finally { btn.disabled = false; btn.textContent = orig; }
+    }
+    async function switchTenant(id, name) {
+      if (!confirm(`Sign out and switch to "${name}"?\n\n` +
+                   `You will be redirected to ${name}'s login page. ` +
+                   `Sign in as that tenant's admin to continue.`)) return;
+      try {
+        const r = await fetch(`/api/admin/tenants/${id}/switch`, {
+          method: 'POST', credentials: 'same-origin',
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) {
+          location.href = d.redirect;
+        } else {
+          alert('❌ ' + (d.error || 'Switch failed.'));
+        }
+      } catch { alert('❌ Network error.'); }
+    }
+    window.switchTenant = switchTenant;
+
+    window.openLogoUpload = openLogoUpload;
+    window.closeLogoModal = closeLogoModal;
+
+    window.openCreateAdmin = openCreateAdmin;
+    window.closeAdminModal = closeAdminModal;
+    window.openEditTenant = openEditTenant;
+    window.closeTenantModal = closeTenantModal;
+    window.toggleTenant = toggleTenant;
+    window.deleteTenant = deleteTenant;
+
+    document.getElementById('openCreateBtn').addEventListener('click', openCreateTenant);
+    document.getElementById('tenantForm').addEventListener('submit', submitTenant);
+    document.getElementById('adminForm').addEventListener('submit', submitAdmin);
+    document.getElementById('logoUploadBtn').addEventListener('click', doLogoUpload);
+    loadTenants();
+  </script>
+
+  <!-- Dev portal: env banner + logout -->
+  <script>
+    (async () => {
+      try {
+        const r = await fetch('/dev/api/env', { credentials: 'same-origin' });
+        if (r.ok) {
+          const d = await r.json();
+          const envEl = document.getElementById('devEnvName');
+          const dbEl = document.getElementById('devDbTail');
+          if (envEl) envEl.textContent = d.env || 'unknown';
+          if (dbEl) dbEl.textContent = d.db_tail ? ('…' + d.db_tail) : '(not set)';
+        }
+      } catch {}
+    })();
+    document.getElementById('devLogoutBtn')?.addEventListener('click', async () => {
+      await fetch('/dev/logout', { method: 'POST', credentials: 'same-origin' });
+      location.href = '/dev/login';
+    });
+  </script>
+</body>
+</html>

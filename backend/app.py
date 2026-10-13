@@ -1,6 +1,7 @@
 import os
 import json
 import secrets
+import hmac
 import ipaddress
 from datetime import datetime, date, timedelta, timezone
 from collections import deque
@@ -592,9 +593,48 @@ def _require_admin():
     return jsonify({"error": "Unauthorized. Please log in."}), 401
 
 
+DEV_SESSION_IDLE_MINUTES = 60
+
+
+def _dev_session_ok():
+    """True if the current browser session is an authenticated dev-portal
+    session. Enforces its own idle timeout. Never touches admin_id /
+    last_activity (which belong to the tenant-admin session)."""
+    if not session.get("dev_authenticated"):
+        return False
+    last = session.get("dev_last_activity")
+    if last:
+        try:
+            last_dt = datetime.fromisoformat(last)
+        except (ValueError, TypeError):
+            session.pop("dev_authenticated", None)
+            session.pop("dev_last_activity", None)
+            return False
+        if datetime.utcnow() - last_dt > timedelta(minutes=DEV_SESSION_IDLE_MINUTES):
+            session.pop("dev_authenticated", None)
+            session.pop("dev_last_activity", None)
+            return False
+    session["dev_last_activity"] = datetime.utcnow().isoformat()
+    return True
+
+
+def _require_dev_portal():
+    """Return an error response unless the caller has a dev-portal session."""
+    if _dev_session_ok():
+        return None
+    return jsonify({"error": "Unauthorized. Dev portal login required."}), 401
+
+
 def _require_super_admin():
-    """Return an error response unless the current admin is a super admin.
-    Non-super admins receive 403; unauthenticated callers receive 401."""
+    """Return an error response unless the caller is either:
+      - a tenant admin with is_super=True (today's behaviour), or
+      - an authenticated dev-portal session (Phase C addition).
+
+    Non-super tenant admins receive 403; unauthenticated callers 401.
+    Phase E will narrow this to dev-portal-only after tenant admins are
+    demoted in Phase D."""
+    if _dev_session_ok():
+        return None
     admin = _current_admin()
     if admin is None:
         return jsonify({"error": "Unauthorized. Please log in."}), 401
@@ -962,6 +1002,63 @@ def _tenant_to_dict(t):
 def tenant_reset():
     session.pop("__tenant_slug", None)
     return jsonify({"ok": True, "tenant": _DEFAULT_TENANT_SLUG})
+
+
+# ═══════════════════════════════════════════════
+#  DEVELOPER PORTAL (unlinked, secret-authenticated)
+# ═══════════════════════════════════════════════
+
+@app.route("/dev/login", methods=["GET"])
+def dev_login_page():
+    if _dev_session_ok():
+        return redirect("/dev")
+    return _serve_frontend("dev_login.html")
+
+
+@app.route("/dev/login", methods=["POST"])
+def dev_login_submit():
+    if not _rate_limit("dev_login", 5, 300):
+        return _too_many(300)
+
+    data = request.get_json(silent=True) or {}
+    submitted = (data.get("secret") or "").strip()
+    expected  = os.environ.get("DEV_PORTAL_SECRET", "").strip()
+
+    if not expected:
+        return jsonify({"error": "Developer portal is not configured on this server."}), 503
+    if not submitted or not hmac.compare_digest(submitted, expected):
+        _audit("dev_login_failed")
+        return jsonify({"error": "Invalid access key."}), 401
+
+    session.permanent = True
+    session["dev_authenticated"] = True
+    session["dev_last_activity"] = datetime.utcnow().isoformat()
+    _audit("dev_login_ok")
+    return jsonify({"ok": True})
+
+
+@app.route("/dev/logout", methods=["POST"])
+def dev_logout():
+    session.pop("dev_authenticated", None)
+    session.pop("dev_last_activity", None)
+    return jsonify({"ok": True})
+
+
+@app.route("/dev")
+def dev_portal_page():
+    if not _dev_session_ok():
+        return redirect("/dev/login?next=/dev")
+    return _serve_frontend("dev_tenants.html")
+
+
+@app.route("/dev/api/env", methods=["GET"])
+def dev_api_env():
+    if not _dev_session_ok():
+        return jsonify({"error": "Unauthorized"}), 401
+    env = (os.environ.get("BACKUP_ENV", "") or "").strip().lower() or "unknown"
+    db_id = (os.environ.get("CF_D1_DATABASE_ID", "") or "").strip()
+    db_tail = db_id[-6:] if len(db_id) >= 6 else ""
+    return jsonify({"env": env, "db_tail": db_tail})
 
 
 @app.route("/admin/tenants")
