@@ -4432,6 +4432,38 @@ def admin_backup_run():
     return jsonify(result), 502
 
 
+@app.route("/api/admin/_debug/login_state", methods=["GET"])
+def _debug_login_state():
+    """TEMPORARY diagnostic — inspect tenants + admins for login debugging.
+    Remove after diagnosis is complete."""
+    # No auth required: this is diagnostic only and returns non-secret fields.
+    try:
+        tenants = Tenant.query.order_by(Tenant.id.asc()).all()
+        admins = AdminUser.query.order_by(AdminUser.id.asc()).all()
+        sess = dict(session)
+        return jsonify({
+            "tenants": [{
+                "id": t.id, "slug": t.slug, "org_name": t.org_name,
+                "is_active": bool(t.is_active),
+            } for t in tenants],
+            "admins": [{
+                "id": a.id, "username": a.username,
+                "tenant_id": a.tenant_id, "is_active": bool(a.is_active),
+                "is_super": bool(getattr(a, "is_super", False)),
+            } for a in admins],
+            "session": {
+                "admin_id": sess.get("admin_id"),
+                "admin_username": sess.get("admin_username"),
+                "__tenant_slug": sess.get("__tenant_slug"),
+                "pending_2fa_admin_id": sess.get("pending_2fa_admin_id"),
+            },
+            "default_slug": _DEFAULT_TENANT_SLUG,
+        })
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+
+
 @app.route("/api/admin/consumers/all", methods=["GET"])
 def admin_consumers_all():
     """Return all consumers (active + terminated), alphabetically.
