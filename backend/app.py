@@ -3176,6 +3176,53 @@ def admin_diag_audit():
 # ═══════════════════════════════════════════════
 
 
+# TEMP — STAGING ONLY, REMOVE AFTER USE
+@app.route("/api/admin/diag/check-password", methods=["POST"])
+def admin_diag_check_password():
+    import hmac as _hmac
+    from werkzeug.security import check_password_hash as _check
+    secret   = request.headers.get("X-Admin-Secret", "")
+    expected = os.environ.get("ADMIN_SEED_SECRET", "")
+    if not (expected and secret and _hmac.compare_digest(secret, expected)):
+        return jsonify({"error": "Unauthorized"}), 401
+    if not _rate_limit("diag_checkpw", 10, 60):
+        return _too_many(60)
+
+    data = request.get_json(silent=True) or {}
+    raw_uname = data.get("username", "")
+    raw_pw    = data.get("password", "")
+
+    norm = (raw_uname or "").strip().lower()
+    admin = AdminUser.query.filter_by(username=norm).first()
+
+    if not admin:
+        # List near-misses to reveal what the stored username actually is
+        suggestions = [a.username for a in AdminUser.query.all()
+                       if norm in a.username or a.username in norm][:10]
+        return jsonify({
+            "found": False,
+            "input_as_typed": raw_uname,
+            "input_normalized": norm,
+            "similar_usernames": suggestions,
+            "hint": "Username lookup is case-insensitive and trims spaces, "
+                    "but the stored value must match exactly otherwise "
+                    "(including any leading characters like '@').",
+        })
+
+    return jsonify({
+        "found": True,
+        "username": admin.username,
+        "is_active": bool(admin.is_active),
+        "is_super": bool(getattr(admin, "is_super", False)),
+        "locked": bool(admin.locked_until and admin.locked_until > datetime.utcnow()),
+        "hash_len": len(admin.password_hash or ""),
+        "password_matches": _check(admin.password_hash or "", raw_pw or ""),
+        "note": "password_matches is the ONLY thing login() checks after row lookup. "
+                "This endpoint does NOT modify failed_attempts or locked_until.",
+    })
+# END TEMP
+
+
 @app.route("/api/admin/settings", methods=["GET"])
 def admin_get_settings():
     if not _rate_limit("settings_get", 30, 60):
