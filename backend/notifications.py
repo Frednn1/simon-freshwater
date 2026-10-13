@@ -136,26 +136,35 @@ def _payment_info(consumer, tenant=None) -> dict:
     """
     Return {'paybill': '...', 'account': '...'} for the current payment mode.
 
-      PAYMENT_MODE=fixed  → FIXED_PAYBILL / FIXED_PAYMENT_ACCOUNT (temporary)
-      otherwise           → tenant.paybill if set, else PAYBILL env; account = meter no.
+    Resolution order — tenant.paybill ALWAYS wins:
 
-    When `tenant` is provided and has a paybill, it takes precedence over the
-    global PAYBILL env in dynamic mode — so multi-tenant deployments each use
-    their own paybill without any env-var conflict.
+      1. If `tenant` is provided and has a non-empty paybill → use it.
+         Account = tenant.payment_account if set, else the consumer's meter
+         number. This is the multi-tenant rule; nothing else overrides it.
+
+      2. Else, if PAYMENT_MODE=fixed → FIXED_PAYBILL / FIXED_PAYMENT_ACCOUNT
+         (legacy temporary behaviour, preserved for tenants with no paybill).
+
+      3. Else → PAYBILL env and the consumer's meter number.
     """
+    t_pb   = (getattr(tenant, "paybill", None) or "").strip() if tenant is not None else ""
+    t_acct = (getattr(tenant, "payment_account", None) or "").strip() if tenant is not None else ""
+
+    if t_pb:
+        return {
+            "paybill": t_pb,
+            "account": t_acct or consumer.meter_acc_no,
+        }
+
     mode = os.environ.get("PAYMENT_MODE", "").strip().lower()
     if mode == "fixed":
         return {
             "paybill": os.environ.get("FIXED_PAYBILL", "").strip() or "—",
             "account": os.environ.get("FIXED_PAYMENT_ACCOUNT", "").strip() or "—",
         }
-    paybill = os.environ.get("PAYBILL", "XXXXXX")
-    if tenant is not None:
-        t_pb = (getattr(tenant, "paybill", None) or "").strip()
-        if t_pb:
-            paybill = t_pb
+
     return {
-        "paybill": paybill,
+        "paybill": os.environ.get("PAYBILL", "XXXXXX"),
         "account": consumer.meter_acc_no,
     }
 
