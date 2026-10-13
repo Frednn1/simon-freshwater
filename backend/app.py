@@ -1061,54 +1061,6 @@ def dev_api_env():
     return jsonify({"env": env, "db_tail": db_tail})
 
 
-# TEMP — PHASE D (STAGING + PRODUCTION, REMOVE AFTER USE)
-@app.route("/api/admin/diag/admins", methods=["GET", "POST"])
-def admin_diag_admins():
-    import hmac as _hmac
-    secret   = request.headers.get("X-Admin-Secret", "")
-    expected = os.environ.get("ADMIN_SEED_SECRET", "")
-    if not (expected and secret and _hmac.compare_digest(secret, expected)):
-        return jsonify({"error": "Unauthorized"}), 401
-    if not _rate_limit("diag_admins", 20, 60):
-        return _too_many(60)
-
-    if request.method == "GET":
-        out = []
-        for a in AdminUser.query.order_by(AdminUser.id.asc()).all():
-            out.append({
-                "id": a.id,
-                "username": a.username,
-                "tenant_id": a.tenant_id,
-                "is_super": bool(getattr(a, "is_super", False)),
-                "is_active": bool(a.is_active),
-            })
-        return jsonify({"admins": out})
-
-    data = request.get_json(silent=True) or {}
-    if not data.get("confirm"):
-        return jsonify({"error": "confirm:true required"}), 400
-    usernames = data.get("usernames") or []
-    if not isinstance(usernames, list) or not usernames:
-        return jsonify({"error": "usernames list required"}), 400
-
-    normalized = [str(u).strip().lower() for u in usernames]
-    before, after = [], []
-    for u in normalized:
-        a = AdminUser.query.filter_by(username=u).first()
-        if not a:
-            before.append({"username": u, "found": False})
-            after.append({"username": u, "found": False})
-            continue
-        before.append({"username": u, "id": a.id,
-                       "is_super": bool(getattr(a, "is_super", False))})
-        if getattr(a, "is_super", False):
-            a.is_super = False
-            db.session.commit()
-        a2 = AdminUser.query.filter_by(username=u).first()
-        after.append({"username": u, "id": a2.id,
-                      "is_super": bool(getattr(a2, "is_super", False))})
-    return jsonify({"ok": True, "before": before, "after": after})
-# END TEMP
 
 
 @app.route("/admin/tenants")
