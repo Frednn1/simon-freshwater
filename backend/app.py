@@ -2835,12 +2835,12 @@ def admin_login_route():
     if not _rate_limit("login", 20, 60):
         return _too_many(60)
 
-    _tid_login = _write_tenant_id()
-    if _tid_login < 0:
-        return jsonify({"ok": False, "error": "No tenant context for this request."}), 401
+    # Login is not tenant-scoped — the username is globally unique, so a
+    # super-admin can sign in from any URL without being rejected by a
+    # stale session or a mismatched ?__tenant=. The session slug is set
+    # below from the authenticated admin's own tenant_id.
     data = request.get_json(silent=True) or {}
-    result = admin_login_fn(data.get("username", ""), data.get("password", ""),
-                            tenant_id=_tid_login)
+    result = admin_login_fn(data.get("username", ""), data.get("password", ""))
     if not result.get("ok"):
         _audit("login_failed",
                detail=f"attempted_username={(data.get('username') or '')[:40]}")
@@ -4430,38 +4430,6 @@ def admin_backup_run():
     _audit("backup_run_failed",
            detail=(result.get("error") or "")[:200])
     return jsonify(result), 502
-
-
-@app.route("/api/admin/_debug/login_state", methods=["GET"])
-def _debug_login_state():
-    """TEMPORARY diagnostic — inspect tenants + admins for login debugging.
-    Remove after diagnosis is complete."""
-    # No auth required: this is diagnostic only and returns non-secret fields.
-    try:
-        tenants = Tenant.query.order_by(Tenant.id.asc()).all()
-        admins = AdminUser.query.order_by(AdminUser.id.asc()).all()
-        sess = dict(session)
-        return jsonify({
-            "tenants": [{
-                "id": t.id, "slug": t.slug, "org_name": t.org_name,
-                "is_active": bool(t.is_active),
-            } for t in tenants],
-            "admins": [{
-                "id": a.id, "username": a.username,
-                "tenant_id": a.tenant_id, "is_active": bool(a.is_active),
-                "is_super": bool(getattr(a, "is_super", False)),
-            } for a in admins],
-            "session": {
-                "admin_id": sess.get("admin_id"),
-                "admin_username": sess.get("admin_username"),
-                "__tenant_slug": sess.get("__tenant_slug"),
-                "pending_2fa_admin_id": sess.get("pending_2fa_admin_id"),
-            },
-            "default_slug": _DEFAULT_TENANT_SLUG,
-        })
-    except Exception as e:
-        import traceback
-        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
 
 
 @app.route("/api/admin/consumers/all", methods=["GET"])

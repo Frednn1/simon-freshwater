@@ -65,11 +65,20 @@ def create_first_admin(username, password, phone, email, setup_code, tenant_id=1
 
 
 # ─── Login ───
-def login(username, password, tenant_id=1):
-    if tenant_id is None or tenant_id < 1:
-        return {"ok": False, "error": "No tenant context for this request."}
+def login(username, password, tenant_id=None):
+    """Authenticate an admin.
+
+    Lookup is by username ALONE — usernames are globally unique in the
+    model, and requiring tenant_id here was the root cause of the
+    "Invalid credentials" bug: a super-admin who happened to be on a
+    URL that carried a different tenant's slug could not sign in.
+
+    tenant_id is accepted for backwards compatibility but is NOT used
+    to scope the lookup. The caller sets session["__tenant_slug"] from
+    the authenticated admin's own tenant_id after this returns.
+    """
     username = (username or "").strip().lower()
-    admin = AdminUser.query.filter_by(username=username, tenant_id=tenant_id).first()
+    admin = AdminUser.query.filter_by(username=username).first()
     if not admin or not admin.is_active:
         return {"ok": False, "error": "Invalid credentials."}
 
