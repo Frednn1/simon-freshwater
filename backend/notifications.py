@@ -138,33 +138,24 @@ def _payment_info(consumer, tenant=None) -> dict:
 
     Resolution order:
 
-      1. Default tenant (slug 'simon-freshwater') → ALWAYS fixed mode.
-         Uses FIXED_PAYBILL / FIXED_PAYMENT_ACCOUNT env vars — the
-         dedicated paybill and dedicated account, NEVER the customer
-         meter number. tenant.paybill / tenant.payment_account are
-         ignored for this tenant by design.
-
-      2. Any other tenant with a paybill set on its record:
+      1. Tenant with a paybill set on its record:
          - payment_account set on tenant → paybill + payment_account
            (fixed account shared by all consumers of that tenant).
          - payment_account empty → paybill + consumer.meter_acc_no
            (per-consumer account).
 
-      3. Fallback (no tenant, or tenant with no paybill):
+         This applies uniformly to every tenant, including the default
+         'simon-freshwater' tenant. There is no hard-coded 'always fixed'
+         branch any more — the tenant row is the single source of truth.
+
+      2. Fallback (no tenant, or tenant with no paybill):
          - PAYMENT_MODE=fixed → FIXED_PAYBILL / FIXED_PAYMENT_ACCOUNT
          - Else → PAYBILL env + consumer.meter_acc_no
     """
-    _DEFAULT_SLUG = "simon-freshwater"
     _FIXED_PB     = os.environ.get("FIXED_PAYBILL", "").strip() or "—"
     _FIXED_ACCT   = os.environ.get("FIXED_PAYMENT_ACCOUNT", "").strip() or "—"
 
-    _slug = (getattr(tenant, "slug", "") or "").strip() if tenant is not None else ""
-
-    # 1. Default tenant → ALWAYS fixed mode
-    if _slug == _DEFAULT_SLUG:
-        return {"paybill": _FIXED_PB, "account": _FIXED_ACCT}
-
-    # 2. Other tenants with a paybill
+    # 1. Tenant with a paybill on its record (uniform across all tenants)
     t_pb   = (getattr(tenant, "paybill", None) or "").strip() if tenant is not None else ""
     t_acct = (getattr(tenant, "payment_account", None) or "").strip() if tenant is not None else ""
 
@@ -174,7 +165,7 @@ def _payment_info(consumer, tenant=None) -> dict:
             "account": t_acct or consumer.meter_acc_no,
         }
 
-    # 3. Fallback
+    # 2. Fallback
     mode = os.environ.get("PAYMENT_MODE", "").strip().lower()
     if mode == "fixed":
         return {"paybill": _FIXED_PB, "account": _FIXED_ACCT}
