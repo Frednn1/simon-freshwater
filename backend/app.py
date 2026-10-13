@@ -4459,6 +4459,75 @@ def _debug_admin_state():
         return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
 
 
+@app.route("/api/admin/_debug/login_source", methods=["GET"])
+def _debug_login_source():
+    """TEMPORARY — return the exact source of the running login() function
+    and the login route, so we can verify what is actually deployed."""
+    import inspect
+    import admin_auth as _aa
+    src_login   = inspect.getsource(_aa.login)
+    src_route   = inspect.getsource(admin_login_route)
+    return jsonify({
+        "login_func_source":   src_login,
+        "login_route_source":  src_route,
+        "app_file":            os.path.abspath(__file__),
+        "admin_auth_file":     os.path.abspath(_aa.__file__),
+    })
+
+
+@app.route("/api/admin/_debug/login_probe", methods=["POST"])
+def _debug_login_probe():
+    """TEMPORARY — dry-run of the login lookup. Returns what the server
+    would see for the given username/password WITHOUT touching
+    failed_attempts or issuing a session. Used to trace exactly why
+    'Invalid credentials.' fires."""
+    import hashlib
+    import inspect
+    import admin_auth as _aa
+
+    data = request.get_json(silent=True) or {}
+    raw_username = data.get("username", "")
+    raw_password = data.get("password", "")
+
+    username = (raw_username or "").strip().lower()
+
+    # AdminUser source that is actually loaded on this process
+    from models import AdminUser as _AU
+    src_model = inspect.getsource(_AU)
+
+    # The exact lookup the current login() does — read from the code
+    # we are running, so this probe follows whatever login() does.
+    try:
+        admin = _AU.query.filter_by(username=username).first()
+    except Exception as e:
+        admin = None
+        lookup_error = str(e)
+    else:
+        lookup_error = None
+
+    out = {
+        "raw_username":           raw_username,
+        "raw_username_repr":      repr(raw_username),
+        "raw_username_len":       len(raw_username or ""),
+        "normalised_username":    username,
+        "normalised_username_repr": repr(username),
+        "normalised_username_len": len(username),
+        "password_len":           len(raw_password or ""),
+        "lookup_error":           lookup_error,
+        "admin_found":            admin is not None,
+    }
+    if admin is not None:
+        out.update({
+            "admin_id":               admin.id,
+            "admin_username_repr":    repr(admin.username),
+            "admin_tenant_id":        admin.tenant_id,
+            "admin_is_active":        bool(admin.is_active),
+            "password_matches":       bool(
+                _aa.check_password_hash(admin.password_hash, raw_password or "")),
+        })
+    return jsonify(out)
+
+
 @app.route("/api/admin/consumers/all", methods=["GET"])
 def admin_consumers_all():
     """Return all consumers (active + terminated), alphabetically.
