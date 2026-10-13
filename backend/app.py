@@ -3133,6 +3133,49 @@ def admin_diagnostics_session():
     })
 
 
+# ═══════════════════════════════════════════════
+#  TEMP — DB AUDIT (STAGING ONLY, REMOVE AFTER USE)
+# ═══════════════════════════════════════════════
+# Guard: X-Admin-Secret must equal ADMIN_SEED_SECRET (env-only).
+# Returns: tenants + admins. No hashes, no secrets, no tokens.
+
+@app.route("/api/admin/diag/audit", methods=["GET"])
+def admin_diag_audit():
+    import hmac as _hmac
+    secret   = request.headers.get("X-Admin-Secret", "")
+    expected = os.environ.get("ADMIN_SEED_SECRET", "")
+    if not (expected and secret and _hmac.compare_digest(secret, expected)):
+        return jsonify({"error": "Unauthorized"}), 401
+    if not _rate_limit("diag_audit", 10, 60):
+        return _too_many(60)
+
+    tenants = [{
+        "id": t.id, "slug": t.slug, "org_name": t.org_name,
+        "is_active": bool(t.is_active),
+    } for t in Tenant.query.order_by(Tenant.id.asc()).all()]
+
+    admins = []
+    for a in AdminUser.query.order_by(AdminUser.id.asc()).all():
+        admins.append({
+            "id": a.id,
+            "username": a.username,
+            "tenant_id": a.tenant_id,
+            "is_active": bool(a.is_active),
+            "is_super": bool(getattr(a, "is_super", False)),
+            "failed_attempts": a.failed_attempts,
+            "locked": bool(a.locked_until and a.locked_until > datetime.utcnow()),
+            "phone_tail": (a.phone[-4:] if a.phone and len(a.phone) >= 4 else None),
+            "hash_len": len(a.password_hash or ""),
+        })
+
+    return jsonify({
+        "now_utc": datetime.utcnow().isoformat(),
+        "tenants": tenants,
+        "admins": admins,
+    })
+# ═══════════════════════════════════════════════
+
+
 @app.route("/api/admin/settings", methods=["GET"])
 def admin_get_settings():
     if not _rate_limit("settings_get", 30, 60):
