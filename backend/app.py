@@ -4432,6 +4432,33 @@ def admin_backup_run():
     return jsonify(result), 502
 
 
+@app.route("/api/admin/_debug/admin_state", methods=["GET"])
+def _debug_admin_state():
+    """TEMPORARY — inspect admin rows for login debugging.
+    Returns no secrets; shows only hash prefix + state flags."""
+    try:
+        rows = AdminUser.query.order_by(AdminUser.id.asc()).all()
+        return jsonify({
+            "admins": [{
+                "id": a.id,
+                "username": a.username,
+                "username_repr": repr(a.username),
+                "tenant_id": a.tenant_id,
+                "is_active": bool(a.is_active),
+                "is_super": bool(getattr(a, "is_super", False)),
+                "failed_attempts": a.failed_attempts,
+                "locked_until": a.locked_until.isoformat() if a.locked_until else None,
+                "locked_now": bool(a.locked_until and a.locked_until > __import__("datetime").datetime.utcnow()),
+                "password_hash_prefix": (a.password_hash or "")[:20],
+                "password_hash_len": len(a.password_hash or ""),
+            } for a in rows],
+            "now_utc": __import__("datetime").datetime.utcnow().isoformat(),
+        })
+    except Exception as e:
+        import traceback
+        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+
+
 @app.route("/api/admin/consumers/all", methods=["GET"])
 def admin_consumers_all():
     """Return all consumers (active + terminated), alphabetically.
