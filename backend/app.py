@@ -4459,6 +4459,41 @@ def _debug_admin_state():
         return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
 
 
+@app.route("/api/admin/_debug/reset_password", methods=["POST"])
+def _debug_reset_password():
+    """TEMPORARY one-shot — reset an admin's password, gated by
+    DEBUG_RESET_TOKEN env var. Remove after use."""
+    expected = os.environ.get("DEBUG_RESET_TOKEN", "").strip()
+    if not expected:
+        return jsonify({"error": "Reset disabled (no DEBUG_RESET_TOKEN on server)."}), 403
+
+    data = request.get_json(silent=True) or {}
+    if not secrets.compare_digest(
+            (data.get("token") or "").strip(), expected):
+        return jsonify({"error": "Invalid token."}), 403
+
+    username = (data.get("username") or "").strip().lower()
+    new_password = data.get("new_password") or ""
+    if not username or len(new_password) < 8:
+        return jsonify({"error": "username and new_password (min 8) required."}), 400
+
+    admin = AdminUser.query.filter_by(username=username).first()
+    if not admin:
+        return jsonify({"error": f"No admin with username {username!r}."}), 404
+
+    admin.password_hash = generate_password_hash(new_password)
+    admin.failed_attempts = 0
+    admin.locked_until = None
+    db.session.commit()
+
+    return jsonify({
+        "ok": True,
+        "username": admin.username,
+        "tenant_id": admin.tenant_id,
+        "message": "Password reset. failed_attempts cleared, lockout removed.",
+    })
+
+
 @app.route("/api/admin/consumers/all", methods=["GET"])
 def admin_consumers_all():
     """Return all consumers (active + terminated), alphabetically.
