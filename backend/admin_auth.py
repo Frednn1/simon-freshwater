@@ -106,15 +106,17 @@ def login(username, password, tenant_id=None):
 
 
 # ─── Password reset ───
-def request_password_reset(identifier, tenant_id=1):
-    if tenant_id is None or tenant_id < 1:
-        return {"ok": False, "error": "No tenant context for this request."}
+def request_password_reset(identifier, tenant_id=None):
+    """Reset flow is username-only — same rationale as login: usernames
+    are globally unique, and requiring tenant_id here rejected the reset
+    whenever the URL/session tenant differed from the admin's own tenant.
+    tenant_id is accepted for backwards compatibility but not used."""
     q = (identifier or "").strip()
     if not q:
         return {"ok": False, "error": "Provide your username or phone number."}
 
-    admin = (AdminUser.query.filter_by(username=q.lower(), tenant_id=tenant_id).first()
-             or AdminUser.query.filter_by(phone=q, tenant_id=tenant_id).first())
+    admin = (AdminUser.query.filter_by(username=q.lower()).first()
+             or AdminUser.query.filter_by(phone=q).first())
     if not admin:
         # Don't reveal existence
         return {"ok": True, "message": "If the account exists, a code was sent.",
@@ -150,9 +152,9 @@ def request_password_reset(identifier, tenant_id=1):
             "sms_ok": bool(sms_result.get("ok"))}
 
 
-def confirm_password_reset(reset_token, otp, new_password, tenant_id=1):
-    if tenant_id is None or tenant_id < 1:
-        return {"ok": False, "error": "No tenant context for this request."}
+def confirm_password_reset(reset_token, otp, new_password, tenant_id=None):
+    """Token-keyed: the reset token is globally unique, so tenant_id
+    is not needed for lookup. Accepted for backwards compatibility."""
     if not reset_token or not otp or not new_password:
         return {"ok": False, "error": "All fields are required."}
     if len(new_password) < 8:
@@ -170,7 +172,7 @@ def confirm_password_reset(reset_token, otp, new_password, tenant_id=1):
     if tok.otp_hash != _hash_otp(otp):
         return {"ok": False, "error": "Incorrect OTP code."}
 
-    admin = AdminUser.query.filter_by(id=tok.admin_id, tenant_id=tenant_id).first()
+    admin = AdminUser.query.filter_by(id=tok.admin_id).first()
     if not admin:
         return {"ok": False, "error": "Admin no longer exists."}
 

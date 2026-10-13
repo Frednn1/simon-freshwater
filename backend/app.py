@@ -557,10 +557,24 @@ def _current_admin():
                        _admin_id=_aid, _admin_username=_uname)
             return None
 
-    a = _tenant_query(AdminUser).filter_by(id=aid).first()
+    # Lookup by ID alone — the ID is a primary key and does not depend
+    # on the session's tenant slug. The tenant-scoped query was the
+    # second half of the earlier login bug: a stale slug made the
+    # admin row appear "not found", forcing a false logout.
+    a = AdminUser.query.filter_by(id=aid).first()
     if not a or not a.is_active:
         _clear_session_preserve_tenant()
         return None
+
+    # Self-heal: session slug must equal the admin's own tenant slug.
+    # If they disagree (stale cookie, tampering, tenant slug changed),
+    # silently correct the session rather than locking the admin out.
+    if a.tenant_id:
+        _admin_tenant = Tenant.query.get(a.tenant_id)
+        if _admin_tenant:
+            _sess_slug = session.get("__tenant_slug")
+            if _sess_slug != _admin_tenant.slug:
+                session["__tenant_slug"] = _admin_tenant.slug
 
     # Roll the activity timestamp forward on each authenticated request
     session["last_activity"] = now.isoformat()
@@ -2842,8 +2856,31 @@ def admin_login_route():
     data = request.get_json(silent=True) or {}
     result = admin_login_fn(data.get("username", ""), data.get("password", ""))
     if not result.get("ok"):
+        # Structured audit: capture the resolved tenant, the URL tenant,
+        # and (if the username exists) which tenant the admin actually
+        # belongs to. This makes a repeat of the earlier cross-tenant
+        # bug diagnosable from one audit query instead of ad-hoc debug
+        # endpoints.
+        _attempted = (data.get("username") or "").strip().lower()
+        _resolved = getattr(g, "tenant", None)
+        _resolved_slug = _resolved.slug if _resolved else "—"
+        _url_slug = (request.args.get("__tenant") or "—")
+        _reason = (result.get("error") or "")[:60]
+        _true_tenant = "—"
+        try:
+            _u = AdminUser.query.filter_by(username=_attempted).first()
+            if _u and _u.tenant_id:
+                _t = Tenant.query.get(_u.tenant_id)
+                if _t:
+                    _true_tenant = _t.slug
+        except Exception:
+            pass
         _audit("login_failed",
-               detail=f"attempted_username={(data.get('username') or '')[:40]}")
+               detail=(f"attempted_username={_attempted[:40]} "
+                       f"resolved_tenant={_resolved_slug} "
+                       f"url_tenant={_url_slug} "
+                       f"admin_tenant={_true_tenant} "
+                       f"reason={_reason}"))
         return jsonify({"ok": False, "error": result["error"]}), 401
 
     # Compute the tenant slug the session must carry after login.
@@ -2963,8 +3000,7 @@ def admin_forgot_route():
         return _too_many(60)
 
     data = request.get_json(silent=True) or {}
-    result = request_password_reset(data.get("identifier", ""),
-                                    tenant_id=_write_tenant_id())
+    result = request_password_reset(data.get("identifier", ""))
     return jsonify(result), (200 if result.get("ok") else 400)
 
 
@@ -2976,7 +3012,6 @@ def admin_reset_route():
     data = request.get_json(silent=True) or {}
     result = confirm_password_reset(
         data.get("token", ""), data.get("otp", ""), data.get("new_password", ""),
-        tenant_id=_write_tenant_id(),
     )
     return jsonify(result), (200 if result.get("ok") else 400)
 
@@ -2984,6 +3019,119 @@ def admin_reset_route():
 # ═══════════════════════════════════════════════
 #  ADMIN — SETTINGS
 # ═══════════════════════════════════════════════
+
+# ═══════════════════════════════════════════════
+#  ADMIN — DIAGNOSTICS (super-admin only)
+# ═══════════════════════════════════════════════
+# Permanent, replaces the ad-hoc debug endpoints. Returns no secrets,
+# no password hashes, no tokens. Super-admin only. Used to diagnose
+# login/session/tenant issues in one query.
+
+@app.route("/api/admin/diagnostics/session", methods=["GET"])
+def admin_diagnostics_session():
+    u = _require_super_admin()
+    if u: return u
+    if not _rate_limit("diag_session", 30, 60):
+        return _too_many(60)
+
+    admin = _current_admin()
+
+    sess_view = {
+        "admin_id": session.get("admin_id"),
+        "admin_username": session.get("admin_username"),
+        "__tenant_slug": session.get("__tenant_slug"),
+        "last_activity": session.get("last_activity"),
+        "pending_2fa_admin_id": session.get("pending_2fa_admin_id"),
+    }
+
+    resolved = None
+    try:
+        t = g.tenant
+        if t is not None:
+            resolved = {"id": t.id, "slug": t.slug,
+                        "org_name": t.org_name, "is_active": bool(t.is_active)}
+    except Exception:
+        pass
+
+    admin_view = None
+    admin_tenant_view = None
+    if admin:
+        admin_view = {
+            "id": admin.id, "username": admin.username,
+            "tenant_id": admin.tenant_id,
+            "is_super": bool(getattr(admin, "is_super", False)),
+            "is_active": bool(admin.is_active),
+        }
+        if admin.tenant_id:
+            at = Tenant.query.get(admin.tenant_id)
+            if at:
+                admin_tenant_view = {
+                    "id": at.id, "slug": at.slug,
+                    "org_name": at.org_name, "is_active": bool(at.is_active),
+                }
+
+    match = None
+    if admin_tenant_view and resolved:
+        match = (admin_tenant_view["slug"] == resolved["slug"])
+
+    recent = []
+    try:
+        cutoff = datetime.utcnow() - timedelta(hours=24)
+        rows = (AdminAuditLog.query
+                .filter(AdminAuditLog.created_at >= cutoff)
+                .filter(AdminAuditLog.action.in_(
+                    ("login", "logout", "login_failed",
+                     "session_timeout", "login_2fa_ok")))
+                .order_by(AdminAuditLog.created_at.desc())
+                .limit(30)
+                .all())
+        for r in rows:
+            dt_nbo = _as_nairobi(r.created_at)
+            recent.append({
+                "time": dt_nbo.strftime("%d %b %Y, %H:%M:%S"),
+                "admin": r.admin_username,
+                "action": r.action,
+                "detail": r.detail,
+                "ip": r.ip_address,
+            })
+    except Exception:
+        pass
+
+    tenants_all = []
+    admins_all = []
+    try:
+        for t in Tenant.query.order_by(Tenant.id.asc()).all():
+            tenants_all.append({
+                "id": t.id, "slug": t.slug, "org_name": t.org_name,
+                "is_active": bool(t.is_active),
+            })
+        for a in AdminUser.query.order_by(AdminUser.id.asc()).all():
+            admins_all.append({
+                "id": a.id, "username": a.username,
+                "tenant_id": a.tenant_id,
+                "is_super": bool(getattr(a, "is_super", False)),
+                "is_active": bool(a.is_active),
+                "failed_attempts": a.failed_attempts,
+                "locked": bool(a.locked_until and a.locked_until > datetime.utcnow()),
+            })
+    except Exception:
+        pass
+
+    return jsonify({
+        "now_utc": datetime.utcnow().isoformat(),
+        "authenticated": bool(admin),
+        "admin": admin_view,
+        "admin_tenant": admin_tenant_view,
+        "resolved_tenant": resolved,
+        "session": sess_view,
+        "match": match,
+        "url_tenant": request.args.get("__tenant") or None,
+        "url_preview": request.args.get("__preview") or None,
+        "recent_auth_events": recent,
+        "all_tenants": tenants_all,
+        "all_admins": admins_all,
+    })
+
 
 @app.route("/api/admin/settings", methods=["GET"])
 def admin_get_settings():
