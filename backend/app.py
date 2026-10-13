@@ -13,6 +13,7 @@ from flask import (
 )
 from flask_cors import CORS
 from sqlalchemy import text, inspect
+from sqlalchemy.exc import IntegrityError
 
 from models import (
     db, Consumer, MeterReading, NotificationLog,
@@ -3169,13 +3170,33 @@ def admin_update_username():
     if new_username == (admin.username or "").lower():
         return jsonify({"error": "That is already your username."}), 400
 
-    dup = _tenant_query(AdminUser).filter_by(username=new_username).first()
-    # def admin_auth_tenant_call_sites_marker
+    # Global uniqueness — the model declares username with unique=True
+    # across ALL tenants, so the pre-check must also be global. A
+    # tenant-scoped check would allow a rename to collide with another
+    # tenant's admin and raise IntegrityError (HTTP 500) instead of a
+    # clean, friendly 409.
+    dup = AdminUser.query.filter_by(username=new_username).first()
     if dup and dup.id != admin.id:
-        return jsonify({"error": "That username is already taken."}), 409
+        return jsonify({
+            "error": (f"Username '{new_username}' is already in use. "
+                      "Please choose a different username."),
+            "code": "username_taken",
+        }), 409
 
     admin.username = new_username
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        # Safety net: if the pre-check missed (race, or a legacy row outside
+        # the current tenant scope), still return a friendly 409 rather than
+        # a 500. Roll back so the ORM session remains usable.
+        db.session.rollback()
+        return jsonify({
+            "error": (f"Username '{new_username}' is already in use. "
+                      "Please choose a different username."),
+            "code": "username_taken",
+        }), 409
+
     session["admin_username"] = new_username
 
     _audit("update_settings_username",
