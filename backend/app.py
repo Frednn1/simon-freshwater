@@ -3223,6 +3223,81 @@ def admin_diag_check_password():
 # END TEMP
 
 
+# TEMP — STAGING ONLY, REMOVE AFTER USE
+@app.route("/api/admin/diag/create-admin", methods=["POST"])
+def admin_diag_create_admin():
+    import hmac as _hmac
+    from werkzeug.security import generate_password_hash as _gen
+
+    secret   = request.headers.get("X-Admin-Secret", "")
+    expected = os.environ.get("ADMIN_SEED_SECRET", "")
+    if not (expected and secret and _hmac.compare_digest(secret, expected)):
+        return jsonify({"error": "Unauthorized"}), 401
+    if not _rate_limit("diag_create_admin", 5, 60):
+        return _too_many(60)
+
+    data      = request.get_json(silent=True) or {}
+    username  = (data.get("username") or "").strip().lower()
+    password  = data.get("password") or ""
+    phone     = (data.get("phone") or "").strip()
+    tenant_id = int(data.get("tenant_id") or 1)
+    is_super  = bool(data.get("is_super", True))
+
+    if len(username) < 3:
+        return jsonify({"ok": False, "error": "username must be >= 3 chars"}), 400
+    if len(password) < 8:
+        return jsonify({"ok": False, "error": "password must be >= 8 chars"}), 400
+
+    tenant = Tenant.query.get(tenant_id)
+    if not tenant:
+        return jsonify({"ok": False, "error": f"tenant {tenant_id} not found"}), 400
+
+    existing = AdminUser.query.filter_by(username=username).first()
+    if existing:
+        return jsonify({
+            "ok": False,
+            "error": "username already exists",
+            "existing": {
+                "id": existing.id,
+                "username": existing.username,
+                "tenant_id": existing.tenant_id,
+                "is_super": bool(getattr(existing, "is_super", False)),
+                "is_active": bool(existing.is_active),
+            }
+        }), 409
+
+    admin = AdminUser(
+        username=username,
+        password_hash=_gen(password),
+        phone=phone or None,
+        email=None,
+        is_active=True,
+        tenant_id=tenant_id,
+        is_super=is_super,
+    )
+    try:
+        admin.failed_attempts = 0
+        admin.locked_until = None
+    except Exception:
+        pass
+
+    db.session.add(admin)
+    db.session.commit()
+
+    return jsonify({
+        "ok": True,
+        "created": {
+            "id": admin.id,
+            "username": admin.username,
+            "tenant_id": admin.tenant_id,
+            "is_super": bool(getattr(admin, "is_super", False)),
+            "is_active": bool(admin.is_active),
+            "hash_len": len(admin.password_hash or ""),
+        }
+    })
+# END TEMP
+
+
 @app.route("/api/admin/settings", methods=["GET"])
 def admin_get_settings():
     if not _rate_limit("settings_get", 30, 60):
