@@ -171,6 +171,21 @@ def _tenant_query(model):
     return model.query.filter_by(tenant_id=tid)
 
 
+def _explicit_tenant_from_url():
+    """Resolve the tenant ONLY from ?__tenant= or ?__preview=, never from
+    session. Used by login / setup routes that must not trust a stale
+    authenticated session. Falls back to the default tenant."""
+    slug = (request.args.get("__tenant") or "").strip()
+    if not slug:
+        slug = (request.args.get("__preview") or "").strip()
+    if not slug:
+        slug = _DEFAULT_TENANT_SLUG
+    try:
+        return Tenant.query.filter_by(slug=slug).first()
+    except Exception:
+        return None
+
+
 def _write_tenant_id():
     """Tenant id to stamp on a new row.
     -1 means no tenant resolved — the caller should reject the request
@@ -2795,7 +2810,9 @@ def admin_setup_route():
     if not _rate_limit("setup", 10, 60):
         return _too_many(60)
 
-    _tid_setup = _write_tenant_id()
+    # Setup is also anonymous — same URL-only rule as login.
+    _t_setup = _explicit_tenant_from_url()
+    _tid_setup = _t_setup.id if _t_setup else -1
     if _tid_setup < 0:
         return jsonify({"ok": False, "error": "No tenant context for this request."}), 400
     data = request.get_json(silent=True) or {}
@@ -2835,7 +2852,11 @@ def admin_login_route():
     if not _rate_limit("login", 20, 60):
         return _too_many(60)
 
-    _tid_login = _write_tenant_id()
+    # Login is anonymous by definition — determine the tenant ONLY from
+    # the URL query string, never from session (a stale admin_id from a
+    # previous login would send us to the wrong tenant).
+    _t_login = _explicit_tenant_from_url()
+    _tid_login = _t_login.id if _t_login else -1
     if _tid_login < 0:
         return jsonify({"ok": False, "error": "No tenant context for this request."}), 401
     data = request.get_json(silent=True) or {}
