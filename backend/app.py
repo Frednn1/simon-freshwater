@@ -568,6 +568,21 @@ def _current_admin():
         _clear_session_preserve_tenant()
         return None
 
+    # Tenant-active check: if the admin's own tenant has been deactivated,
+    # treat the admin as unauthenticated. This is the server-side half of
+    # the auto-logout — the client poller is 15s, but this fires on the
+    # very first API call, so no stale action can slip through.
+    if a.tenant_id:
+        _admin_tenant_for_check = Tenant.query.get(a.tenant_id)
+        if _admin_tenant_for_check is not None and not _admin_tenant_for_check.is_active:
+            _uname = session.get("admin_username")
+            _aid   = session.get("admin_id")
+            _clear_session_preserve_tenant()
+            if _uname:
+                _audit("tenant_deactivated_logout",
+                       _admin_id=_aid, _admin_username=_uname)
+            return None
+
     # Self-heal: session slug must equal the admin's own tenant slug.
     # If they disagree (stale cookie, tampering, tenant slug changed),
     # silently correct the session rather than locking the admin out.
@@ -1029,6 +1044,24 @@ def _tenant_to_dict(t):
     }
 
 
+@app.route("/api/tenant/is-active")
+def tenant_is_active_api():
+    """Return whether the current tenant is active. Public, cache-busting
+    endpoint used by the tenant watchdog poller. Never returns tenant data
+    beyond the active boolean and the slug."""
+    slug = (request.args.get("__tenant") or "").strip()
+    if not slug:
+        slug = (session.get("__tenant_slug") or _DEFAULT_TENANT_SLUG)
+    try:
+        t = Tenant.query.filter_by(slug=slug).first()
+        active = bool(t and t.is_active)
+    except Exception:
+        active = False
+    resp = jsonify({"active": active, "slug": slug})
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    return resp
+
+
 @app.route("/api/tenant/reset", methods=["POST"])
 def tenant_reset():
     session.pop("__tenant_slug", None)
@@ -1106,8 +1139,10 @@ def admin_tenants_page():
 
 @app.route("/tenant/logo/<slug>")
 def tenant_logo_serve(slug):
-    """Stream a tenant's custom logo (public, active tenants only)."""
-    t = Tenant.query.filter_by(slug=slug, is_active=True).first()
+    """Stream a tenant's custom logo. Logos are public branding, not
+    tenant data, so we serve them regardless of is_active. This keeps the
+    correct logo visible on the login page of an inactive tenant."""
+    t = Tenant.query.filter_by(slug=slug).first()
     if not t or not t.logo_key or not t.logo_key.startswith("logos/"):
         return redirect("/images/SimonW_Logo.png")
     data, ctype = archive.download_object(t.logo_key)
@@ -1772,6 +1807,11 @@ def report_template_view():
 @app.route("/dev.css")
 def _dev_css():
     return send_from_directory(FRONTEND_DIR, "dev.css")
+
+
+@app.route("/tenant-watchdog.js")
+def _tenant_watchdog_js():
+    return send_from_directory(FRONTEND_DIR, "tenant-watchdog.js")
 
 
 @app.route("/style.css")
