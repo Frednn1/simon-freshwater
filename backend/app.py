@@ -936,7 +936,38 @@ def terms_page():
 
 @app.route("/admin/login")
 def admin_login_page():
-    return _serve_frontend("admin_login.html")
+    """Serve the tenant admin login page.
+
+    If the request carries ?__tenant=<slug> or ?__preview=<slug> that
+    resolves to an inactive tenant, we still serve the page (so the
+    visitor sees the tenant's branding), but we set a template flag
+    the page uses to disable the login form and show a friendly note.
+    """
+    slug = (request.args.get("__tenant")
+            or request.args.get("__preview")
+            or "").strip()
+    tenant_inactive = False
+    if slug:
+        try:
+            t = Tenant.query.filter_by(slug=slug).first()
+            if t is not None and not t.is_active:
+                tenant_inactive = True
+        except Exception:
+            pass
+
+    path = os.path.join(FRONTEND_DIR, "admin_login.html")
+    if not os.path.exists(path):
+        return f"Template not found: admin_login.html", 404
+    with open(path, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    # Same brand substitution as _serve_frontend, plus our new token
+    for token, value in _brand_context().items():
+        html = html.replace("{{" + token + "}}", value)
+    html = html.replace("{{tenant_inactive}}",
+                        "1" if tenant_inactive else "")
+
+    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 @app.route("/admin/setup")
 def admin_setup_page():

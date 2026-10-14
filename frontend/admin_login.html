@@ -11,6 +11,35 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0d47a1">
   <link rel="stylesheet" href="/style.css">
+  <style>
+    /* Inactive-tenant mode — login is visible but disabled */
+    body.tenant-inactive #loginForm input,
+    body.tenant-inactive #loginForm button,
+    body.tenant-inactive #otpForm input,
+    body.tenant-inactive #otpForm button {
+      opacity: .55;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+    body.tenant-inactive #loginBtn,
+    body.tenant-inactive #otpBtn {
+      background: #90a4ae;
+    }
+    .tenant-inactive-note {
+      display: none;
+      margin-top: 1rem;
+      padding: .85rem 1rem;
+      border-radius: 10px;
+      background: #fff3e0;
+      border: 1px solid #ffb74d;
+      color: #6d4c00;
+      font-size: .9rem;
+      line-height: 1.5;
+    }
+    .tenant-inactive-note strong { color: #4e342e; }
+    body.tenant-inactive .tenant-inactive-note { display: block; }
+    .tenant-inactive-note .note-icon { margin-right: .35rem; }
+  </style>
 </head>
 <body class="auth-body">
   <main class="auth-main">
@@ -58,6 +87,11 @@
 
       <div id="loginMsg" class="alert hidden"></div>
 
+      <div class="tenant-inactive-note" id="tenantInactiveNote">
+        <span class="note-icon">🔒</span><strong>This account is currently inactive.</strong>
+        Please contact the administrator to reactivate it before signing in.
+      </div>
+
       <div class="auth-footer">
         <a href="/admin/forgot" class="auth-link">Forgot password?</a>
         <a href="/" class="auth-link">← Back to site</a>
@@ -80,6 +114,29 @@
         if (el) el.style.display = 'block';
       }
     })();
+
+    // ── Inactive-tenant lockout ──
+    const INACTIVE = {{tenant_inactive}} === "1";
+    if (INACTIVE) {
+      document.body.classList.add('tenant-inactive');
+      // Disabled buttons with pointer-events:none don't fire click events,
+      // so we attach the click handler to a wrapper that still receives them.
+      const loginWrap = document.getElementById('step1');
+      const otpWrap   = document.getElementById('step2');
+      const note      = document.getElementById('tenantInactiveNote');
+      function flashNote(ev) {
+        ev.stopPropagation();
+        if (note) note.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+      }
+      // Re-enable clicks at the wrapper level so the note still responds.
+      [loginWrap, otpWrap].forEach(w => {
+        if (!w) return;
+        w.addEventListener('click', (ev) => {
+          const tgt = ev.target.closest('button, input, form');
+          if (tgt) flashNote(ev);
+        }, true);
+      });
+    }
 
     // Propagate ?__tenant= to every auth fetch so anonymous requests
     // resolve the right tenant without needing session persistence.
@@ -104,6 +161,7 @@
     // ── Step 1: password ──
     loginForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+      if (INACTIVE) { return; }   // hard stop for inactive tenants
       const btn = document.getElementById('loginBtn');
       btn.disabled = true; btn.textContent = 'Signing in…';
       hideMsg();
