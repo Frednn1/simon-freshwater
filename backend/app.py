@@ -1738,6 +1738,11 @@ def report_template_view():
     rendered = render_template_string(html, **snapshot)
     return rendered, 200, {"Content-Type": "text/html; charset=utf-8"}
 
+@app.route("/dev.css")
+def _dev_css():
+    return send_from_directory(FRONTEND_DIR, "dev.css")
+
+
 @app.route("/style.css")
 def styles():
     return send_from_directory(FRONTEND_DIR, "style.css")

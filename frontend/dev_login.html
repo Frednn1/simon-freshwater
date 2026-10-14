@@ -6,27 +6,27 @@
   <title>Developer Portal – Sign In</title>
   <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/dev.css">
 </head>
-<body class="login-body">
-  <main class="login-wrap">
-    <div class="login-card">
-      <h1>Developer Portal</h1>
-      <p class="login-sub">Restricted access. Enter the portal key to continue.</p>
-      <form id="devLoginForm" autocomplete="off">
-        <div class="form-row">
-          <label for="devSecret">Access Key</label>
-          <input type="password" id="devSecret" required autocomplete="off">
-        </div>
-        <button type="submit" class="btn-primary" id="devSubmitBtn">Sign In</button>
-      </form>
-      <div id="devMsg" class="alert hidden"></div>
-    </div>
+<body class="dev-body dev-login-body">
+  <main class="dev-login-card">
+    <div class="dev-mark">DP</div>
+    <h1>Developer Portal</h1>
+    <p class="dev-sub">Restricted access. Enter the portal key to continue.</p>
+    <form id="devLoginForm" autocomplete="off">
+      <div class="dev-field">
+        <label for="devSecret">Access Key</label>
+        <input type="password" id="devSecret" required autocomplete="off">
+      </div>
+      <button type="submit" class="dev-btn dev-btn--primary" id="devSubmitBtn">Sign In</button>
+    </form>
+    <div id="devMsg" class="dev-alert dev-hidden"></div>
   </main>
   <script>
     function show(el, kind, text) {
-      el.className = 'alert alert-' + kind;
+      el.className = 'dev-alert dev-alert--' + kind;
       el.textContent = text;
-      el.classList.remove('hidden');
+      el.classList.remove('dev-hidden');
     }
     document.getElementById('devLoginForm').addEventListener('submit', async (e) => {
       e.preventDefault();

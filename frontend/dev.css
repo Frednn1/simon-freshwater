@@ -1,0 +1,322 @@
+/* ═══════════════════════════════════════════════
+   DEVELOPER PORTAL — scoped dark theme
+   Applies ONLY when body has class "dev-body".
+   Tenant pages are unaffected.
+   ═══════════════════════════════════════════════ */
+
+.dev-body {
+  --dev-bg:      #0f1216;
+  --dev-surface: #171c22;
+  --dev-surface2:#1d242c;
+  --dev-border:  #242a33;
+  --dev-border-hi:#38414d;
+  --dev-text:    #e6e9ef;
+  --dev-muted:   #9aa3af;
+  --dev-accent:  var(--blue-300, #64b5f6);
+  --dev-accent-strong: var(--blue-500, #1976d2);
+  background: var(--dev-bg);
+  color: var(--dev-text);
+  font-family: 'Segoe UI', system-ui, -apple-system, Roboto, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.dev-body a { color: var(--dev-accent); }
+.dev-body .dev-mono { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+
+/* ─── Layout ─── */
+.dev-wrap {
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 2rem 1.1rem 3rem;
+}
+
+/* ─── Header ─── */
+.dev-header {
+  display: flex;
+  align-items: center;
+  gap: .85rem;
+  padding-bottom: 1.25rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--dev-border);
+}
+.dev-header .dev-mark {
+  width: 40px; height: 40px; border-radius: 10px;
+  background: linear-gradient(135deg, var(--blue-700, #0d47a1), var(--blue-500, #1976d2));
+  display: grid; place-items: center;
+  color: #fff; font-weight: 800; font-size: 1.05rem;
+  flex: 0 0 auto;
+}
+.dev-header .dev-title h1 {
+  font-size: 1.15rem; font-weight: 700; letter-spacing: .2px; margin: 0;
+}
+.dev-header .dev-title p {
+  font-size: .78rem; color: var(--dev-muted); margin: 0;
+  margin-top: 2px;
+}
+
+/* ─── Env banner ─── */
+.dev-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .6rem;
+  background: var(--dev-surface);
+  border: 1px solid var(--dev-border);
+  border-radius: 10px;
+  padding: .65rem .9rem;
+  font-size: .86rem;
+  margin-bottom: 1.4rem;
+}
+.dev-banner .dev-pill {
+  display: inline-flex; align-items: center; gap: .4rem;
+  padding: .2rem .6rem; border-radius: 999px;
+  font-size: .78rem; font-weight: 700; letter-spacing: .3px;
+  text-transform: uppercase;
+}
+.dev-banner .dev-pill::before {
+  content: '';
+  width: .5rem; height: .5rem; border-radius: 50%;
+  background: currentColor; opacity: .9;
+}
+.dev-pill--prod    { background: rgba(46,125,50,.18); color: #7ed49a; }
+.dev-pill--stage   { background: rgba(245,124,0,.18); color: #ffca7a; }
+.dev-pill--unknown { background: rgba(154,163,175,.15); color: var(--dev-muted); }
+.dev-banner .dev-db {
+  color: var(--dev-muted);
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: .82rem;
+}
+.dev-banner .dev-db strong { color: var(--dev-text); font-weight: 600; }
+
+/* ─── Cards ─── */
+.dev-card {
+  background: var(--dev-surface);
+  border: 1px solid var(--dev-border);
+  border-radius: 12px;
+  padding: 1.25rem 1.15rem;
+  margin-bottom: 1.1rem;
+}
+.dev-card h2 {
+  font-size: 1rem; font-weight: 700;
+  color: var(--dev-text); margin: 0 0 .35rem;
+  letter-spacing: .2px;
+}
+.dev-card .dev-hint {
+  font-size: .82rem; color: var(--dev-muted);
+  margin-bottom: .9rem; line-height: 1.55;
+}
+.dev-card .dev-hint code {
+  background: var(--dev-surface2); color: var(--dev-accent);
+  padding: 1px 6px; border-radius: 4px; font-size: .82em;
+}
+
+/* ─── Tenant cards ─── */
+.dev-tenant {
+  background: var(--dev-surface2);
+  border: 1px solid var(--dev-border);
+  border-radius: 10px;
+  padding: 1rem 1.05rem;
+  margin-bottom: .75rem;
+  transition: border-color .15s ease, transform .15s ease;
+}
+.dev-tenant:hover {
+  border-color: var(--dev-border-hi);
+  transform: translateY(-1px);
+}
+.dev-tenant-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: .75rem; margin-bottom: .5rem;
+}
+.dev-tenant-name { font-weight: 700; font-size: .98rem; }
+.dev-tenant-slug {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: .78rem; color: var(--dev-muted); margin-top: 2px;
+}
+.dev-tenant-meta {
+  font-size: .82rem; color: var(--dev-muted); margin-bottom: .85rem;
+}
+.dev-tenant-actions {
+  display: flex; flex-wrap: wrap; gap: .5rem;
+}
+
+/* ─── Badges ─── */
+.dev-badge {
+  display: inline-flex; align-items: center;
+  padding: .2rem .6rem; border-radius: 999px;
+  font-size: .72rem; font-weight: 700; letter-spacing: .35px;
+  text-transform: uppercase; white-space: nowrap;
+}
+.dev-badge--active   { background: rgba(46,125,50,.18); color: #7ed49a; }
+.dev-badge--inactive { background: rgba(154,163,175,.15); color: var(--dev-muted); }
+
+/* ─── Buttons ─── */
+.dev-btn {
+  display: inline-flex; align-items: center; gap: .35rem;
+  padding: .5rem .9rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: .85rem; font-weight: 600;
+  cursor: pointer; text-decoration: none;
+  transition: background .15s, border-color .15s, transform .05s;
+  white-space: nowrap;
+}
+.dev-btn:active { transform: translateY(1px); }
+.dev-btn:disabled { opacity: .55; cursor: not-allowed; }
+
+.dev-btn--primary {
+  background: var(--blue-500, #1976d2);
+  color: #fff;
+}
+.dev-btn--primary:hover:not(:disabled) {
+  background: var(--blue-700, #0d47a1);
+}
+
+.dev-btn--ghost {
+  background: transparent;
+  border-color: var(--dev-border-hi);
+  color: var(--dev-text);
+}
+.dev-btn--ghost:hover:not(:disabled) {
+  background: var(--dev-surface2);
+  border-color: var(--dev-accent);
+}
+
+.dev-btn--danger {
+  background: transparent;
+  border-color: rgba(198,40,40,.55);
+  color: #f39c9c;
+}
+.dev-btn--danger:hover:not(:disabled) {
+  background: rgba(198,40,40,.14);
+  border-color: var(--red, #c62828);
+}
+
+/* ─── Forms ─── */
+.dev-field {
+  display: flex; flex-direction: column; gap: .3rem;
+  margin-bottom: .85rem;
+}
+.dev-field label {
+  font-size: .8rem; font-weight: 600;
+  color: var(--dev-muted); letter-spacing: .2px;
+}
+.dev-field input,
+.dev-field select,
+.dev-field textarea {
+  background: var(--dev-bg);
+  border: 1px solid var(--dev-border);
+  border-radius: 8px;
+  padding: .6rem .7rem;
+  font-size: .9rem;
+  color: var(--dev-text);
+  font-family: inherit;
+  width: 100%;
+}
+.dev-field input:focus,
+.dev-field select:focus,
+.dev-field textarea:focus {
+  outline: none;
+  border-color: var(--dev-accent);
+  box-shadow: 0 0 0 3px rgba(100,181,246,.15);
+}
+.dev-field input::placeholder { color: #5c6673; }
+
+/* ─── Alerts ─── */
+.dev-alert {
+  padding: .65rem .85rem;
+  border-radius: 8px;
+  font-size: .85rem;
+  margin-top: .8rem;
+  border: 1px solid transparent;
+}
+.dev-alert--error   { background: rgba(198,40,40,.12);  border-color: rgba(198,40,40,.35);  color: #ffb3b3; }
+.dev-alert--success { background: rgba(46,125,50,.12);  border-color: rgba(46,125,50,.35);  color: #a6e2b7; }
+.dev-alert--info    { background: rgba(25,118,210,.12); border-color: rgba(25,118,210,.35); color: #a9cdf1; }
+.dev-hidden { display: none !important; }
+
+/* ─── Login page ─── */
+.dev-login-body {
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.1rem;
+}
+.dev-login-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--dev-surface);
+  border: 1px solid var(--dev-border);
+  border-radius: 14px;
+  padding: 2rem 1.75rem;
+  box-shadow: 0 20px 60px rgba(0,0,0,.35);
+}
+.dev-login-card .dev-mark {
+  width: 46px; height: 46px; border-radius: 12px;
+  background: linear-gradient(135deg, var(--blue-700, #0d47a1), var(--blue-500, #1976d2));
+  display: grid; place-items: center;
+  color: #fff; font-weight: 800; font-size: 1.15rem;
+  margin-bottom: 1.15rem;
+}
+.dev-login-card h1 {
+  font-size: 1.25rem; font-weight: 700; margin: 0 0 .25rem;
+}
+.dev-login-card .dev-sub {
+  color: var(--dev-muted); font-size: .87rem; margin-bottom: 1.4rem;
+}
+.dev-login-card .dev-btn { width: 100%; justify-content: center; }
+
+/* ─── Footer / back link ─── */
+.dev-footer {
+  display: flex; align-items: center; gap: .75rem;
+  margin-top: 1.5rem; padding-top: 1.25rem;
+  border-top: 1px solid var(--dev-border);
+  font-size: .85rem;
+}
+.dev-footer .dev-sep { color: var(--dev-border-hi); }
+.dev-footer a { color: var(--dev-muted); text-decoration: none; }
+.dev-footer a:hover { color: var(--dev-accent); }
+
+/* ─── Modals ─── */
+.dev-body .modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.65);
+  display: grid; place-items: center;
+  z-index: 9999; padding: 1rem;
+}
+.dev-body .modal-overlay.dev-hidden,
+.dev-body .modal-overlay.hidden { display: none !important; }
+.dev-body .modal {
+  background: var(--dev-surface);
+  border: 1px solid var(--dev-border);
+  border-radius: 14px;
+  width: 100%; max-width: 640px;
+  max-height: 90vh; overflow: auto;
+  color: var(--dev-text);
+  padding: 0;
+}
+.dev-body .modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1rem 1.15rem;
+  border-bottom: 1px solid var(--dev-border);
+}
+.dev-body .modal-header h3 { font-size: 1rem; font-weight: 700; margin: 0; }
+.dev-body .modal-close {
+  background: transparent; border: none; cursor: pointer;
+  color: var(--dev-muted); font-size: 1.4rem; line-height: 1;
+  padding: 0 .25rem;
+}
+.dev-body .modal-close:hover { color: var(--dev-text); }
+.dev-body .modal-body { padding: 1.15rem; }
+.dev-body .modal-footer {
+  display: flex; justify-content: flex-end; gap: .6rem;
+  padding: 1rem 1.15rem;
+  border-top: 1px solid var(--dev-border);
+}
+
+/* ─── Misc ─── */
+.dev-body code {
+  background: var(--dev-surface2);
+  padding: 1px 6px; border-radius: 4px;
+  font-size: .85em;
+}

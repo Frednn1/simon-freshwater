@@ -11,49 +11,50 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0d47a1">
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/dev.css">
 </head>
-<body class="settings-body">
-  <main class="settings-wrap" style="max-width: 900px;">
-    <a href="/" class="brand-link" aria-label="Go to home">
-      <div class="settings-header">
-        <img class="brand-logo" src="/images/SimonW_Logo.png" alt="{{brand_name}}">
-        <div class="settings-brand-text">
-          <h1>Developer Portal</h1>
-          <p>Tenant Management · {{brand_name}}</p>
-        </div>
+<body class="dev-body">
+  <main class="dev-wrap">
+    <header class="dev-header">
+      <div class="dev-mark">DP</div>
+      <div class="dev-title">
+        <h1>Developer Portal</h1>
+        <p>Tenant Management · {{brand_name}}</p>
       </div>
-    </a>
+    </header>
 
-    <div id="devEnvBanner" style="background:#eceff1;padding:.5rem .75rem;border-radius:6px;font-size:.85rem;margin-bottom:.75rem;">
-      Env: <strong id="devEnvName">…</strong> · DB: <strong id="devDbTail">…</strong>
+    <div id="devEnvBanner" class="dev-banner">
+      <span class="dev-pill dev-pill--unknown" id="devEnvPill">
+        <span id="devEnvName">unknown</span>
+      </span>
+      <span class="dev-db">DB <strong id="devDbTail">…</strong></span>
     </div>
 
-    <div class="settings-card">
-      <h2>🏢 Billing Organizations</h2>
-      <p class="form-hint-small" style="margin-bottom:.75rem;">
+    <div class="dev-card">
+      <h2>Billing Organizations</h2>
+      <p class="dev-hint">
         Each tenant is a separate billing portal with fully isolated data
-        (consumers, readings, payments, admins, reports). They share the same
-        web service, database, and storage — no extra infrastructure per tenant.
+        (consumers, readings, payments, admins, reports).
       </p>
       <div id="tenantsList">
-        <p class="form-hint-small">Loading…</p>
+        <p class="dev-hint">Loading…</p>
       </div>
     </div>
 
-    <div class="settings-card">
-      <h2>➕ Create a New Tenant</h2>
-      <p class="form-hint-small" style="margin-bottom:.75rem;">
+    <div class="dev-card">
+      <h2>Create a New Tenant</h2>
+      <p class="dev-hint">
         New tenants are created <strong>inactive</strong>. After creation, open
-        <code>?__tenant=&lt;slug&gt;</code> on the portal root to preview the tenant's
-        branding, then activate it.
+        <code>?__tenant=&lt;slug&gt;</code> on the portal root to preview the
+        tenant's branding, then activate it.
       </p>
-      <button id="openCreateBtn" class="btn-primary btn-fit" type="button">➕ New Tenant</button>
-      <div id="createMsg" class="alert hidden"></div>
+      <button id="openCreateBtn" class="dev-btn dev-btn--primary" type="button">New Tenant</button>
+      <div id="createMsg" class="dev-alert dev-hidden"></div>
     </div>
 
-    <div class="settings-back">
-      <button id="devLogoutBtn" class="btn-secondary" type="button">Logout</button>
-      &nbsp;·&nbsp;
+    <div class="dev-footer">
+      <button id="devLogoutBtn" class="dev-btn dev-btn--ghost" type="button">Logout</button>
+      <span class="dev-sep">·</span>
       <a href="/">← Back to Home</a>
     </div>
   </main>
@@ -226,19 +227,19 @@
       try {
         const r = await fetch('/api/admin/tenants', { credentials: 'same-origin' });
         if (r.status === 401) { location.href = '/dev/login?next=/dev'; return; }
-        if (r.status === 403) { list.innerHTML = '<p class="form-hint-small">❌ Super-admin only.</p>'; return; }
+        if (r.status === 403) { list.innerHTML = '<p class="dev-hint">Super-admin only.</p>'; return; }
         const d = await r.json();
         _tenants = d.tenants || [];
         renderTenants();
       } catch {
-        list.innerHTML = '<p class="form-hint-small">❌ Failed to load tenants.</p>';
+        list.innerHTML = '<p class="dev-hint">Failed to load tenants.</p>';
       }
     }
 
     function renderTenants() {
       const list = document.getElementById('tenantsList');
       if (_tenants.length === 0) {
-        list.innerHTML = '<p class="form-hint-small">No tenants yet.</p>';
+        list.innerHTML = '<p class="dev-hint">No tenants yet.</p>';
         return;
       }
       list.innerHTML = _tenants.map(t => {
@@ -247,30 +248,30 @@
         const isDefault = (t.slug === 'simon-freshwater');
         const toggleLabel = t.is_active ? '⏸ Deactivate' : '▶ Activate';
         return `
-          <div class="tenant-card">
-            <div class="tenant-card-head">
+          <div class="dev-tenant">
+            <div class="dev-tenant-head">
               <div>
-                <div class="tenant-card-name">${esc(t.org_name)}</div>
-                <div class="tenant-card-slug">/${esc(t.slug)}</div>
+                <div class="dev-tenant-name">${esc(t.org_name)}</div>
+                <div class="dev-tenant-slug">/${esc(t.slug)}</div>
               </div>
-              <span class="badge ${badgeClass}">${badgeLabel}</span>
+              <span class="dev-badge ${t.is_active ? 'dev-badge--active' : 'dev-badge--inactive'}">${badgeLabel}</span>
             </div>
-            <div class="tenant-card-meta">
+            <div class="dev-tenant-meta">
               ${t.phone ? '📞 ' + esc(t.phone) + ' · ' : ''}
               ${t.email ? '✉️ ' + esc(t.email) + ' · ' : ''}
               ${t.paybill ? '💳 Paybill ' + esc(t.paybill) : ''}
             </div>
-            <div class="tenant-card-actions">
-              <a class="btn-secondary btn-fit" href="/?__preview=${encodeURIComponent(t.slug)}" target="_blank" rel="noopener">↗ Preview</a>
+            <div class="dev-tenant-actions">
+              <a class="dev-btn dev-btn--ghost" href="/?__preview=${encodeURIComponent(t.slug)}" target="_blank" rel="noopener">Preview</a>
               ${!isDefault ?
-                `<button class="btn-secondary btn-fit" type="button" onclick="switchTenant(${t.id}, '${escAttr(t.org_name)}')">🔁 Sign In As</button>` : ''}
+                `<button class="dev-btn dev-btn--ghost" type="button" onclick="switchTenant(${t.id}, '${escAttr(t.org_name)}')">Sign In As</button>` : ''}
               ${(t.is_active && !t.has_admin) ?
-                `<button class="btn-secondary btn-fit" type="button" onclick="openCreateAdmin(${t.id})">🔑 Create Admin</button>` : ''}
-              <button class="btn-secondary btn-fit" type="button" onclick="openLogoUpload(${t.id})">🖼️ Logo</button>
-              <button class="btn-secondary btn-fit" type="button" onclick="openEditTenant(${t.id})">✏️ Edit</button>
+                `<button class="dev-btn dev-btn--ghost" type="button" onclick="openCreateAdmin(${t.id})">Create Admin</button>` : ''}
+              <button class="dev-btn dev-btn--ghost" type="button" onclick="openLogoUpload(${t.id})">Logo</button>
+              <button class="dev-btn dev-btn--ghost" type="button" onclick="openEditTenant(${t.id})">Edit</button>
               ${isDefault ? '' :
-                `<button class="btn-secondary btn-fit" type="button" onclick="toggleTenant(${t.id}, ${!t.is_active})">${toggleLabel}</button>
-                 <button class="btn-secondary btn-fit" type="button" style="border-color:#ef9a9a;color:#c62828;" onclick="deleteTenant(${t.id})">🗑 Delete</button>`}
+                `<button class="dev-btn dev-btn--ghost" type="button" onclick="toggleTenant(${t.id}, ${!t.is_active})">${toggleLabel}</button>
+                 <button class="dev-btn dev-btn--danger" type="button" onclick="deleteTenant(${t.id})">Delete</button>`}
             </div>
           </div>`;
       }).join('');
@@ -502,9 +503,17 @@
         if (r.ok) {
           const d = await r.json();
           const envEl = document.getElementById('devEnvName');
-          const dbEl = document.getElementById('devDbTail');
-          if (envEl) envEl.textContent = d.env || 'unknown';
-          if (dbEl) dbEl.textContent = d.db_tail ? ('…' + d.db_tail) : '(not set)';
+          const dbEl  = document.getElementById('devDbTail');
+          const pill  = document.getElementById('devEnvPill');
+          const env   = (d.env || 'unknown').toLowerCase();
+          if (envEl) envEl.textContent = env;
+          if (dbEl)  dbEl.textContent  = d.db_tail ? ('…' + d.db_tail) : '(not set)';
+          if (pill) {
+            pill.classList.remove('dev-pill--prod','dev-pill--stage','dev-pill--unknown');
+            if (env === 'production' || env === 'prod') pill.classList.add('dev-pill--prod');
+            else if (env === 'staging' || env === 'stage') pill.classList.add('dev-pill--stage');
+            else pill.classList.add('dev-pill--unknown');
+          }
         }
       } catch {}
     })();
