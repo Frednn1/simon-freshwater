@@ -46,10 +46,12 @@ function badge(status, label) {
 /* ─── Global state ─── */
 function _tenantLoginSuffix() {
   /* Return '&__tenant=<slug>' (or '') for the current page's tenant,
-     so login redirects keep the user on the correct portal. */
+     so login redirects keep the user on the correct portal.
+     Also honours ?__preview=<slug> so previewing an inactive tenant
+     and clicking "admin login" keeps the correct tenant context. */
   try {
     const p = new URLSearchParams(location.search);
-    const t = p.get('__tenant');
+    const t = p.get('__tenant') || p.get('__preview');
     if (t) return '&__tenant=' + encodeURIComponent(t);
   } catch (_) {}
   return '';
