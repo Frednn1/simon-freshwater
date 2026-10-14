@@ -965,7 +965,7 @@ def admin_login_page():
     for token, value in _brand_context().items():
         html = html.replace("{{" + token + "}}", value)
     html = html.replace("{{tenant_inactive}}",
-                        "1" if tenant_inactive else "")
+                        "\"1\"" if tenant_inactive else "\"\"")
 
     return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
