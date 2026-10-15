@@ -197,7 +197,7 @@ def _render_tenant_unavailable(tenant):
     <div class="pill">Temporarily unavailable</div>
     <h1>{name} is offline</h1>
     <p>This service is temporarily unavailable. Please try again later.</p>
-    <p>If you are the operator, sign in via the <a href="/dev/login">developer portal</a> to reactivate it.</p>
+    <p>Please contact your administrator for support.</p>
   </div>
 </body></html>"""
 
