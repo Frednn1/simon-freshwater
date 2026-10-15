@@ -13,6 +13,14 @@
   var INTERVAL_MS = 15000;
 
   function slugFromUrl() {
+    // 1) Server-rendered slug on <body data-tenant-slug="..."> is the most
+    //    reliable source — it survives navigations that drop the query
+    //    string and does not depend on the session cookie.
+    try {
+      var b = document.body && document.body.dataset && document.body.dataset.tenantSlug;
+      if (b) return b;
+    } catch (_) {}
+    // 2) Fall back to the URL for pages that carry ?__tenant=/?__preview=.
     try {
       var p = new URLSearchParams(location.search);
       return p.get('__tenant') || p.get('__preview') || '';

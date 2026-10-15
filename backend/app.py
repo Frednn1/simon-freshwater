@@ -253,6 +253,9 @@ def _brand_context():
         "brand_email":      (t.email if t and t.email else "simonchege84@gmail.com"),
         "brand_logo_url":   logo,
         "brand_logo_r2_key": _lk if _lk.startswith("logos/") else "",
+        # Tenant slug — used by admin pages to stamp <body data-tenant-slug>,
+        # which the tenant watchdog reads to know which tenant to check.
+        "tenant_slug":      (t.slug if t and t.slug else ""),
     }
 
 
