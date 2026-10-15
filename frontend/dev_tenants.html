@@ -263,15 +263,13 @@
             </div>
             <div class="dev-tenant-actions">
               <a class="dev-btn dev-btn--ghost" href="/?__preview=${encodeURIComponent(t.slug)}" target="_blank" rel="noopener">Preview</a>
-              ${!isDefault ?
-                `<button class="dev-btn dev-btn--ghost" type="button" onclick="switchTenant(${t.id}, '${escAttr(t.org_name)}')">Sign In As</button>` : ''}
+              <button class="dev-btn dev-btn--ghost" type="button" onclick="switchTenant(${t.id}, '${escAttr(t.org_name)}')">Sign In As</button>
               ${(t.is_active && !t.has_admin) ?
                 `<button class="dev-btn dev-btn--ghost" type="button" onclick="openCreateAdmin(${t.id})">Create Admin</button>` : ''}
               <button class="dev-btn dev-btn--ghost" type="button" onclick="openLogoUpload(${t.id})">Logo</button>
               <button class="dev-btn dev-btn--ghost" type="button" onclick="openEditTenant(${t.id})">Edit</button>
-              ${isDefault ? '' :
-                `<button class="dev-btn dev-btn--ghost" type="button" onclick="toggleTenant(${t.id}, ${!t.is_active})">${toggleLabel}</button>
-                 <button class="dev-btn dev-btn--danger" type="button" onclick="deleteTenant(${t.id})">Delete</button>`}
+              <button class="dev-btn dev-btn--ghost" type="button" onclick="toggleTenant(${t.id}, ${!t.is_active})">${toggleLabel}</button>
+              <button class="dev-btn dev-btn--danger" type="button" onclick="deleteTenant(${t.id})">Delete</button>
             </div>
           </div>`;
       }).join('');
