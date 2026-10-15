@@ -621,7 +621,10 @@
         await new Promise((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           xhr.open('PUT', signJson.upload_url, true);
-          xhr.setRequestHeader('Content-Type', 'application/pdf');
+          // Do NOT set Content-Type here. The presigned URL only signs
+          // host, and setting an explicit Content-Type on XHR can be
+          // mutated by Android Chrome (charset, encoding), which breaks
+          // the signature. R2 accepts a PUT with no Content-Type.
           xhr.timeout = 120000;
           if (xhr.upload) {
             xhr.upload.onprogress = (ev) => {

@@ -97,10 +97,18 @@ def presign_put(key: str, content_type: str, expires: int = 300) -> str:
         return ""
     try:
         c = _client()
+        # ContentType is intentionally NOT part of the signed parameters.
+        # If it were, X-Amz-SignedHeaders would include content-type, and
+        # Android Chrome mutates that header on XHR PUT (charset, or drops
+        # it entirely when the URL has encoded query values), causing R2
+        # to reject the request with SignatureDoesNotMatch. Leaving it out
+        # makes SignedHeaders just "host", which browsers do not mutate.
+        # The stored object's Content-Type is irrelevant — verify_upload
+        # re-downloads the bytes and validates the PDF magic + size + the
+        # {{placeholder}} tokens.
         return c.generate_presigned_url(
             "put_object",
-            Params={"Bucket": R2_BUCKET, "Key": key,
-                    "ContentType": content_type or "application/octet-stream"},
+            Params={"Bucket": R2_BUCKET, "Key": key},
             ExpiresIn=expires,
             HttpMethod="PUT",
         )
