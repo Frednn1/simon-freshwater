@@ -132,10 +132,16 @@ def _resolve_tenant_from_request():
         except Exception:
             return None
 
-    # ── Anonymous visitor, no param — default tenant (must be active) ──
+    # ── Anonymous visitor, no param — default tenant ──
+    # Note: NOT filtered by is_active. The default tenant must always
+    # resolve, otherwise g.tenant becomes None and every tenant-scoped
+    # query loses context — including the dev portal itself. When the
+    # default tenant is inactive, public consumer pages return a 503
+    # (see _before_request_inactive_default_503), and its admin login
+    # page shows the disabled-UI we already ship.
     try:
         return (Tenant.query
-                .filter_by(slug=_DEFAULT_TENANT_SLUG, is_active=True)
+                .filter_by(slug=_DEFAULT_TENANT_SLUG)
                 .first())
     except Exception:
         return None
@@ -147,6 +153,78 @@ def _before_request_resolve_tenant():
     if p in _STATIC_PATH_EXACT or p.startswith(_STATIC_PATH_PREFIXES):
         return
     g.tenant = _resolve_tenant_from_request()
+
+
+# ── Inactive default tenant: return 503 on consumer-facing paths ──
+# Whitelist everything the operator needs to still work (dev portal,
+# admin, tenant login, APIs, static assets, logos).
+_CONSUMER_GATE_EXEMPT_PREFIXES = (
+    "/admin", "/api/admin", "/dev", "/api/tenant", "/api/public",
+    "/tenant/logo", "/api/health", "/api/ping",
+    "/style.css", "/dev.css", "/tenant-watchdog.js",
+    "/favicon", "/manifest", "/apple-touch", "/icon-", "/images",
+)
+
+
+def _render_tenant_unavailable(tenant):
+    """Friendly 503 page shown to anonymous visitors when the default
+    tenant is inactive. Rendered inline — no template file needed."""
+    name = (tenant.org_name if tenant and tenant.org_name else "This service")
+    logo = _brand_context().get("brand_logo_url", "/images/SimonW_Logo.png")
+    return f"""<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{name} — Temporarily unavailable</title>
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0}}
+  body{{font-family:'Segoe UI',system-ui,-apple-system,Roboto,sans-serif;
+        background:#f8f9fa;color:#1c2b36;min-height:100vh;
+        display:grid;place-items:center;padding:1.25rem}}
+  .card{{max-width:520px;width:100%;background:#fff;border-radius:14px;
+        padding:2rem 1.75rem;box-shadow:0 4px 24px rgba(13,71,161,.10);
+        text-align:center}}
+  .logo{{max-width:120px;max-height:120px;margin:0 auto 1rem;display:block}}
+  h1{{font-size:1.25rem;color:#0d47a1;margin-bottom:.6rem}}
+  p{{color:#455a64;line-height:1.6;font-size:.95rem;margin-bottom:.5rem}}
+  .pill{{display:inline-block;background:#fff3e0;color:#6d4c00;
+        border:1px solid #ffb74d;border-radius:999px;
+        padding:.25rem .8rem;font-size:.8rem;font-weight:600;
+        letter-spacing:.3px;text-transform:uppercase;margin-bottom:1rem}}
+  a{{color:#0d47a1;text-decoration:none;font-weight:600}}
+</style></head><body>
+  <div class="card">
+    <img class="logo" src="{logo}" alt="{name}">
+    <div class="pill">Temporarily unavailable</div>
+    <h1>{name} is offline</h1>
+    <p>This service is temporarily unavailable. Please try again later.</p>
+    <p>If you are the operator, sign in via the <a href="/dev/login">developer portal</a> to reactivate it.</p>
+  </div>
+</body></html>"""
+
+
+@app.before_request
+def _before_request_inactive_default_503():
+    p = request.path or ""
+    # Static + assets: never gate
+    if p in _STATIC_PATH_EXACT or p.startswith(_STATIC_PATH_PREFIXES):
+        return
+    # Whitelisted prefixes: never gate
+    for prefix in _CONSUMER_GATE_EXEMPT_PREFIXES:
+        if p == prefix or p.startswith(prefix):
+            return
+    # Only the default tenant triggers the gate
+    try:
+        t = getattr(g, "tenant", None)
+    except Exception:
+        return
+    if t is None or t.slug != _DEFAULT_TENANT_SLUG:
+        return
+    if t.is_active:
+        return
+    # Logged-in admins bypass the gate (dev / debug)
+    if session.get("admin_id"):
+        return
+    return _render_tenant_unavailable(t), 503
 
 
 # ═══════════════════════════════════════════════
@@ -1409,8 +1487,9 @@ def admin_tenants_toggle_active(tenant_id):
     t = Tenant.query.get(tenant_id)
     if not t:
         return jsonify({"error": "Tenant not found."}), 404
-    if t.slug == "simon-freshwater":
-        return jsonify({"error": "The default tenant cannot be deactivated."}), 400
+    # The default tenant CAN be toggled: when inactive, its admin login
+    # shows the disabled UI and public consumer pages return 503.
+    # It cannot be deleted (see admin_tenants_delete).
 
     data = request.get_json(silent=True) or {}
     want_active = bool(data.get("active"))
@@ -1443,6 +1522,22 @@ def admin_tenants_delete(tenant_id):
     if u: return u
     if not _rate_limit("tenants_delete", 5, 60):
         return _too_many(60)
+
+    # ── Confirmation secret required for delete ──
+    # Deleting a tenant is irreversible. The caller must re-supply the
+    # developer portal secret in the POST body, and it must match the
+    # server's DEV_PORTAL_SECRET. Missing/incorrect → 401 (not 400) so
+    # the frontend can distinguish "wrong secret" from "validation".
+    _expected = os.environ.get("DEV_PORTAL_SECRET", "").strip()
+    if not _expected:
+        return jsonify({"error": "Delete confirmation is not configured on this server."}), 503
+    _data = request.get_json(silent=True) or {}
+    _submitted = (_data.get("secret") or "").strip()
+    if not _submitted or not hmac.compare_digest(_submitted, _expected):
+        _audit("tenant_delete_denied",
+               target_type="tenant", target_id=tenant_id,
+               detail="bad or missing confirmation secret")
+        return jsonify({"error": "Invalid confirmation secret."}), 401
 
     t = Tenant.query.get(tenant_id)
     if not t:

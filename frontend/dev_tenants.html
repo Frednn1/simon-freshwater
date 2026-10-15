@@ -375,9 +375,14 @@
       if (!t) return;
       if (!confirm(`⚠️ Permanently delete tenant "${t.org_name}" (/${t.slug})?\n\n` +
                    `This cannot be undone. The tenant must have no consumers.`)) return;
+      // Second factor: re-enter the developer portal secret.
+      const secret = prompt('Re-enter the developer portal secret to confirm deletion:');
+      if (!secret) return;
       try {
         const r = await fetch(`/api/admin/tenants/${id}/delete`, {
           method: 'POST', credentials: 'same-origin',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ secret }),
         });
         const d = await r.json();
         if (r.ok && d.ok) { await loadTenants(); }
