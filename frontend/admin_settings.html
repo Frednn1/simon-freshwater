@@ -137,7 +137,7 @@
       try {
         const r = await fetch('/api/admin/settings', { credentials: 'same-origin' });
         if (r.status === 401) {
-          location.href = '/admin/login?next=/admin/settings';
+          location.href = (window.adminLoginUrl && window.adminLoginUrl('/admin/settings')) || '/admin/login?next=/admin/settings';
           return;
         }
         const d = await r.json();
@@ -248,7 +248,7 @@
         const r = await fetch('/api/admin/audit?days=' + days,
                               { credentials: 'same-origin' });
         if (r.status === 401) {
-          location.href = '/admin/login?next=/admin/settings';
+          location.href = (window.adminLoginUrl && window.adminLoginUrl('/admin/settings')) || '/admin/login?next=/admin/settings';
           return;
         }
         const d = await r.json();

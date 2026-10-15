@@ -163,7 +163,7 @@
       try {
         const r = await fetch(`/api/admin/report/preview?month=${month}&year=${year}`,
                               { credentials: 'same-origin' });
-        if (r.status === 401) { location.href = '/admin/login?next=/admin/reports'; return; }
+        if (r.status === 401) { location.href = (window.adminLoginUrl && window.adminLoginUrl('/admin/reports')) || '/admin/login?next=/admin/reports'; return; }
         const d = await r.json();
         if (!r.ok || d.error) {
           show(msg, 'error', '❌ ' + (d.error || 'Preview failed.'));
@@ -283,7 +283,7 @@
       const meta = document.getElementById('consumersDbMeta');
       try {
         const r = await fetch('/api/admin/consumers/all', { credentials: 'same-origin' });
-        if (r.status === 401) { location.href = '/admin/login?next=/admin/reports'; return; }
+        if (r.status === 401) { location.href = (window.adminLoginUrl && window.adminLoginUrl('/admin/reports')) || '/admin/login?next=/admin/reports'; return; }
         const d = await r.json();
         if (!r.ok || d.error) {
           wrap.innerHTML = '<p class="form-hint-small">❌ ' +

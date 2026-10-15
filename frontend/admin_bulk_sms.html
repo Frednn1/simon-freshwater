@@ -102,7 +102,7 @@
       try {
         const r = await fetch(`/api/admin/bulk_sms/overdue?include_due=${includeDue}`,
                               { credentials: 'same-origin' });
-        if (r.status === 401) { location.href = '/admin/login?next=/admin/bulk_sms'; return; }
+        if (r.status === 401) { location.href = (window.adminLoginUrl && window.adminLoginUrl('/admin/bulk_sms')) || '/admin/login?next=/admin/bulk_sms'; return; }
         const d = await r.json();
         CONSUMERS = d.consumers || [];
         SELECTED.clear();
@@ -214,7 +214,7 @@
         });
         const d = await r.json();
 
-        if (r.status === 401) { location.href = '/admin/login?next=/admin/bulk_sms'; return; }
+        if (r.status === 401) { location.href = (window.adminLoginUrl && window.adminLoginUrl('/admin/bulk_sms')) || '/admin/login?next=/admin/bulk_sms'; return; }
 
         if (!r.ok || d.error) {
           showMsg(msg, 'error', '❌ ' + (d.error || 'Send failed.'));

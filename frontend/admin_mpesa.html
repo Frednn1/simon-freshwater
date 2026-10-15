@@ -116,7 +116,7 @@
     async function loadConfig() {
       try {
         const r = await fetch('/api/admin/mpesa/config', { credentials: 'same-origin' });
-        if (r.status === 401) { location.href = '/admin/login?next=/admin/mpesa'; return; }
+        if (r.status === 401) { location.href = (window.adminLoginUrl && window.adminLoginUrl('/admin/mpesa')) || '/admin/login?next=/admin/mpesa'; return; }
         const d = await r.json();
         document.getElementById('mpesaConfig').innerHTML =
           `Env: <strong>${esc(d.env)}</strong> · ` +
@@ -136,7 +136,7 @@
       el.textContent = 'Loading…';
       try {
         const r = await fetch('/api/admin/mpesa/payments', { credentials: 'same-origin' });
-        if (r.status === 401) { location.href = '/admin/login?next=/admin/mpesa'; return; }
+        if (r.status === 401) { location.href = (window.adminLoginUrl && window.adminLoginUrl('/admin/mpesa')) || '/admin/login?next=/admin/mpesa'; return; }
         const d = await r.json();
         const ps = d.payments || [];
         if (ps.length === 0) {
@@ -265,7 +265,7 @@
         try {
           const r = await fetch('/api/admin/consumers/search?q=' + encodeURIComponent(q),
                                 { credentials: 'same-origin' });
-          if (r.status === 401) { location.href = '/admin/login?next=/admin/mpesa'; return; }
+          if (r.status === 401) { location.href = (window.adminLoginUrl && window.adminLoginUrl('/admin/mpesa')) || '/admin/login?next=/admin/mpesa'; return; }
           const d = await r.json();
           const list = d.results || [];
           if (list.length === 0) {
