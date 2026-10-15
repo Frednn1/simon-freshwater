@@ -3062,6 +3062,18 @@ def admin_login_route():
                        f"reason={_reason}"))
         return jsonify({"ok": False, "error": result["error"]}), 401
 
+    # ── Tenant enforcement ──
+    # Usernames are globally unique in the model, so login() authenticates
+    # by username alone. That is deliberate (it fixed the earlier cross-
+    # tenant login bug) — but it also means a valid demo admin could sign
+    # in from Simon Fresh Water's URL and vice versa. This block closes
+    # that: if the POST carried ?__tenant=<slug>, the authenticated
+    # admin must belong to that tenant.
+    #
+    # The refusal message matches a wrong password exactly, so an attacker
+    # cannot learn which tenant a username belongs to by probing URLs.
+    _requested_slug = (request.args.get("__tenant") or "").strip()
+
     # Compute the tenant slug the session must carry after login.
     # The admin's own tenant_id is the definitive source — this makes the
     # flow robust even if the login POST arrives without ?__tenant=.
@@ -3074,6 +3086,13 @@ def admin_login_route():
                 _admin_slug = _t_row.slug
     except Exception:
         pass
+
+    if _requested_slug and _admin_slug != _requested_slug:
+        _audit("login_failed_tenant_mismatch",
+               detail=(f"attempted_username={((data.get('username') or '')[:40]).lower()} "
+                       f"requested_tenant={_requested_slug} "
+                       f"admin_tenant={_admin_slug}"))
+        return jsonify({"ok": False, "error": "Invalid credentials."}), 401
 
     # ── 2FA branch ──
     two_fa_on = os.environ.get("ADMIN_2FA_ENABLED", "false").strip().lower() in ("1","true","yes","on")
