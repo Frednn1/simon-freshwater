@@ -44,7 +44,7 @@
     body.tenant-inactive .auth-footer { display: none; }
   </style>
 </head>
-<body class="auth-body">
+<body class="auth-body" data-tenant-slug="{{tenant_slug}}">
   <main class="auth-main">
     <div class="auth-card">
       <a href="/" class="brand-link" aria-label="Go to home"><div class="auth-brand">
@@ -131,8 +131,15 @@
     // Propagate ?__tenant= to every auth fetch so anonymous requests
     // resolve the right tenant without needing session persistence.
     const TENANT_QS = (() => {
-      const t = params.get('__tenant');
-      return t ? '?__tenant=' + encodeURIComponent(t) : '';
+      // 1) Explicit ?__tenant= wins.
+      // 2) ?__preview=<slug> also implies the tenant context (preview path).
+      // 3) Otherwise read the server-rendered tenant slug from <body>.
+      //    This closes the gap where a plain /admin/login (no query string)
+      //    rendered the default tenant but accepted other tenants' creds.
+      const t = params.get('__tenant') || params.get('__preview');
+      if (t) return '?__tenant=' + encodeURIComponent(t);
+      const bodySlug = (document.body && document.body.dataset && document.body.dataset.tenantSlug) || '';
+      return bodySlug ? '?__tenant=' + encodeURIComponent(bodySlug) : '';
     })();
 
     const loginForm = document.getElementById('loginForm');
