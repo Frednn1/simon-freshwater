@@ -1325,6 +1325,97 @@ def admin_tenants_upload_template(tenant_id):
     return jsonify({"ok": True, "kind": kind, "key": key, "bytes": len(data)})
 
 
+@app.route("/api/admin/tenants/<int:tenant_id>/sign_upload", methods=["POST"])
+def admin_tenants_sign_upload(tenant_id):
+    """Return a presigned R2 PUT URL for a browser → R2 direct upload
+    of a tenant PDF template. The browser then PUTs the file straight
+    to R2, so bytes never traverse this server.
+
+    The signature is scoped to (bucket, key, content-type) and expires
+    in 5 minutes. The server does NOT trust the upload — after the PUT
+    the browser calls verify_upload, which re-downloads the object and
+    runs the same validations the multipart endpoint runs."""
+    u = _require_super_admin()
+    if u: return u
+    if not _rate_limit("tenant_template_sign", 20, 60):
+        return _too_many(60)
+
+    data = request.get_json(silent=True) or {}
+    kind = (data.get("kind") or "").strip()
+    filename = _TEMPLATE_KINDS.get(kind)
+    if not filename:
+        return jsonify({"error": "kind must be 'water_bill' or 'receipt'."}), 400
+
+    t = Tenant.query.get(tenant_id)
+    if not t:
+        return jsonify({"error": "Tenant not found."}), 404
+
+    key = f"templates/{t.slug}/{filename}"
+    url = archive.presign_put(key, "application/pdf", expires=300)
+    if not url:
+        return jsonify({"error": "Storage is not configured or signing failed."}), 502
+
+    _audit("tenant_template_signed",
+           target_type="tenant", target_id=t.id,
+           target_label=f"{t.org_name} · {t.slug}",
+           detail=f"kind={kind}, key={key}")
+    return jsonify({"ok": True, "kind": kind, "key": key, "upload_url": url})
+
+
+@app.route("/api/admin/tenants/<int:tenant_id>/verify_upload", methods=["POST"])
+def admin_tenants_verify_upload(tenant_id):
+    """Validate that a browser → R2 direct upload produced a valid PDF.
+    Re-downloads the object, runs the same checks as the multipart
+    endpoint (magic bytes, size, {{placeholder}} presence). On any
+    failure, deletes the just-uploaded object so the tenant is left
+    with the previous template (or the bundled default)."""
+    u = _require_super_admin()
+    if u: return u
+    if not _rate_limit("tenant_template_verify", 20, 60):
+        return _too_many(60)
+
+    data = request.get_json(silent=True) or {}
+    kind = (data.get("kind") or "").strip()
+    filename = _TEMPLATE_KINDS.get(kind)
+    if not filename:
+        return jsonify({"error": "kind must be 'water_bill' or 'receipt'."}), 400
+
+    t = Tenant.query.get(tenant_id)
+    if not t:
+        return jsonify({"error": "Tenant not found."}), 404
+
+    key = f"templates/{t.slug}/{filename}"
+    blob, _ctype = archive.download_object(key)
+    if not blob:
+        return jsonify({"error": "Uploaded object not found in storage."}), 404
+    if len(blob) > 5_000_000:
+        archive.delete_pdf(key)
+        return jsonify({"error": "Template exceeds 5 MB."}), 400
+    if not blob.startswith(b"%PDF-"):
+        archive.delete_pdf(key)
+        return jsonify({"error": "Uploaded file is not a PDF."}), 400
+    try:
+        import fitz
+        _doc = fitz.open(stream=blob, filetype="pdf")
+        _text = _doc[0].get_text()
+        _doc.close()
+    except Exception as e:
+        archive.delete_pdf(key)
+        return jsonify({"error": f"Invalid PDF: {e}"}), 400
+    if "{{" not in _text or "}}" not in _text:
+        archive.delete_pdf(key)
+        return jsonify({
+            "error": "Template contains no {{placeholder}} tokens. "
+                     "Upload the exact PDF produced from the template HTML."
+        }), 400
+
+    _audit("tenant_template_verified",
+           target_type="tenant", target_id=t.id,
+           target_label=f"{t.org_name} · {t.slug}",
+           detail=f"kind={kind}, key={key}, bytes={len(blob)}")
+    return jsonify({"ok": True, "kind": kind, "key": key, "bytes": len(blob)})
+
+
 @app.route("/api/admin/tenants/<int:tenant_id>/delete_template", methods=["POST"])
 def admin_tenants_delete_template(tenant_id):
     """Remove a tenant's custom PDF template, falling back to the

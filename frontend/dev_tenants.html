@@ -156,6 +156,12 @@
             No file chosen.
           </div>
         </div>
+        <div id="tfTemplateProgressWrap" style="display:none;margin-top:.6rem;">
+          <div style="height:.4rem;background:#e0e0e0;border-radius:99px;overflow:hidden;">
+            <div id="tfTemplateProgress" style="height:100%;width:0%;background:#1976d2;transition:width .15s;"></div>
+          </div>
+          <div id="tfTemplateProgressText" class="form-hint-small" style="margin-top:.3rem;opacity:.75;"></div>
+        </div>
         <div id="templateMsg" class="alert hidden" style="margin-top:.6rem;"></div>
       </div>
       <div class="modal-footer">
@@ -492,6 +498,12 @@
       document.getElementById('tfTemplateFile').value = '';
       const _meta = document.getElementById('tfTemplateFileMeta');
       if (_meta) _meta.textContent = 'No file chosen.';
+      const _progWrap = document.getElementById('tfTemplateProgressWrap');
+      const _progBar  = document.getElementById('tfTemplateProgress');
+      const _progText = document.getElementById('tfTemplateProgressText');
+      if (_progWrap) _progWrap.style.display = 'none';
+      if (_progBar)  _progBar.style.width = '0%';
+      if (_progText) _progText.textContent = '';
       const msg = document.getElementById('templateMsg');
       msg.className = 'alert hidden'; msg.textContent = '';
       document.getElementById('templateModalHint').innerHTML =
@@ -581,26 +593,82 @@
 
       const orig = btn.textContent;
       btn.disabled = true; btn.textContent = 'Uploading…';
-      const fd = new FormData();
-      fd.append('template', f);
-      fd.append('kind', _templateKind);
+
+      const progWrap = document.getElementById('tfTemplateProgressWrap');
+      const progBar  = document.getElementById('tfTemplateProgress');
+      const progText = document.getElementById('tfTemplateProgressText');
+      if (progWrap) progWrap.style.display = 'block';
+      if (progBar)  progBar.style.width = '0%';
+      if (progText) progText.textContent = 'Preparing…';
+
       try {
-        const r = await _uploadFormData(
-          `/api/admin/tenants/${_templateTenantId}/upload_template`, fd);
-        const d = r.data;
-        if (r.ok && d && d.ok) {
-          msg.className = 'alert alert-success';
-          msg.textContent = `✅ Template uploaded (${Math.round(d.bytes/1024)} KB). It will be used on the next PDF generation.`;
-          inp.value = '';
-          const _meta2 = document.getElementById('tfTemplateFileMeta');
-          if (_meta2) _meta2.textContent = 'No file chosen.';
-        } else {
-          msg.className = 'alert alert-error';
-          msg.textContent = '❌ ' + ((d && d.error) || ('Server returned ' + r.status + '.'));
+        // Step 1 — ask the server for a presigned R2 PUT URL.
+        const signRes = await fetch(
+          `/api/admin/tenants/${_templateTenantId}/sign_upload`,
+          {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ kind: _templateKind }),
+          });
+        let signJson = null;
+        try { signJson = await signRes.json(); } catch (_) {}
+        if (!signRes.ok || !signJson || !signJson.ok || !signJson.upload_url) {
+          throw new Error(
+            (signJson && signJson.error) || ('Could not start upload (HTTP ' + signRes.status + ').'));
         }
+
+        // Step 2 — PUT the file directly to R2 via XHR, with progress.
+        await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', signJson.upload_url, true);
+          xhr.setRequestHeader('Content-Type', 'application/pdf');
+          xhr.timeout = 120000;
+          if (xhr.upload) {
+            xhr.upload.onprogress = (ev) => {
+              if (!ev.lengthComputable) return;
+              const pct = Math.round((ev.loaded / ev.total) * 100);
+              if (progBar)  progBar.style.width = pct + '%';
+              if (progText) progText.textContent = 'Uploading… ' + pct + '%';
+            };
+          }
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) resolve();
+            else reject(new Error('Storage returned HTTP ' + xhr.status + '.'));
+          };
+          xhr.onerror   = () => reject(new Error('Network error during upload.'));
+          xhr.ontimeout = () => reject(new Error('Upload timed out.'));
+          xhr.send(f);
+        });
+
+        // Step 3 — ask the server to verify the uploaded object.
+        if (progText) progText.textContent = 'Verifying…';
+        const verifyRes = await fetch(
+          `/api/admin/tenants/${_templateTenantId}/verify_upload`,
+          {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ kind: _templateKind }),
+          });
+        let verifyJson = null;
+        try { verifyJson = await verifyRes.json(); } catch (_) {}
+        if (!verifyRes.ok || !verifyJson || !verifyJson.ok) {
+          throw new Error(
+            (verifyJson && verifyJson.error) || ('Verification failed (HTTP ' + verifyRes.status + ').'));
+        }
+
+        // Success.
+        if (progBar)  progBar.style.width = '100%';
+        if (progText) progText.textContent = 'Done.';
+        msg.className = 'alert alert-success';
+        msg.textContent = `✅ Template uploaded (${Math.round((verifyJson.bytes||f.size)/1024)} KB). It will be used on the next PDF generation.`;
+        inp.value = '';
+        const _meta2 = document.getElementById('tfTemplateFileMeta');
+        if (_meta2) _meta2.textContent = 'No file chosen.';
       } catch (err) {
         msg.className = 'alert alert-error';
-        msg.textContent = '❌ ' + (err && err.message ? err.message : 'Network error.');
+        msg.textContent = '❌ ' + (err && err.message ? err.message : 'Upload failed.');
+        if (progText) progText.textContent = '';
+        if (progBar)  progBar.style.width = '0%';
       } finally {
         btn.disabled = false; btn.textContent = orig;
       }

@@ -85,6 +85,30 @@ def fetch_logo_bytes(r2_key: str):
     return data, (ctype or "image/png")
 
 
+def presign_put(key: str, content_type: str, expires: int = 300) -> str:
+    """Return a short-lived presigned PUT URL for a direct browser → R2
+    upload. The browser PUTs the file straight to R2, bypassing our
+    server entirely — which sidesteps the mobile-browser multipart
+    limitations that break uploads through Render.
+
+    Returns "" if R2 is not configured or the URL cannot be generated.
+    Expiry default is 5 minutes — plenty for a single file PUT."""
+    if not is_configured() or not key:
+        return ""
+    try:
+        c = _client()
+        return c.generate_presigned_url(
+            "put_object",
+            Params={"Bucket": R2_BUCKET, "Key": key,
+                    "ContentType": content_type or "application/octet-stream"},
+            ExpiresIn=expires,
+            HttpMethod="PUT",
+        )
+    except Exception as e:
+        print(f"[Archive] presign_put failed: {e}")
+        return ""
+
+
 def upload_object(key: str, data: bytes, content_type: str) -> bool:
     """Upload an arbitrary object to R2 with an explicit content type."""
     if not is_configured():
