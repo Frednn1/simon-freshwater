@@ -152,6 +152,9 @@
         <div class="form-row">
           <label for="tfTemplateFile">Choose PDF</label>
           <input type="file" id="tfTemplateFile" accept="application/pdf">
+          <div id="tfTemplateFileMeta" class="form-hint-small" style="margin-top:.35rem;opacity:.75;">
+            No file chosen.
+          </div>
         </div>
         <div id="templateMsg" class="alert hidden" style="margin-top:.6rem;"></div>
       </div>
@@ -487,6 +490,8 @@
       const label = kind === 'water_bill' ? 'Water Bill' : 'Receipt';
       document.getElementById('templateModalTitle').textContent = `📄 ${label} Template`;
       document.getElementById('tfTemplateFile').value = '';
+      const _meta = document.getElementById('tfTemplateFileMeta');
+      if (_meta) _meta.textContent = 'No file chosen.';
       const msg = document.getElementById('templateMsg');
       msg.className = 'alert hidden'; msg.textContent = '';
       document.getElementById('templateModalHint').innerHTML =
@@ -507,29 +512,54 @@
       const inp = document.getElementById('tfTemplateFile');
       const msg = document.getElementById('templateMsg');
       const btn = document.getElementById('templateUploadBtn');
-      if (!inp.files || !inp.files[0]) {
-        msg.className = 'alert alert-error'; msg.textContent = 'Choose a PDF first.'; return;
+
+      const f = (inp.files && inp.files[0]) ? inp.files[0] : null;
+      if (!f) {
+        msg.className = 'alert alert-error';
+        msg.textContent = 'Choose a PDF first. (If you already picked one, the browser dropped it - please tap the file field again.)';
+        return;
       }
+      if (f.size === 0) {
+        msg.className = 'alert alert-error';
+        msg.textContent = 'The selected file is empty. Please re-select it.';
+        return;
+      }
+      if (f.size > 5 * 1024 * 1024) {
+        msg.className = 'alert alert-error';
+        msg.textContent = 'File is too large (' + (f.size/1024/1024).toFixed(1) + ' MB). Max is 5 MB.';
+        return;
+      }
+      if (!/\.pdf$/i.test(f.name)) {
+        msg.className = 'alert alert-error';
+        msg.textContent = 'Please choose a file ending in .pdf.';
+        return;
+      }
+
       const orig = btn.textContent;
       btn.disabled = true; btn.textContent = 'Uploading…';
       const fd = new FormData();
-      fd.append('template', inp.files[0]);
+      fd.append('template', f);
       fd.append('kind', _templateKind);
       try {
         const r = await fetch(`/api/admin/tenants/${_templateTenantId}/upload_template`, {
           method: 'POST', credentials: 'same-origin', body: fd,
         });
-        const d = await r.json();
-        if (r.ok && d.ok) {
+        let d = null;
+        try { d = await r.json(); } catch (_) {}
+        if (r.ok && d && d.ok) {
           msg.className = 'alert alert-success';
           msg.textContent = `✅ Template uploaded (${Math.round(d.bytes/1024)} KB). It will be used on the next PDF generation.`;
           inp.value = '';
+          const _meta2 = document.getElementById('tfTemplateFileMeta');
+          if (_meta2) _meta2.textContent = 'No file chosen.';
         } else {
           msg.className = 'alert alert-error';
-          msg.textContent = '❌ ' + (d.error || 'Upload failed.');
+          msg.textContent = '❌ ' + ((d && d.error) || ('Server returned ' + r.status + '.'));
         }
-      } catch {
-        msg.className = 'alert alert-error'; msg.textContent = '❌ Network error.';
+      } catch (err) {
+        msg.className = 'alert alert-error';
+        msg.textContent = '❌ ' + (err && err.message ? err.message : 'Network error.')
+                        + ' - If this persists, try re-selecting the file or opening the portal in a desktop browser.';
       } finally {
         btn.disabled = false; btn.textContent = orig;
       }
@@ -557,8 +587,9 @@
           msg.className = 'alert alert-error';
           msg.textContent = '❌ ' + (d.error || 'Remove failed.');
         }
-      } catch {
-        msg.className = 'alert alert-error'; msg.textContent = '❌ Network error.';
+      } catch (err) {
+        msg.className = 'alert alert-error';
+        msg.textContent = '❌ ' + (err && err.message ? err.message : 'Network error.');
       } finally {
         btn.disabled = false; btn.textContent = orig;
       }
@@ -618,6 +649,15 @@
     document.getElementById('logoUploadBtn').addEventListener('click', doLogoUpload);
     document.getElementById('templateUploadBtn').addEventListener('click', doTemplateUpload);
     document.getElementById('templateRemoveBtn').addEventListener('click', doTemplateRemove);
+
+    document.getElementById('tfTemplateFile').addEventListener('change', function () {
+      const meta = document.getElementById('tfTemplateFileMeta');
+      if (!meta) return;
+      const f = (this.files && this.files[0]) ? this.files[0] : null;
+      if (!f) { meta.textContent = 'No file chosen.'; return; }
+      const kb = Math.max(1, Math.round(f.size / 1024));
+      meta.textContent = 'Selected: ' + f.name + ' (' + kb + ' KB)';
+    });
     loadTenants();
   </script>
 
