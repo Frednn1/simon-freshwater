@@ -39,6 +39,9 @@
     .tenant-inactive-note strong { color: #4e342e; }
     body.tenant-inactive .tenant-inactive-note { display: block; }
     .tenant-inactive-note .note-icon { margin-right: .35rem; }
+    /* Inactive tenant: hide the footer links (Forgot password? / Back to site)
+       so the disabled login page has no escape routes. */
+    body.tenant-inactive .auth-footer { display: none; }
   </style>
 </head>
 <body class="auth-body">
