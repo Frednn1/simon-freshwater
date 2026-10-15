@@ -618,6 +618,11 @@
         }
 
         // Step 2 — PUT the file directly to R2 via XHR, with progress.
+        // On Android Chrome, handing the raw File object to xhr.send()
+        // silently aborts when the file was opened via a content:// URI
+        // (the file picker's default). Reading it into an ArrayBuffer
+        // first bypasses the content:// path entirely and always works.
+        if (progText) progText.textContent = 'Reading file…';
         await new Promise((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           xhr.open('PUT', signJson.upload_url, true);
@@ -640,7 +645,13 @@
           };
           xhr.onerror   = () => reject(new Error('Network error during upload.'));
           xhr.ontimeout = () => reject(new Error('Upload timed out.'));
-          xhr.send(f);
+          const reader = new FileReader();
+          reader.onload = () => {
+            try { xhr.send(reader.result); }
+            catch (e) { reject(e); }
+          };
+          reader.onerror = () => reject(new Error('Could not read the file from this device.'));
+          reader.readAsArrayBuffer(f);
         });
 
         // Step 3 — ask the server to verify the uploaded object.
