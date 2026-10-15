@@ -507,6 +507,50 @@
       _templateKind = null;
     }
 
+    // Upload a FormData via fetch, falling back to XMLHttpRequest on
+    // TypeError. Android Chrome's fetch multipart is unreliable with
+    // content:// file sources; XHR handles the same payload robustly
+    // and gives us a real timeout instead of a hanging connection.
+    // Returns {ok, status, data}. Never throws on network failure —
+    // throws only on unrecoverable programmer errors (which surface as
+    // the normal alert path).
+    async function _uploadFormData(url, formData) {
+      // 1st attempt: fetch
+      try {
+        const r = await fetch(url, {
+          method: 'POST', credentials: 'same-origin', body: formData,
+        });
+        let d = null;
+        try { d = await r.json(); } catch (_) {}
+        return { ok: r.ok, status: r.status, data: d };
+      } catch (err) {
+        // Only retry on the "Failed to fetch" family (TypeError). Any
+        // other exception is a bug we want surfaced normally.
+        if (!(err instanceof TypeError)) throw err;
+      }
+
+      // 2nd attempt: XHR
+      return await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', url, true);
+        xhr.withCredentials = true;
+        xhr.timeout = 120000;   // 2 minutes — enough for large PDFs on 3G
+        xhr.onload = () => {
+          let d = null;
+          try { d = JSON.parse(xhr.responseText); } catch (_) {}
+          const ok = xhr.status >= 200 && xhr.status < 300;
+          resolve({ ok, status: xhr.status, data: d });
+        };
+        xhr.onerror = () => reject(new TypeError(
+          'Network error during upload. Check your connection and try again.'));
+        xhr.ontimeout = () => reject(new TypeError(
+          'Upload timed out. Try a stronger connection or a smaller file.'));
+        xhr.onabort = () => reject(new TypeError('Upload was cancelled.'));
+        try { xhr.send(formData); }
+        catch (e) { reject(e); }
+      });
+    }
+
     async function doTemplateUpload() {
       if (!_templateTenantId || !_templateKind) return;
       const inp = document.getElementById('tfTemplateFile');
@@ -541,11 +585,9 @@
       fd.append('template', f);
       fd.append('kind', _templateKind);
       try {
-        const r = await fetch(`/api/admin/tenants/${_templateTenantId}/upload_template`, {
-          method: 'POST', credentials: 'same-origin', body: fd,
-        });
-        let d = null;
-        try { d = await r.json(); } catch (_) {}
+        const r = await _uploadFormData(
+          `/api/admin/tenants/${_templateTenantId}/upload_template`, fd);
+        const d = r.data;
         if (r.ok && d && d.ok) {
           msg.className = 'alert alert-success';
           msg.textContent = `✅ Template uploaded (${Math.round(d.bytes/1024)} KB). It will be used on the next PDF generation.`;
@@ -558,8 +600,7 @@
         }
       } catch (err) {
         msg.className = 'alert alert-error';
-        msg.textContent = '❌ ' + (err && err.message ? err.message : 'Network error.')
-                        + ' - If this persists, try re-selecting the file or opening the portal in a desktop browser.';
+        msg.textContent = '❌ ' + (err && err.message ? err.message : 'Network error.');
       } finally {
         btn.disabled = false; btn.textContent = orig;
       }
@@ -604,13 +645,12 @@
       const fd = new FormData();
       fd.append('logo', inp.files[0]);
       try {
-        const r = await fetch(`/api/admin/tenants/${_logoTenantId}/upload_logo`, {
-          method: 'POST', credentials: 'same-origin', body: fd,
-        });
-        const d = await r.json();
-        if (r.ok && d.ok) { alert('✅ Logo uploaded.'); closeLogoModal(); await loadTenants(); }
-        else { alert('❌ ' + (d.error || 'Upload failed.')); }
-      } catch { alert('❌ Network error.'); }
+        const r = await _uploadFormData(
+          `/api/admin/tenants/${_logoTenantId}/upload_logo`, fd);
+        const d = r.data;
+        if (r.ok && d && d.ok) { alert('✅ Logo uploaded.'); closeLogoModal(); await loadTenants(); }
+        else { alert('❌ ' + ((d && d.error) || ('Server returned ' + r.status + '.'))); }
+      } catch (err) { alert('❌ ' + (err && err.message ? err.message : 'Network error.')); }
       finally { btn.disabled = false; btn.textContent = orig; }
     }
     async function switchTenant(id, name) {
