@@ -313,20 +313,37 @@ def _overlay_tenant_logo(page, snapshot):
     page.insert_image(rect, stream=logo_bytes)
 
 
+def _open_template_doc(snapshot):
+    """Open the effective receipt template as a fitz document.
+
+    Prefers a tenant-specific override in R2
+    (snapshot["template_r2_key"]); falls back to the bundled on-disk
+    PDF. Mirrors the same pattern used by water_bill.py.
+    """
+    import fitz
+
+    key = (snapshot.get("template_r2_key") or "").strip()
+    if key.startswith("templates/"):
+        data, _ctype = archive.download_object(key)
+        if data:
+            return fitz.open(stream=data, filetype="pdf")
+
+    if not os.path.exists(TEMPLATE_PATH):
+        raise RuntimeError(f"Receipt template not found: {TEMPLATE_PATH}")
+    return fitz.open(TEMPLATE_PATH)
+
+
 def generate_receipt_pdf(snapshot: dict) -> BytesIO:
     """Fill the designated PDF template and return a BytesIO."""
     try:
-        import fitz
+        import fitz  # noqa: F401
     except ImportError as e:
         raise RuntimeError(
             "PyMuPDF (fitz) is required for receipt generation. "
             "Install with: pip install pymupdf"
         ) from e
 
-    if not os.path.exists(TEMPLATE_PATH):
-        raise RuntimeError(f"Receipt template not found: {TEMPLATE_PATH}")
-
-    doc = fitz.open(TEMPLATE_PATH)
+    doc = _open_template_doc(snapshot)
     page = doc[0]
 
     alloc_values = _build_alloc_replacements(snapshot)

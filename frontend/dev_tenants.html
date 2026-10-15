@@ -136,6 +136,35 @@
     </div>
   </div>
 
+  <!-- Template upload modal (water bill / receipt PDF override) -->
+  <div id="templateModal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="templateModalTitle">Upload PDF Template</h3>
+        <button class="modal-close" onclick="closeTemplateModal()" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="form-hint-small" style="margin-bottom:.75rem;" id="templateModalHint">
+          PDF file only. The PDF must contain the same <code>{{placeholder}}</code>
+          tokens as the built-in template. Upload <strong>nothing else</strong>
+          — this replaces the template used for every PDF of this kind for this tenant.
+        </p>
+        <div class="form-row">
+          <label for="tfTemplateFile">Choose PDF</label>
+          <input type="file" id="tfTemplateFile" accept="application/pdf">
+        </div>
+        <div id="templateMsg" class="alert hidden" style="margin-top:.6rem;"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="templateRemoveBtn" type="button" class="btn-secondary" style="margin-right:auto;border-color:#ef9a9a;color:#c62828;">
+          Remove Custom Template
+        </button>
+        <button type="button" class="btn-secondary" onclick="closeTemplateModal()">Cancel</button>
+        <button id="templateUploadBtn" type="button" class="btn-primary">Upload</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Create-Admin modal -->
   <div id="adminModal" class="modal-overlay hidden">
     <div class="modal">
@@ -267,6 +296,8 @@
               ${(t.is_active && !t.has_admin) ?
                 `<button class="dev-btn dev-btn--ghost" type="button" onclick="openCreateAdmin(${t.id})">Create Admin</button>` : ''}
               <button class="dev-btn dev-btn--ghost" type="button" onclick="openLogoUpload(${t.id})">Logo</button>
+              <button class="dev-btn dev-btn--ghost" type="button" onclick="openTemplateUpload(${t.id}, 'water_bill')">Bill Template</button>
+              <button class="dev-btn dev-btn--ghost" type="button" onclick="openTemplateUpload(${t.id}, 'receipt')">Receipt Template</button>
               <button class="dev-btn dev-btn--ghost" type="button" onclick="openEditTenant(${t.id})">Edit</button>
               <button class="dev-btn dev-btn--ghost" type="button" onclick="toggleTenant(${t.id}, ${!t.is_active})">${toggleLabel}</button>
               <button class="dev-btn dev-btn--danger" type="button" onclick="deleteTenant(${t.id})">Delete</button>
@@ -444,6 +475,94 @@
       document.getElementById('logoModal').classList.add('hidden');
       _logoTenantId = null;
     }
+
+    // ── Custom PDF template upload ──
+    let _templateTenantId = null;
+    let _templateKind = null;
+
+    function openTemplateUpload(id, kind) {
+      _templateTenantId = id;
+      _templateKind = kind;
+      const t = _tenants.find(x => x.id === id);
+      const label = kind === 'water_bill' ? 'Water Bill' : 'Receipt';
+      document.getElementById('templateModalTitle').textContent = `📄 ${label} Template`;
+      document.getElementById('tfTemplateFile').value = '';
+      const msg = document.getElementById('templateMsg');
+      msg.className = 'alert hidden'; msg.textContent = '';
+      document.getElementById('templateModalHint').innerHTML =
+        `Upload the ${label.toLowerCase()} PDF (must contain <code>{{placeholder}}</code> ` +
+        `tokens — same ones as the built-in template). ` +
+        (t ? `<br><span style="opacity:.7;">Tenant: <strong>${esc(t.org_name)}</strong></span>` : '');
+      document.getElementById('templateModal').classList.remove('hidden');
+    }
+
+    function closeTemplateModal() {
+      document.getElementById('templateModal').classList.add('hidden');
+      _templateTenantId = null;
+      _templateKind = null;
+    }
+
+    async function doTemplateUpload() {
+      if (!_templateTenantId || !_templateKind) return;
+      const inp = document.getElementById('tfTemplateFile');
+      const msg = document.getElementById('templateMsg');
+      const btn = document.getElementById('templateUploadBtn');
+      if (!inp.files || !inp.files[0]) {
+        msg.className = 'alert alert-error'; msg.textContent = 'Choose a PDF first.'; return;
+      }
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Uploading…';
+      const fd = new FormData();
+      fd.append('template', inp.files[0]);
+      fd.append('kind', _templateKind);
+      try {
+        const r = await fetch(`/api/admin/tenants/${_templateTenantId}/upload_template`, {
+          method: 'POST', credentials: 'same-origin', body: fd,
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) {
+          msg.className = 'alert alert-success';
+          msg.textContent = `✅ Template uploaded (${Math.round(d.bytes/1024)} KB). It will be used on the next PDF generation.`;
+          inp.value = '';
+        } else {
+          msg.className = 'alert alert-error';
+          msg.textContent = '❌ ' + (d.error || 'Upload failed.');
+        }
+      } catch {
+        msg.className = 'alert alert-error'; msg.textContent = '❌ Network error.';
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
+    }
+
+    async function doTemplateRemove() {
+      if (!_templateTenantId || !_templateKind) return;
+      const label = _templateKind === 'water_bill' ? 'Water Bill' : 'Receipt';
+      if (!confirm(`Remove the custom ${label} template for this tenant?\n\nThe bundled default will be used on the next PDF.`)) return;
+      const msg = document.getElementById('templateMsg');
+      const btn = document.getElementById('templateRemoveBtn');
+      const orig = btn.textContent;
+      btn.disabled = true; btn.textContent = 'Removing…';
+      try {
+        const r = await fetch(`/api/admin/tenants/${_templateTenantId}/delete_template`, {
+          method: 'POST', credentials: 'same-origin',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ kind: _templateKind }),
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) {
+          msg.className = 'alert alert-success';
+          msg.textContent = '✅ Custom template removed. Bundled default will be used.';
+        } else {
+          msg.className = 'alert alert-error';
+          msg.textContent = '❌ ' + (d.error || 'Remove failed.');
+        }
+      } catch {
+        msg.className = 'alert alert-error'; msg.textContent = '❌ Network error.';
+      } finally {
+        btn.disabled = false; btn.textContent = orig;
+      }
+    }
     async function doLogoUpload() {
       if (!_logoTenantId) return;
       const inp = document.getElementById('lfFile');
@@ -483,6 +602,8 @@
 
     window.openLogoUpload = openLogoUpload;
     window.closeLogoModal = closeLogoModal;
+    window.openTemplateUpload = openTemplateUpload;
+    window.closeTemplateModal = closeTemplateModal;
 
     window.openCreateAdmin = openCreateAdmin;
     window.closeAdminModal = closeAdminModal;
@@ -495,6 +616,8 @@
     document.getElementById('tenantForm').addEventListener('submit', submitTenant);
     document.getElementById('adminForm').addEventListener('submit', submitAdmin);
     document.getElementById('logoUploadBtn').addEventListener('click', doLogoUpload);
+    document.getElementById('templateUploadBtn').addEventListener('click', doTemplateUpload);
+    document.getElementById('templateRemoveBtn').addEventListener('click', doTemplateRemove);
     loadTenants();
   </script>
 

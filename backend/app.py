@@ -1269,6 +1269,93 @@ def admin_tenants_upload_logo(tenant_id):
     return jsonify({"ok": True, "logo_key": key, "logo_url": f"/tenant/logo/{t.slug}"})
 
 
+@app.route("/api/admin/tenants/<int:tenant_id>/upload_template", methods=["POST"])
+def admin_tenants_upload_template(tenant_id):
+    """Upload/replace a tenant's custom PDF template. Super-admin only.
+    Multipart form-data: field 'template' (PDF), plus form field 'kind'
+    ('water_bill' or 'receipt')."""
+    u = _require_super_admin()
+    if u: return u
+    if not _rate_limit("tenant_template_upload", 10, 60):
+        return _too_many(60)
+
+    kind = (request.form.get("kind") or "").strip()
+    filename = _TEMPLATE_KINDS.get(kind)
+    if not filename:
+        return jsonify({"error": "kind must be 'water_bill' or 'receipt'."}), 400
+
+    t = Tenant.query.get(tenant_id)
+    if not t:
+        return jsonify({"error": "Tenant not found."}), 404
+
+    f = request.files.get("template")
+    if not f or not f.filename:
+        return jsonify({"error": "No file uploaded (field name must be 'template')."}), 400
+
+    data = f.read()
+    if not data:
+        return jsonify({"error": "Empty file."}), 400
+    if len(data) > 5_000_000:
+        return jsonify({"error": "Template exceeds 5 MB."}), 400
+    if not data.startswith(b"%PDF-"):
+        return jsonify({"error": "Template must be a PDF file."}), 400
+
+    # Sanity: it must open as a PDF and contain at least one {{placeholder}}.
+    try:
+        import fitz
+        _doc = fitz.open(stream=data, filetype="pdf")
+        _text = _doc[0].get_text()
+        _doc.close()
+    except Exception as e:
+        return jsonify({"error": f"Invalid PDF: {e}"}), 400
+    if "{{" not in _text or "}}" not in _text:
+        return jsonify({
+            "error": "Template contains no {{placeholder}} tokens. "
+                     "Upload the exact PDF produced from the template HTML."
+        }), 400
+
+    key = f"templates/{t.slug}/{filename}"
+    if not archive.upload_object(key, data, "application/pdf"):
+        return jsonify({"error": "Storage upload failed."}), 502
+
+    _audit("tenant_template_uploaded",
+           target_type="tenant", target_id=t.id,
+           target_label=f"{t.org_name} · {t.slug}",
+           detail=f"kind={kind}, key={key}, bytes={len(data)}")
+    return jsonify({"ok": True, "kind": kind, "key": key, "bytes": len(data)})
+
+
+@app.route("/api/admin/tenants/<int:tenant_id>/delete_template", methods=["POST"])
+def admin_tenants_delete_template(tenant_id):
+    """Remove a tenant's custom PDF template, falling back to the
+    bundled template on the next generation. Super-admin only."""
+    u = _require_super_admin()
+    if u: return u
+    if not _rate_limit("tenant_template_delete", 10, 60):
+        return _too_many(60)
+
+    data = request.get_json(silent=True) or {}
+    kind = (data.get("kind") or "").strip()
+    filename = _TEMPLATE_KINDS.get(kind)
+    if not filename:
+        return jsonify({"error": "kind must be 'water_bill' or 'receipt'."}), 400
+
+    t = Tenant.query.get(tenant_id)
+    if not t:
+        return jsonify({"error": "Tenant not found."}), 404
+
+    key = f"templates/{t.slug}/{filename}"
+    removed = archive.delete_pdf(key)
+
+    _audit("tenant_template_deleted",
+           target_type="tenant", target_id=t.id,
+           target_label=f"{t.org_name} · {t.slug}",
+           detail=f"kind={kind}, key={key}, removed={removed}")
+    # Removing a non-existent key is not an error — the tenant simply
+    # has no override, which is the desired end state.
+    return jsonify({"ok": True, "kind": kind, "removed": bool(removed)})
+
+
 @app.route("/api/admin/tenants", methods=["GET"])
 def admin_tenants_list():
     u = _require_super_admin()
@@ -2449,6 +2536,7 @@ def download_water_bill(reading_id):
 
     try:
         snapshot.update(_brand_context())
+        snapshot["template_r2_key"] = _resolve_template_key(g.tenant, "water_bill")
         pdf_buf = generate_water_bill_pdf(snapshot)
     except Exception as e:
         app.logger.exception("[WaterBill] PDF generation failed")
@@ -2733,6 +2821,7 @@ def send_whatsapp_bill(consumer_id):
 
     try:
         snapshot.update(_brand_context())
+        snapshot["template_r2_key"] = _resolve_template_key(g.tenant, "water_bill")
         pdf_buf = generate_water_bill_pdf(snapshot)
     except Exception as e:
         app.logger.exception("[WhatsApp Bill] PDF generation failed")
@@ -3773,6 +3862,7 @@ def public_receipt_pdf(token):
     try:
         snapshot = json.loads(log.receipt_json)
         snapshot.update(_brand_context())
+        snapshot["template_r2_key"] = _resolve_template_key(g.tenant, "receipt")
         pdf_buf = generate_receipt_pdf(snapshot)
     except Exception:
         app.logger.exception("[Public Receipt] generation failed")
@@ -4096,6 +4186,7 @@ def download_receipt(payment_id):
 
     try:
         snapshot.update(_brand_context())
+        snapshot["template_r2_key"] = _resolve_template_key(g.tenant, "receipt")
         pdf_buf = generate_receipt_pdf(snapshot)
     except Exception as e:
         app.logger.exception("[Receipt] PDF generation failed")
@@ -4132,6 +4223,7 @@ def receipt_browser_view(payment_id):
 
     try:
         snapshot.update(_brand_context())
+        snapshot["template_r2_key"] = _resolve_template_key(g.tenant, "receipt")
         pdf_buf = generate_receipt_pdf(snapshot)
     except Exception:
         app.logger.exception("[Receipt] PDF generation failed")
@@ -4994,6 +5086,37 @@ def admin_mpesa_assign():
 # ═══════════════════════════════════════════════
 #  TENANTS — seed helper
 # ═══════════════════════════════════════════════
+
+# ── Per-tenant PDF template overrides ──
+# R2 layout mirrors the logo convention:
+#   templates/<slug>/water_bill_template.pdf
+#   templates/<slug>/SimonWater_ReceiptTemplate.pdf
+# If present, the override is used; otherwise the bundled PDF in
+# templates/ is used. No caching — R2 HEAD per generation request.
+_TEMPLATE_KINDS = {
+    "water_bill": "water_bill_template.pdf",
+    "receipt":    "SimonWater_ReceiptTemplate.pdf",
+}
+
+
+def _resolve_template_key(tenant, kind: str) -> str:
+    """Return the R2 key of the tenant's custom PDF template, or "" to
+    fall back to the bundled template. Never raises — any R2 lookup
+    failure returns "" so PDF generation is unaffected."""
+    filename = _TEMPLATE_KINDS.get(kind)
+    if not filename or tenant is None:
+        return ""
+    slug = getattr(tenant, "slug", "") or ""
+    if not slug:
+        return ""
+    key = f"templates/{slug}/{filename}"
+    try:
+        if archive.object_exists(key):
+            return key
+    except Exception:
+        return ""
+    return ""
+
 
 def _seed_default_tenant():
     """Create the Simon Fresh Water tenant row on first boot.

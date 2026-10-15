@@ -113,6 +113,20 @@ def download_object(key: str):
         return None, None
 
 
+def object_exists(key: str) -> bool:
+    """Cheap HEAD-check for an R2 object. Returns False on any error
+    (including R2 not configured) — callers use this only as a lookup
+    hint and always have a fallback path."""
+    if not is_configured() or not key:
+        return False
+    try:
+        c = _client()
+        c.head_object(Bucket=R2_BUCKET, Key=key)
+        return True
+    except Exception:
+        return False
+
+
 def upload_pdf(key: str, data: bytes) -> bool:
     """Upload PDF bytes to R2. Returns True on success."""
     if not is_configured():
