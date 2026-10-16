@@ -2136,28 +2136,44 @@ def icon_512():
 def manifest():
     """Tenant-aware PWA manifest.
 
-    Each page's <link rel="manifest"> appends ?__tenant=<slug>, so
-    _before_request_resolve_tenant has already set g.tenant by the time
-    this runs. Falls back to the default tenant (SFW) when no tenant is
-    resolvable, matching the old static manifest's behaviour.
+    This route is in the static-path whitelist so the tenant-resolution
+    middleware does NOT set g.tenant for it. We therefore resolve the
+    tenant explicitly from ?__tenant= here. Falls back to the default
+    tenant (SFW) when no slug is provided, matching the old static
+    manifest's behaviour.
 
-    Icons resolve via _brand_context() to /tenant/logo/<slug> for
-    tenants with an uploaded logo, or /images/SimonW_Logo.png for the
-    default tenant.
+    Icons point at /tenant/logo/<slug> for tenants with an uploaded
+    logo, or /images/SimonW_Logo.png for the default tenant.
     """
-    ctx = _brand_context()
-    t = getattr(g, "tenant", None)
-    name  = ctx.get("brand_name") or "Simon Fresh Water"
-    short = (t.short_name if t and t.short_name else name)[:12]
-    logo  = ctx.get("brand_logo_url") or "/images/SimonW_Logo.png"
+    slug = (request.args.get("__tenant") or "").strip() or _DEFAULT_TENANT_SLUG
+    t = None
+    try:
+        t = Tenant.query.filter_by(slug=slug).first()
+    except Exception:
+        t = None
+    if t is None:
+        try:
+            t = Tenant.query.filter_by(slug=_DEFAULT_TENANT_SLUG).first()
+        except Exception:
+            t = None
+
+    name  = (t.org_name if t and t.org_name else "Simon Fresh Water")
+    short = ((t.short_name if t and t.short_name else name)[:12]).strip() or name[:12]
+    _lk   = ((t.logo_key if t and t.logo_key else "") or "").strip()
+    if _lk.startswith("logos/"):
+        logo = "/tenant/logo/" + (t.slug if t else "")
+    else:
+        logo = "/" + (_lk or "images/SimonW_Logo.png")
+    if not logo.startswith("/"):
+        logo = "/" + logo
     theme = (t.theme_primary if t and t.theme_primary else "#0d47a1")
-    slug  = ctx.get("tenant_slug") or "simon-freshwater"
+    slug_out = (t.slug if t and t.slug else _DEFAULT_TENANT_SLUG)
 
     return jsonify({
         "name":             name,
         "short_name":       short,
         "description":      f"{name} utility billing portal",
-        "start_url":        f"/?__tenant={slug}",
+        "start_url":        f"/?__tenant={slug_out}",
         "scope":            "/",
         "display":          "standalone",
         "background_color": "#0a2540",
