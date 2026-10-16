@@ -2134,8 +2134,39 @@ def icon_512():
 
 @app.route("/manifest.webmanifest")
 def manifest():
-    return send_from_directory(FRONTEND_DIR, "manifest.webmanifest",
-                                mimetype="application/manifest+json")
+    """Tenant-aware PWA manifest.
+
+    Each page's <link rel="manifest"> appends ?__tenant=<slug>, so
+    _before_request_resolve_tenant has already set g.tenant by the time
+    this runs. Falls back to the default tenant (SFW) when no tenant is
+    resolvable, matching the old static manifest's behaviour.
+
+    Icons resolve via _brand_context() to /tenant/logo/<slug> for
+    tenants with an uploaded logo, or /images/SimonW_Logo.png for the
+    default tenant.
+    """
+    ctx = _brand_context()
+    t = getattr(g, "tenant", None)
+    name  = ctx.get("brand_name") or "Simon Fresh Water"
+    short = (t.short_name if t and t.short_name else name)[:12]
+    logo  = ctx.get("brand_logo_url") or "/images/SimonW_Logo.png"
+    theme = (t.theme_primary if t and t.theme_primary else "#0d47a1")
+    slug  = ctx.get("tenant_slug") or "simon-freshwater"
+
+    return jsonify({
+        "name":             name,
+        "short_name":       short,
+        "description":      f"{name} utility billing portal",
+        "start_url":        f"/?__tenant={slug}",
+        "scope":            "/",
+        "display":          "standalone",
+        "background_color": "#0a2540",
+        "theme_color":      theme,
+        "icons": [
+            {"src": logo, "sizes": "192x192", "type": "image/png", "purpose": "any"},
+            {"src": logo, "sizes": "512x512", "type": "image/png", "purpose": "any"},
+        ],
+    }), 200, {"Content-Type": "application/manifest+json"}
 
 
 @app.route("/images/<path:filename>")
