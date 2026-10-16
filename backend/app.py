@@ -2124,7 +2124,17 @@ def _serve_favicon_tenant_aware(default_filename, mimetype):
         except Exception:
             t = None
         if t and t.logo_key and t.logo_key.startswith("logos/"):
-            return redirect(f"/tenant/logo/{t.slug}", code=302)
+            # Serve bytes directly — no redirect. Chrome's bookmark-favicon
+            # path handles 302s poorly and falls back to the "letter" icon.
+            # Direct delivery also preserves the real Content-Type from R2
+            # (image/jpeg, image/webp, etc.), which the previous 302 target
+            # already sent correctly — but Chrome didn't get to see it.
+            data, ctype = archive.download_object(t.logo_key)
+            if data:
+                from io import BytesIO
+                return send_file(BytesIO(data),
+                                 mimetype=ctype or mimetype,
+                                 as_attachment=False)
 
     return send_from_directory(FRONTEND_DIR, default_filename, mimetype=mimetype)
 
