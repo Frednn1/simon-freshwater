@@ -2096,28 +2096,57 @@ def styles():
 
 
 # ─── Favicons & PWA assets ───
+def _serve_favicon_tenant_aware(default_filename, mimetype):
+    """Serve a favicon.
+
+    Resolution order:
+      1. ?__tenant=<slug> in query → serve that tenant's logo
+      2. Referer header contains ?__tenant=<slug> → same
+      3. Otherwise → serve the static default file (SFW branding)
+
+    When the tenant has an uploaded logo (logo_key starts with 'logos/'),
+    we 302 redirect to /tenant/logo/<slug> which streams the R2 object
+    with the correct content type. Otherwise we serve the static file.
+    """
+    slug = (request.args.get("__tenant") or "").strip()
+    if not slug:
+        ref = request.headers.get("Referer", "") or ""
+        try:
+            from urllib.parse import urlparse, parse_qs
+            ref_q = parse_qs(urlparse(ref).query)
+            slug = (ref_q.get("__tenant", [""])[0] or "").strip()
+        except Exception:
+            slug = ""
+
+    if slug:
+        try:
+            t = Tenant.query.filter_by(slug=slug).first()
+        except Exception:
+            t = None
+        if t and t.logo_key and t.logo_key.startswith("logos/"):
+            return redirect(f"/tenant/logo/{t.slug}", code=302)
+
+    return send_from_directory(FRONTEND_DIR, default_filename, mimetype=mimetype)
+
+
 @app.route("/favicon.ico")
 def favicon_ico():
-    return send_from_directory(FRONTEND_DIR, "favicon.ico",
-                                mimetype="image/x-icon")
+    return _serve_favicon_tenant_aware("favicon.ico", "image/x-icon")
 
 
 @app.route("/favicon-32x32.png")
 def favicon_32():
-    return send_from_directory(FRONTEND_DIR, "favicon-32x32.png",
-                                mimetype="image/png")
+    return _serve_favicon_tenant_aware("favicon-32x32.png", "image/png")
 
 
 @app.route("/favicon-16x16.png")
 def favicon_16():
-    return send_from_directory(FRONTEND_DIR, "favicon-16x16.png",
-                                mimetype="image/png")
+    return _serve_favicon_tenant_aware("favicon-16x16.png", "image/png")
 
 
 @app.route("/apple-touch-icon.png")
 def apple_touch_icon():
-    return send_from_directory(FRONTEND_DIR, "apple-touch-icon.png",
-                                mimetype="image/png")
+    return _serve_favicon_tenant_aware("apple-touch-icon.png", "image/png")
 
 
 @app.route("/icon-192.png")
