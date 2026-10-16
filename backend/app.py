@@ -1037,14 +1037,41 @@ def terms_page():
 def admin_login_page():
     """Serve the tenant admin login page.
 
-    If the request carries ?__tenant=<slug> or ?__preview=<slug> that
-    resolves to an inactive tenant, we still serve the page (so the
-    visitor sees the tenant's branding), but we set a template flag
-    the page uses to disable the login form and show a friendly note.
+    Session-vs-URL precedence at the login page:
+
+      • Logged in + URL names a DIFFERENT tenant → clear the session
+        and render the URL tenant's login page. Prevents the cross-
+        tenant confusion where a demo admin sees SFW branding and
+        then submits SFW credentials — which would silently log them
+        into the SFW tenant without an explicit logout.
+
+      • Logged in + URL names the SAME tenant (or no tenant) →
+        redirect to the dashboard. No reason to see the login form
+        again.
+
+      • Anonymous → existing behaviour (URL tenant wins; inactive
+        tenants get the disabled UI). Both ?__tenant= and ?__preview=
+        are honoured, exactly as before.
     """
-    slug = (request.args.get("__tenant")
-            or request.args.get("__preview")
-            or "").strip()
+    _aid       = session.get("admin_id")
+    _sess_slug = session.get("__tenant_slug") or _DEFAULT_TENANT_SLUG
+    _url_slug  = (request.args.get("__tenant")
+                  or request.args.get("__preview")
+                  or "").strip()
+
+    if _aid:
+        if _url_slug and _url_slug != _sess_slug:
+            # Silent logout + override g.tenant so the render below uses
+            # the URL tenant, not the stale session tenant.
+            session.clear()
+            try:
+                g.tenant = Tenant.query.filter_by(slug=_url_slug).first()
+            except Exception:
+                pass
+        else:
+            return redirect("/")
+
+    slug = _url_slug
     tenant_inactive = False
     if slug:
         try:
