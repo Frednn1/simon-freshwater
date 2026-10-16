@@ -330,6 +330,9 @@ def _brand_context():
         "brand_phone":      (t.phone if t and t.phone else "+254 700 719311"),
         "brand_email":      (t.email if t and t.email else "simonchege84@gmail.com"),
         "brand_logo_url":   logo,
+        "brand_favicon_url": ("/tenant/favicon/" + t.slug
+                              if t and t.logo_key and t.logo_key.startswith("logos/")
+                              else "/tenant/favicon/" + (t.slug if t and t.slug else "simon-freshwater")),
         "brand_logo_r2_key": _lk if _lk.startswith("logos/") else "",
         # Tenant slug — used by admin pages to stamp <body data-tenant-slug>,
         # which the tenant watchdog reads to know which tenant to check.
@@ -1262,6 +1265,14 @@ def admin_tenants_upload_logo(tenant_id):
         return jsonify({"error": "Storage upload failed."}), 502
     t.logo_key = key
     db.session.commit()
+    # Invalidate the favicon cache for this tenant so the new logo is
+    # reflected in bookmark / PWA icons immediately.
+    try:
+        stale = [k for k in _FAVICON_CACHE if k[0] == t.slug]
+        for k in stale:
+            _FAVICON_CACHE.pop(k, None)
+    except Exception:
+        pass
     _audit("tenant_logo_uploaded",
            target_type="tenant", target_id=t.id,
            target_label=f"{t.org_name} · {t.slug}",
@@ -2139,6 +2150,107 @@ def _serve_favicon_tenant_aware(default_filename, mimetype):
     return send_from_directory(FRONTEND_DIR, default_filename, mimetype=mimetype)
 
 
+# In-memory favicon cache. Keyed on (slug, size). Cleared on logo upload.
+_FAVICON_CACHE = {}
+
+
+def _tenant_favicon_png(slug: str, size: int = 192):
+    """Return a square PNG favicon for the tenant. Downloads their R2
+    logo (or the bundled SFW logo as fallback), center-crops to square,
+    and resizes to `size` x `size`. Returns bytes, or None on any failure.
+
+    This is the fix for Chrome's bookmark-shortcut path, which requires a
+    PNG that actually matches the declared type and dimensions. The raw
+    tenant logo may be JPEG, WEBP, or non-square — this normalises it.
+    """
+    cache_key = (slug, size)
+    if cache_key in _FAVICON_CACHE:
+        return _FAVICON_CACHE[cache_key]
+
+    data = None
+    try:
+        t = Tenant.query.filter_by(slug=slug).first()
+    except Exception:
+        t = None
+    if t and t.logo_key and t.logo_key.startswith("logos/"):
+        data, _ctype = archive.download_object(t.logo_key)
+
+    if not data:
+        try:
+            bundled = os.path.join(FRONTEND_DIR, "images", "SimonW_Logo.png")
+            with open(bundled, "rb") as f:
+                data = f.read()
+        except Exception:
+            return None
+
+    try:
+        from PIL import Image
+        from io import BytesIO
+
+        im = Image.open(BytesIO(data))
+        im.load()
+
+        # Flatten transparency to white so the favicon looks consistent on
+        # every browser theme.
+        if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
+            im = im.convert("RGBA")
+            bg = Image.new("RGBA", im.size, (255, 255, 255, 255))
+            bg.paste(im, mask=im.split()[-1])
+            im = bg.convert("RGB")
+        elif im.mode != "RGB":
+            im = im.convert("RGB")
+
+        # Center-crop to square (handles wide or tall logos)
+        w, h = im.size
+        side = min(w, h)
+        left = (w - side) // 2
+        top  = (h - side) // 2
+        im = im.crop((left, top, left + side, top + side))
+
+        # High-quality resize
+        try:
+            resample = Image.Resampling.LANCZOS
+        except AttributeError:
+            resample = Image.LANCZOS
+        im = im.resize((size, size), resample)
+
+        out = BytesIO()
+        im.save(out, format="PNG", optimize=True)
+        png = out.getvalue()
+    except Exception as e:
+        try:
+            app.logger.warning(f"[Favicon] conversion failed for {slug}@{size}: {e}")
+        except Exception:
+            pass
+        return None
+
+    _FAVICON_CACHE[cache_key] = png
+    return png
+
+
+@app.route("/tenant/favicon/<slug>")
+def tenant_favicon_serve(slug):
+    """Serve a square PNG favicon for the tenant. This is what the
+    bookmark-shortcut path fetches — a proper PNG at exactly the declared
+    size, so Chrome accepts it."""
+    try:
+        size = int(request.args.get("size", "192"))
+    except (ValueError, TypeError):
+        size = 192
+    if size not in (32, 64, 96, 128, 192, 256, 512):
+        size = 192
+
+    png = _tenant_favicon_png(slug, size)
+    if png is None:
+        return redirect("/images/SimonW_Logo.png")
+
+    from io import BytesIO
+    resp = send_file(BytesIO(png), mimetype="image/png",
+                     as_attachment=False, download_name=f"{slug}-favicon.png")
+    resp.headers["Cache-Control"] = "public, max-age=3600"
+    return resp
+
+
 @app.route("/favicon.ico")
 def favicon_ico():
     return _serve_favicon_tenant_aware("favicon.ico", "image/x-icon")
@@ -2218,8 +2330,10 @@ def manifest():
         "background_color": "#0a2540",
         "theme_color":      theme,
         "icons": [
-            {"src": logo, "sizes": "192x192", "type": "image/png", "purpose": "any"},
-            {"src": logo, "sizes": "512x512", "type": "image/png", "purpose": "any"},
+            {"src": f"/tenant/favicon/{slug_out}?size=192", "sizes": "192x192",
+             "type": "image/png", "purpose": "any"},
+            {"src": f"/tenant/favicon/{slug_out}?size=512", "sizes": "512x512",
+             "type": "image/png", "purpose": "any"},
         ],
     }), 200, {"Content-Type": "application/manifest+json"}
 
