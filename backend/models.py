@@ -123,6 +123,9 @@ class AdminUser(db.Model):
     failed_attempts = db.Column(db.Integer, default=0, nullable=False)
     locked_until = db.Column(db.DateTime)
     last_login_at = db.Column(db.DateTime)
+    # Set whenever the password is changed (via settings or forgot flow).
+    # Sessions created before this timestamp are invalidated on next request.
+    password_changed_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 

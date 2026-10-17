@@ -667,6 +667,26 @@ def _current_admin():
                        _admin_id=_aid, _admin_username=_uname)
             return None
 
+    # Password-change invalidator: a session created before the admin's
+    # most recent password change is no longer valid. This closes the
+    # "stolen session survives a password reset" gap. Sessions that
+    # predate this feature (no login_at in the session) remain valid
+    # until their normal idle timeout — deliberate, so we don't force-
+    # logout existing sessions during rollout.
+    if getattr(a, "password_changed_at", None) and session.get("login_at"):
+        try:
+            _login_at = datetime.fromisoformat(session["login_at"])
+            if _login_at < a.password_changed_at:
+                _uname = session.get("admin_username")
+                _aid   = session.get("admin_id")
+                _clear_session_preserve_tenant()
+                if _uname:
+                    _audit("session_invalidated_by_password_change",
+                           _admin_id=_aid, _admin_username=_uname)
+                return None
+        except (ValueError, TypeError):
+            pass
+
     # Self-heal: session slug must equal the admin's own tenant slug.
     # If they disagree (stale cookie, tampering, tenant slug changed),
     # silently correct the session rather than locking the admin out.
@@ -941,6 +961,17 @@ def _ensure_all_columns():
         if t_alters:
             db.session.commit()
             app.logger.info(f"[Migration] Applied {len(t_alters)} column(s) to tenants")
+
+    if "admin_users" in tables:
+        existing = {c["name"] for c in insp.get_columns("admin_users")}
+        a_alters = []
+        if "password_changed_at" not in existing:
+            a_alters.append(f"ADD COLUMN password_changed_at {TIME_T} NULL")
+        for alt in a_alters:
+            db.session.execute(text(f"ALTER TABLE admin_users {alt}"))
+        if a_alters:
+            db.session.commit()
+            app.logger.info(f"[Migration] Applied {len(a_alters)} column(s) to admin_users")
 
     if "payment_log" in tables:
         existing = {c["name"] for c in insp.get_columns("payment_log")}
@@ -3627,6 +3658,7 @@ def admin_login_route():
     session["admin_id"] = result["admin_id"]
     session["admin_username"] = result["username"]
     session["last_activity"] = datetime.utcnow().isoformat()
+    session["login_at"] = datetime.utcnow().isoformat()
     session["__tenant_slug"] = _admin_slug
     _audit("login")
     return jsonify({"ok": True, "username": result["username"]}), 200
@@ -3656,6 +3688,7 @@ def admin_login_verify_otp():
     session["admin_id"] = admin.id
     session["admin_username"] = admin.username
     session["last_activity"] = datetime.utcnow().isoformat()
+    session["login_at"] = datetime.utcnow().isoformat()
     _audit("login_2fa_ok")
     return jsonify({"ok": True, "username": admin.username}), 200
 
@@ -3962,6 +3995,7 @@ def admin_update_password():
     admin.password_hash = generate_password_hash(new_pw)
     admin.failed_attempts = 0
     admin.locked_until = None
+    admin.password_changed_at = datetime.utcnow()
     db.session.commit()
 
     _audit("update_settings_password")

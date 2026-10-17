@@ -191,6 +191,7 @@ def confirm_password_reset(reset_token, otp, new_password, tenant_id=None):
     admin.password_hash = generate_password_hash(new_password)
     admin.failed_attempts = 0
     admin.locked_until = None
+    admin.password_changed_at = datetime.utcnow()
     tok.used = True
     db.session.commit()
     return {"ok": True, "message": "Password updated. You can now log in."}
