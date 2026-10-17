@@ -1731,10 +1731,19 @@ def admin_tenants_create_admin(tenant_id):
         return jsonify({"error": "This tenant already has an admin."}), 409
 
     data = request.get_json(silent=True) or {}
-    username = (data.get("username") or "").strip().lower()
-    password = data.get("password") or ""
-    phone    = (data.get("phone") or "").strip()
-    email    = (data.get("email") or "").strip() or None
+    # SAFE-CREATE-ADMIN-PHASE8: type-guard against non-string payloads
+    # (parallel fix to the login route). Without this, an int username
+    # would crash .strip().lower() with AttributeError → 500.
+    _raw_un = data.get("username")
+    _raw_pw = data.get("password")
+    _raw_ph = data.get("phone")
+    _raw_em = data.get("email")
+    if not isinstance(_raw_un, str) or not isinstance(_raw_pw, str):
+        return jsonify({"error": "username and password must be strings."}), 400
+    username = _raw_un.strip().lower()
+    password = _raw_pw
+    phone    = (_raw_ph if isinstance(_raw_ph, str) else "").strip()
+    email    = (_raw_em if isinstance(_raw_em, str) else "").strip() or None
 
     if len(username) < 3:
         return jsonify({"error": "Username must be at least 3 characters."}), 400
