@@ -90,6 +90,23 @@ _STATIC_PATH_EXACT = {
 _STATIC_PATH_PREFIXES = ("/images/",)
 
 
+def _safe_username_str(raw) -> str:
+    """Coerce an arbitrary value to a lowercase username string for
+    audit logging. Never raises.
+
+    Phase 8 robustness fix: the login route calls .strip().lower() on
+    the raw username when building audit entries. If an API client sends
+    a non-string username (int, null, dict), login() rejects it via its
+    own type guard, but the audit-logging code downstream would still
+    crash (AttributeError or TypeError) → 500. This returns "" for any
+    non-string input so the audit block runs safely and the intended
+    401 is what the client sees.
+    """
+    if not isinstance(raw, str):
+        return ""
+    return raw.strip().lower()
+
+
 def _sanitize_slug(raw: str) -> str:
     """Strip control characters and cap length on a user-supplied tenant
     slug before it goes into audit logs, JSON responses, or a DB query.
@@ -3625,7 +3642,7 @@ def admin_login_route():
         # belongs to. This makes a repeat of the earlier cross-tenant
         # bug diagnosable from one audit query instead of ad-hoc debug
         # endpoints.
-        _attempted = (data.get("username") or "").strip().lower()
+        _attempted = _safe_username_str(data.get("username"))
         _resolved = getattr(g, "tenant", None)
         _resolved_slug = _resolved.slug if _resolved else "—"
         _url_slug = _sanitize_slug(request.args.get("__tenant") or "") or "—"
@@ -3674,7 +3691,7 @@ def admin_login_route():
 
     if _requested_slug and _admin_slug != _requested_slug:
         _audit("login_failed_tenant_mismatch",
-               detail=(f"attempted_username={((data.get('username') or '')[:40]).lower()} "
+               detail=(f"attempted_username={_safe_username_str(data.get('username'))[:40]} "
                        f"requested_tenant={_requested_slug} "
                        f"admin_tenant={_admin_slug}"))
         return jsonify({"ok": False, "error": "Invalid credentials."}), 401
