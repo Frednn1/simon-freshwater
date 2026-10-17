@@ -77,6 +77,15 @@ def login(username, password, tenant_id=None):
     to scope the lookup. The caller sets session["__tenant_slug"] from
     the authenticated admin's own tenant_id after this returns.
     """
+    # PHASE8_TYPE_GUARD: defend against non-string inputs from malformed
+    # API clients. Previously an integer username caused AttributeError and
+    # a 500 response. Now treated as invalid credentials (401) — cleaner
+    # and doesn't leak stack traces or flood logs.
+    if not isinstance(username, str):
+        return {"ok": False, "error": "Invalid credentials."}
+    if not isinstance(password, str):
+        return {"ok": False, "error": "Invalid credentials."}
+
     username = (username or "").strip().lower()
     admin = AdminUser.query.filter_by(username=username).first()
     if not admin or not admin.is_active:
