@@ -12,7 +12,10 @@ from flask import (
     Flask, request, jsonify, send_from_directory, session, send_file,
     redirect, render_template_string, g,
 )
-from flask_cors import CORS
+# CORS-SECURITY-FIX-PHASE6: CORS middleware removed — see Phase 6 audit
+# finding. The app has no cross-origin browser traffic; leaving CORS enabled
+# with credentials reflected any Origin header, which is a CWE-942 misconfig.
+# If future cross-origin use is required, restore with an explicit origins list.
 from sqlalchemy import text, inspect
 from sqlalchemy.exc import IntegrityError
 
@@ -59,7 +62,7 @@ NOTIFY_COOLDOWN_SECONDS = int(os.environ.get("NOTIFY_COOLDOWN_SECONDS", "300"))
 
 
 app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path="")
-CORS(app, supports_credentials=True)
+# (CORS middleware removed — see note above)
 
 
 # ═══════════════════════════════════════════════
