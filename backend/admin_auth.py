@@ -95,8 +95,11 @@ def login(username, password, tenant_id=None):
             db.session.commit()
             return {"ok": False, "error": f"Too many attempts. Locked for {LOCKOUT_MINUTES} min."}
         db.session.commit()
-        left = LOCKOUT_THRESHOLD - admin.failed_attempts
-        return {"ok": False, "error": f"Invalid credentials. {left} attempt(s) left."}
+        # Do not reveal remaining attempts — a different message for real
+        # usernames enables enumeration. The lockout still fires at
+        # LOCKOUT_THRESHOLD; the attacker just sees the generic message
+        # until then.
+        return {"ok": False, "error": "Invalid credentials."}
 
     admin.failed_attempts = 0
     admin.locked_until = None
@@ -117,10 +120,19 @@ def request_password_reset(identifier, tenant_id=None):
 
     admin = (AdminUser.query.filter_by(username=q.lower()).first()
              or AdminUser.query.filter_by(phone=q).first())
+
+    # One message, one shape, for both paths. Return a random opaque
+    # token even for non-existent accounts so the response cannot be
+    # distinguished by presence of token, sms_ok, or the message text.
+    # Submitting this fake token to /api/admin/reset returns
+    # "Invalid or already-used reset token." — indistinguishable from
+    # an expired real token.
+    _GENERIC_RESET_MSG = "If the account exists, a code was sent."
+
     if not admin:
-        # Don't reveal existence
-        return {"ok": True, "message": "If the account exists, a code was sent.",
-                "token": None, "sms_ok": False}
+        _fake = secrets.token_urlsafe(32)
+        return {"ok": True, "message": _GENERIC_RESET_MSG,
+                "token": _fake, "sms_ok": True}
 
     # Invalidate any prior unused tokens for this admin
     PasswordResetToken.query.filter_by(admin_id=admin.id, used=False).update({"used": True})
@@ -140,16 +152,16 @@ def request_password_reset(identifier, tenant_id=None):
     db.session.commit()
 
     sms_body = f"Your Simon Fresh Water reset code: {otp}  (valid {RESET_TOKEN_TTL} min)"
-    sms_result = send_sms(admin.phone, sms_body)
+    _sms_result = send_sms(admin.phone, sms_body)
 
-    tail = admin.phone[-4:] if len(admin.phone) >= 4 else "****"
-    if sms_result.get("ok"):
-        msg = f"Reset code sent to phone ending ...{tail}."
-    else:
-        msg = f"SMS could not be sent: {sms_result.get('error','unknown')}"
+    # The SMS result is deliberately ignored in the response. A different
+    # sms_ok value between success/failure would leak account existence.
+    # notification_log (populated inside send_sms) retains the actual
+    # outcome for operational visibility.
+    _ = _sms_result
 
-    return {"ok": True, "message": msg, "token": reset_token,
-            "sms_ok": bool(sms_result.get("ok"))}
+    return {"ok": True, "message": _GENERIC_RESET_MSG,
+            "token": reset_token, "sms_ok": True}
 
 
 def confirm_password_reset(reset_token, otp, new_password, tenant_id=None):
@@ -288,9 +300,10 @@ def verify_login_otp(admin, otp: str) -> dict:
     # Constant-time comparison
     if not secrets.compare_digest(record.otp_hash, _hash_otp(otp)):
         db.session.commit()
-        left = LOGIN_OTP_MAX_TRIES - record.attempts
-        return {"ok": False,
-                "error": f"Incorrect code. {left} attempt(s) left."}
+        # Do not reveal remaining OTP attempts — mirrors the same principle
+        # as the login fix. Attempts are still counted and the OTP is
+        # invalidated after LOGIN_OTP_MAX_TRIES.
+        return {"ok": False, "error": "Incorrect code."}
 
     record.used = True
     db.session.commit()
