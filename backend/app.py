@@ -4486,8 +4486,10 @@ def download_receipt(payment_id):
 
     u = _require_admin()
     if u: return u
-
-    log = PaymentLog.query.get(payment_id)
+    # IDOR-FIX-PHASE4: tenant-scoped lookup. A demo admin cannot read
+    # SFW's payment receipt by guessing an id — the query returns nothing
+    # and the response is 404.
+    log = _tenant_query(PaymentLog).filter_by(id=payment_id).first()
     if not log:
         return jsonify({"error": "Payment not found"}), 404
 
@@ -4528,7 +4530,8 @@ def receipt_browser_view(payment_id):
     if not _current_admin():
         return redirect(f"/admin/login?next=/receipt/{payment_id}")
 
-    log = PaymentLog.query.get(payment_id)
+    # IDOR-FIX-PHASE4: tenant-scoped lookup, same as download_receipt.
+    log = _tenant_query(PaymentLog).filter_by(id=payment_id).first()
     if not log:
         return "Payment not found.", 404
     if not log.receipt_json:
@@ -4698,17 +4701,25 @@ SEED_DATA = []
 
 @app.route("/api/admin/seed", methods=["POST"])
 def admin_seed():
-    u = _require_admin()
+    # IDOR-FIX-PHASE4: previously _require_admin — any tenant admin could
+    # wipe all tenants' data. Now super-only AND deletes are scoped to
+    # the current tenant, so even a super admin cannot inadvertently wipe
+    # another tenant's rows by accident.
+    u = _require_super_admin()
     if u: return u
 
     replace = request.args.get("replace") == "1"
     if replace:
-        PaymentLog.query.delete()
-        NotificationLog.query.delete()
-        MeterReading.query.delete()
-        Consumer.query.delete()
+        tid = _write_tenant_id()
+        if tid < 1:
+            return jsonify({"error": "No tenant context for this request."}), 400
+        PaymentLog.query.filter_by(tenant_id=tid).delete()
+        NotificationLog.query.filter_by(tenant_id=tid).delete()
+        MeterReading.query.filter_by(tenant_id=tid).delete()
+        Consumer.query.filter_by(tenant_id=tid).delete()
         db.session.commit()
-        return jsonify({"ok": True, "wiped": True, "created": 0}), 200
+        return jsonify({"ok": True, "wiped": True,
+                        "tenant_id": tid, "created": 0}), 200
 
     return jsonify({"created": 0, "skipped": 0, "replaced": False}), 200
 
@@ -5177,7 +5188,11 @@ def admin_archive_download(archive_id):
     if not _rate_limit("archive_download", 30, 60):
         return _too_many(60)
 
-    row = SentBillArchive.query.get_or_404(archive_id)
+    # IDOR-FIX-PHASE4: tenant-scoped lookup. Demo admin cannot read
+    # SFW's archived PDFs by guessing an id.
+    row = _tenant_query(SentBillArchive).filter_by(id=archive_id).first()
+    if not row:
+        return jsonify({"error": "Archive not found."}), 404
     if not row.storage_key:
         return jsonify({"error": "No PDF attached to this archive row."}), 404
 
@@ -5275,7 +5290,9 @@ def admin_audit_purge():
 @app.route("/api/admin/backup/run", methods=["POST"])
 def admin_backup_run():
     """Build a full .xlsx backup and upload it to the configured R2 bucket."""
-    u = _require_admin()
+    # IDOR-FIX-PHASE4: previously _require_admin — allowed any tenant
+    # admin to trigger a full backup. Now super-only.
+    u = _require_super_admin()
     if u: return u
     if not _rate_limit("backup_run", 3, 300):
         return _too_many(300)
