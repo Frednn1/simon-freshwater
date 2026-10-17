@@ -482,19 +482,28 @@ def _security_headers(resp):
     # (onclick= etc). All actual <script src>/<link href> are same-origin.
     # connect-src / img-src allow Cloudflare R2 (presigned direct uploads
     # and tenant logos served via /tenant/logo/<slug>).
-    resp.headers.setdefault(
-        "Content-Security-Policy",
-        "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline'; "
-        "style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data: blob: https://*.r2.cloudflarestorage.com; "
-        "connect-src 'self' https://*.r2.cloudflarestorage.com; "
-        "font-src 'self'; "
-        "frame-ancestors 'none'; "
-        "base-uri 'self'; "
-        "form-action 'self'; "
-        "object-src 'none'",
-    )
+    #
+    # CSP-IMAGES-PHASE9: per W3C spec, CSP applies to documents and workers
+    # — NOT to images, CSS, JS, PDFs, or fonts. Chrome's bookmark-favicon
+    # fetch path can silently fail when it sees CSP on an image response
+    # (falls back to the origin letter "O"). Sending CSP only on HTML
+    # responses closes this without weakening protection: the CSP on the
+    # parent HTML document still governs which resources may be loaded.
+    _is_doc = (resp.mimetype or "").startswith("text/html")
+    if _is_doc:
+        resp.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: blob: https://*.r2.cloudflarestorage.com; "
+            "connect-src 'self' https://*.r2.cloudflarestorage.com; "
+            "font-src 'self'; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self'; "
+            "object-src 'none'",
+        )
 
     return resp
 
@@ -2411,7 +2420,7 @@ def tenant_favicon_serve(slug):
     from io import BytesIO
     resp = send_file(BytesIO(png), mimetype="image/png",
                      as_attachment=False, download_name=f"{slug}-favicon.png")
-    resp.headers["Cache-Control"] = "public, max-age=3600"
+    resp.headers["Cache-Control"] = "public, max-age=86400, immutable"
     return resp
 
 
