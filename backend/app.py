@@ -468,6 +468,34 @@ def _security_headers(resp):
     resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     resp.headers.setdefault("Permissions-Policy", "geolocation=(self)")
+
+    # HSTS-PHASE8-HARDENING: force browsers to use HTTPS for 1 year.
+    # Sent on every response — browsers ignore it over plain HTTP per spec.
+    resp.headers.setdefault(
+        "Strict-Transport-Security",
+        "max-age=31536000; includeSubDomains",
+    )
+
+    # CSP-PHASE8-HARDENING: defense-in-depth against XSS/injection.
+    # 'unsafe-inline' is required because pages use inline <script>,
+    # inline <style> (admin_login only), and 36 inline event handlers
+    # (onclick= etc). All actual <script src>/<link href> are same-origin.
+    # connect-src / img-src allow Cloudflare R2 (presigned direct uploads
+    # and tenant logos served via /tenant/logo/<slug>).
+    resp.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob: https://*.r2.cloudflarestorage.com; "
+        "connect-src 'self' https://*.r2.cloudflarestorage.com; "
+        "font-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "object-src 'none'",
+    )
+
     return resp
 
 
