@@ -89,6 +89,21 @@ _STATIC_PATH_EXACT = {
 _STATIC_PATH_PREFIXES = ("/images/",)
 
 
+def _sanitize_slug(raw: str) -> str:
+    """Strip control characters and cap length on a user-supplied tenant
+    slug before it goes into audit logs, JSON responses, or a DB query.
+
+    Closes Phase 8 finding 8.6b: CRLF in a reflected slug creates forged
+    audit-log entries and violates the API contract of returning only
+    safe strings from public endpoints.
+    """
+    if not raw:
+        return ""
+    # Remove ASCII control characters (0x00-0x1F, 0x7F) and cap to 60
+    cleaned = re.sub(r"[\x00-\x1f\x7f]", "", str(raw))
+    return cleaned[:60]
+
+
 def _resolve_tenant_from_request():
     """Return the Tenant for the current request, or None if not found.
     Never raises — a lookup failure falls back to None.
@@ -118,7 +133,7 @@ def _resolve_tenant_from_request():
     # ── Anonymous visitor: preview override (super-admin only) ──
     # `?__preview=<slug>` bypasses the session for one request so a
     # super-admin can preview any tenant without leaving their own.
-    preview_slug = (request.args.get("__preview") or "").strip()
+    preview_slug = _sanitize_slug(request.args.get("__preview") or "").strip()
     if preview_slug:
         try:
             return Tenant.query.filter_by(slug=preview_slug).first()
@@ -126,9 +141,9 @@ def _resolve_tenant_from_request():
             return None
 
     # ── Anonymous visitor — no persistence ──
-    url_slug = (request.args.get("__tenant") or "").strip()
+    url_slug = _sanitize_slug(request.args.get("__tenant") or "").strip()
     if not url_slug:
-        url_slug = (request.headers.get("X-Tenant-Slug") or "").strip()
+        url_slug = _sanitize_slug(request.headers.get("X-Tenant-Slug") or "").strip()
     if url_slug:
         try:
             return Tenant.query.filter_by(slug=url_slug).first()
@@ -1194,7 +1209,7 @@ def tenant_is_active_api():
     """Return whether the current tenant is active. Public, cache-busting
     endpoint used by the tenant watchdog poller. Never returns tenant data
     beyond the active boolean and the slug."""
-    slug = (request.args.get("__tenant") or "").strip()
+    slug = _sanitize_slug(request.args.get("__tenant") or "").strip()
     if not slug:
         slug = (session.get("__tenant_slug") or _DEFAULT_TENANT_SLUG)
     try:
@@ -3612,7 +3627,7 @@ def admin_login_route():
         _attempted = (data.get("username") or "").strip().lower()
         _resolved = getattr(g, "tenant", None)
         _resolved_slug = _resolved.slug if _resolved else "—"
-        _url_slug = (request.args.get("__tenant") or "—")
+        _url_slug = _sanitize_slug(request.args.get("__tenant") or "") or "—"
         _reason = (result.get("error") or "")[:60]
         _true_tenant = "—"
         try:
@@ -3641,7 +3656,7 @@ def admin_login_route():
     #
     # The refusal message matches a wrong password exactly, so an attacker
     # cannot learn which tenant a username belongs to by probing URLs.
-    _requested_slug = (request.args.get("__tenant") or "").strip()
+    _requested_slug = _sanitize_slug(request.args.get("__tenant") or "").strip()
 
     # Compute the tenant slug the session must carry after login.
     # The admin's own tenant_id is the definitive source — this makes the
