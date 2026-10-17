@@ -1298,6 +1298,35 @@ def tenant_logo_serve(slug):
                      download_name=f"{slug}-logo")
 
 
+def _validate_image_magic(data: bytes, declared_mime: str):
+    """Verify a file's actual magic bytes match its declared image MIME type.
+
+    Closes Phase 7 finding 7.3a: without this, a text file uploaded with
+    Content-Type: image/png is accepted. Impact was low (no XSS since SVG
+    is excluded; no code execution since it's served as a static asset)
+    but it is a MIME-confusion vulnerability worth fixing.
+
+    Returns (ok: bool, error_message: str).
+    """
+    if not data:
+        return False, "Empty file."
+    if declared_mime == "image/png":
+        if not data.startswith(b"\x89PNG\r\n\x1a\n"):
+            return False, "File content is not a valid PNG image."
+    elif declared_mime == "image/jpeg":
+        if not data.startswith(b"\xff\xd8\xff"):
+            return False, "File content is not a valid JPEG image."
+    elif declared_mime == "image/gif":
+        if not (data.startswith(b"GIF87a") or data.startswith(b"GIF89a")):
+            return False, "File content is not a valid GIF image."
+    elif declared_mime == "image/webp":
+        if len(data) < 12 or not data.startswith(b"RIFF") or data[8:12] != b"WEBP":
+            return False, "File content is not a valid WEBP image."
+    else:
+        return False, f"Unsupported image type: {declared_mime}"
+    return True, ""
+
+
 @app.route("/api/admin/tenants/<int:tenant_id>/upload_logo", methods=["POST"])
 def admin_tenants_upload_logo(tenant_id):
     """Upload/replace a tenant's logo. Super-admin only.
@@ -1321,6 +1350,10 @@ def admin_tenants_upload_logo(tenant_id):
         return jsonify({"error": "Logo exceeds 500 KB."}), 400
     if len(data) == 0:
         return jsonify({"error": "Empty file."}), 400
+    # MAGIC-BYTE-VALIDATION-PHASE7: verify actual bytes match declared MIME.
+    _ok, _err = _validate_image_magic(data, ctype)
+    if not _ok:
+        return jsonify({"error": _err}), 400
     key = f"logos/{t.slug}/logo{ALLOWED[ctype]}"
     if not archive.upload_object(key, data, ctype):
         return jsonify({"error": "Storage upload failed."}), 502
