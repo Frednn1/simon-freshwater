@@ -10,14 +10,17 @@
   <meta property="og:site_name" content="{{brand_name}}">
   <meta property="og:title" content="Admin Login - {{brand_name}}">
   <meta property="og:description" content="Sign in to the {{brand_name}} utility billing portal">
-  <meta property="og:image" content="{{brand_favicon_url}}?size=512">
+  <meta property="og:url" content="{{brand_base_url}}/admin/login?__tenant={{tenant_slug}}">
+  <meta property="og:image" content="{{brand_base_url}}{{brand_favicon_url}}?size=512">
+  <meta property="og:image:secure_url" content="{{brand_base_url}}{{brand_favicon_url}}?size=512">
+  <meta property="og:image:type" content="image/png">
   <meta property="og:image:width" content="512">
   <meta property="og:image:height" content="512">
   <meta property="og:image:alt" content="{{brand_name}} logo">
   <meta name="twitter:card" content="summary">
   <meta name="twitter:title" content="Admin Login - {{brand_name}}">
   <meta name="twitter:description" content="Sign in to the {{brand_name}} utility billing portal">
-  <meta name="twitter:image" content="{{brand_favicon_url}}?size=512">
+  <meta name="twitter:image" content="{{brand_base_url}}{{brand_favicon_url}}?size=512">
   <link rel="icon" type="image/png" sizes="32x32" href="{{brand_favicon_url}}?v={{tenant_slug}}">
   <link rel="icon" type="image/png" sizes="192x192" href="{{brand_favicon_url}}?size=192&v={{tenant_slug}}">
   <link rel="shortcut icon" href="{{brand_favicon_url}}?v={{tenant_slug}}">

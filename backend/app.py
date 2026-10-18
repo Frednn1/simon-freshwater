@@ -356,6 +356,15 @@ def _brand_context():
         logo = "/" + logo
 
     _city = (addr.split(",")[0].strip() if addr else "Kikuyu")
+
+    # PHASE10-BASE-URL: absolute base URL for Open Graph / social preview
+    # tags. Falls back to production URL when called from a background task
+    # or boot sequence where there is no Flask request context.
+    try:
+        _base_url = request.host_url.rstrip("/")
+    except Exception:
+        _base_url = "https://freshwatersolutions.onrender.com"
+
     return {
         "brand_name":       name,
         "brand_name_upper": name.upper(),
@@ -370,6 +379,7 @@ def _brand_context():
                               if t and t.logo_key and t.logo_key.startswith("logos/")
                               else "/tenant/favicon/" + (t.slug if t and t.slug else "simon-freshwater")),
         "brand_logo_r2_key": _lk if _lk.startswith("logos/") else "",
+        "brand_base_url":   _base_url,
         # Tenant slug — used by admin pages to stamp <body data-tenant-slug>,
         # which the tenant watchdog reads to know which tenant to check.
         "tenant_slug":      (t.slug if t and t.slug else ""),
