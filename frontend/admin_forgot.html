@@ -15,7 +15,7 @@
 <body class="auth-body">
   <main class="auth-main">
     <div class="auth-card">
-      <a href="/" class="brand-link" aria-label="Go to home"><div class="auth-brand">
+      <a href="/?__tenant={{tenant_slug}}" class="brand-link" aria-label="Go to home"><div class="auth-brand">
         <img class="brand-logo" src="{{brand_logo_url}}" alt="{{brand_name}}">
         <h1>{{brand_name}}</h1>
         <p>Password Reset</p>
@@ -64,7 +64,7 @@
       <div id="forgotMsg" class="alert hidden"></div>
 
       <div class="auth-footer">
-        <a href="/admin/login" class="auth-link">← Back to sign in</a>
+        <a href="/admin/login?__tenant={{tenant_slug}}" class="auth-link">← Back to sign in</a>
       </div>
     </div>
   </main>
