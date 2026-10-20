@@ -87,6 +87,20 @@
 
   <main class="settings-wrap" style="max-width:900px;">
 
+    <!-- Step 2: Recording As banner -->
+    <div id="recordingBanner" class="settings-card" style="display:none; margin-bottom:1rem; padding:.85rem 1rem;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap;">
+        <div>
+          <div style="font-size:.72rem; text-transform:uppercase; letter-spacing:.6px; color:#888; font-weight:600;">Recording As</div>
+          <div id="recordingAsName" style="font-size:1.15rem; font-weight:700; margin-top:.15rem;">&mdash;</div>
+          <div id="recordingAsSub" style="font-size:.78rem; color:#888; margin-top:.15rem;"></div>
+        </div>
+        <div id="recordingActions" style="display:none;">
+          <button id="changeRecordingAsBtn" type="button" class="btn-secondary">Change</button>
+        </div>
+      </div>
+    </div>
+
     <div id="firstDayCard" class="settings-card" style="display:none;border-left:4px solid #1976d2;">
       <h2>&#x1F4A7; First Day Setup Required</h2>
       <p class="form-hint-small">
@@ -1020,5 +1034,169 @@
       impBtn.addEventListener('click', function () { post(false); });
     })();
   </script>
+
+  <!-- Step 2: Recording As modal -->
+  <div id="recordingAsModal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Change Recording As</h3>
+        <button type="button" class="modal-close" onclick="closeRecordingAsModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="form-hint-small" style="margin-bottom:.75rem;">
+          All new sales and payments recorded in this session will be attributed to the user selected below.
+          You can change this back at any time.
+        </p>
+        <div id="recordingAsOptions">
+          <p class="form-hint-small">Loading&hellip;</p>
+        </div>
+        <div id="recordingAsMsg" class="alert hidden" style="margin-top:.5rem;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" onclick="closeRecordingAsModal()">Cancel</button>
+        <button type="button" class="btn-primary" id="recordingAsSaveBtn" onclick="saveRecordingAs()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Recording As logic -->
+  <script>
+    (async () => {
+      const banner = document.getElementById('recordingBanner');
+      if (!banner) return;
+
+      let ME = null;
+      try {
+        const r = await fetch('/api/admin/whoami', { credentials: 'same-origin' });
+        if (r.ok) ME = await r.json();
+      } catch {}
+      if (!ME || !ME.authenticated) return;
+
+      const role = ME.user_role || 'admin';
+      const isAdmin = role === 'admin';
+      const selfUsername = ME.username || '';
+      const recordingAs = ME.recording_as || selfUsername;
+      const isToggled = isAdmin && recordingAs !== selfUsername;
+
+      banner.style.display = 'block';
+      if (isToggled) {
+        banner.style.background = '#fff3e0';
+        banner.style.borderLeft = '4px solid #f57c00';
+      } else {
+        banner.style.background = '#e3f2fd';
+        banner.style.borderLeft = '4px solid #1976d2';
+      }
+
+      const nameEl = document.getElementById('recordingAsName');
+      const subEl  = document.getElementById('recordingAsSub');
+      if (nameEl) nameEl.textContent = recordingAs;
+      if (subEl) {
+        if (isToggled) {
+          subEl.textContent = '\u26a0\ufe0f Recording as ' + recordingAs + ' \u2014 you are signed in as ' + selfUsername;
+          subEl.style.color = '#e65100';
+          subEl.style.fontWeight = '600';
+        } else if (isAdmin) {
+          subEl.textContent = 'All new sales and payments will be attributed to this name.';
+          subEl.style.color = '#666';
+          subEl.style.fontWeight = '400';
+        } else {
+          subEl.textContent = 'Employee session \u2014 all records attributed to you.';
+          subEl.style.color = '#666';
+          subEl.style.fontWeight = '400';
+        }
+      }
+
+      const actionsEl = document.getElementById('recordingActions');
+      if (isAdmin && actionsEl) actionsEl.style.display = 'block';
+
+      let activeEmployees = [];
+      if (isAdmin) {
+        try {
+          const r = await fetch('/api/admin/team', { credentials: 'same-origin' });
+          if (r.ok) {
+            const d = await r.json();
+            activeEmployees = (d.team || []).filter(m =>
+              m.is_active && m.user_role === 'employee'
+            );
+          }
+        } catch {}
+      }
+
+      const esc = (x) => String(x == null ? '' : x)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+
+      window.openRecordingAsModal = function () {
+        const opts = document.getElementById('recordingAsOptions');
+        const msg  = document.getElementById('recordingAsMsg');
+        if (msg) msg.classList.add('hidden');
+
+        let html = '';
+        const selfChecked = !isToggled ? 'checked' : '';
+        html += '<label style="display:flex; align-items:center; gap:.5rem; padding:.6rem .75rem; border:1px solid #e0e0e0; border-radius:6px; margin-bottom:.5rem; cursor:pointer; background:#f8f9fa;">' +
+          '<input type="radio" name="recordingTarget" value="' + esc(selfUsername) + '" ' + selfChecked + '>' +
+          '<span style="flex:1;"><strong>' + esc(selfUsername) + '</strong> (myself)</span>' +
+          '<span style="font-size:.7rem; background:#e3f2fd; color:#0d47a1; padding:.15rem .5rem; border-radius:99px; font-weight:600;">ADMIN</span>' +
+          '</label>';
+
+        if (activeEmployees.length) {
+          html += '<div style="font-size:.72rem; text-transform:uppercase; letter-spacing:.6px; color:#888; font-weight:600; margin:.85rem 0 .4rem;">Or record as an employee</div>';
+          activeEmployees.forEach(m => {
+            const checked = m.username === recordingAs ? 'checked' : '';
+            html += '<label style="display:flex; align-items:center; gap:.5rem; padding:.6rem .75rem; border:1px solid #e0e0e0; border-radius:6px; margin-bottom:.5rem; cursor:pointer;">' +
+              '<input type="radio" name="recordingTarget" value="' + esc(m.username) + '" ' + checked + '>' +
+              '<span style="flex:1;">' + esc(m.username) + '</span>' +
+              '<span style="font-size:.7rem; background:#fff3e0; color:#e65100; padding:.15rem .5rem; border-radius:99px; font-weight:600;">EMPLOYEE</span>' +
+              '</label>';
+          });
+        } else {
+          html += '<p class="form-hint-small" style="margin-top:.85rem; opacity:.7;">No active employees yet. Add team members from Settings \u2192 Team Members.</p>';
+        }
+
+        opts.innerHTML = html;
+        document.getElementById('recordingAsModal').classList.remove('hidden');
+      };
+
+      window.closeRecordingAsModal = function () {
+        document.getElementById('recordingAsModal').classList.add('hidden');
+      };
+
+      window.saveRecordingAs = async function () {
+        const btn = document.getElementById('recordingAsSaveBtn');
+        const msg = document.getElementById('recordingAsMsg');
+        const orig = btn.textContent;
+        btn.disabled = true; btn.textContent = 'Saving\u2026';
+
+        const selected = document.querySelector('input[name="recordingTarget"]:checked');
+        if (!selected) {
+          if (msg) { msg.className = 'alert alert-error'; msg.textContent = 'Select an option.'; }
+          btn.disabled = false; btn.textContent = orig;
+          return;
+        }
+
+        try {
+          const r = await fetch('/api/admin/dispense/recording_as', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ as: selected.value }),
+          });
+          const d = await r.json();
+          if (r.ok && d.ok) {
+            location.reload();
+          } else {
+            if (msg) { msg.className = 'alert alert-error'; msg.textContent = d.error || 'Change failed.'; }
+            btn.disabled = false; btn.textContent = orig;
+          }
+        } catch {
+          if (msg) { msg.className = 'alert alert-error'; msg.textContent = 'Network error.'; }
+          btn.disabled = false; btn.textContent = orig;
+        }
+      };
+
+      const changeBtn = document.getElementById('changeRecordingAsBtn');
+      if (changeBtn) changeBtn.addEventListener('click', window.openRecordingAsModal);
+    })();
+  </script>
+
 </body>
 </html>
