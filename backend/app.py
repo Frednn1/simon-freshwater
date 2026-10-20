@@ -4373,8 +4373,14 @@ def admin_dispense_reading_post():
             }), 400
         if opening < 0 or opening > 10_000_000:
             return jsonify({"error": "Opening reading is out of range."}), 400
+    elif existing is not None:
+        # Correction: the STORED opening is the source of truth. Never
+        # recompute — that would risk drifting from the historical capture
+        # (design §5.5) and would also break the closing >= opening check.
+        opening = float(existing.opening_reading_m3)
     else:
-        # Auto-compute from previous day's closing, ignore any body value
+        # New reading for a day where yesterday's reading exists: compute
+        # opening from previous day's closing.
         opening = float(previous.closing_reading_m3) if previous else 0.0
 
     if closing < opening:
