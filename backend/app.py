@@ -256,6 +256,51 @@ def _render_tenant_unavailable(tenant):
 
 
 @app.before_request
+def _before_request_employee_path_guard():
+    """Restrict employees (user_role="employee") to the dispensing surface only."""
+    if not session.get("admin_id"):
+        return
+    if session.get("user_role", "admin") != "employee":
+        return
+
+    p = request.path or ""
+    if p in _STATIC_PATH_EXACT or p.startswith(_STATIC_PATH_PREFIXES):
+        return
+
+    ALLOWED_EXACT = {
+        "/dispense",
+        "/admin/settings",
+        "/api/admin/whoami",
+        "/api/admin/logout",
+        "/api/admin/settings",
+        "/api/admin/settings/username",
+        "/api/admin/settings/phone",
+        "/api/admin/settings/password",
+        "/api/tenant/is-active",
+        "/manifest.webmanifest",
+    }
+    ALLOWED_PREFIXES = (
+        "/dispense/",
+        "/api/admin/dispense/",
+        "/api/public/",
+        "/tenant/favicon/",
+        "/tenant/logo/",
+        "/dev.css",
+        "/style.css",
+        "/tenant-watchdog.js",
+        "/images/",
+    )
+    if p in ALLOWED_EXACT:
+        return
+    for pre in ALLOWED_PREFIXES:
+        if p.startswith(pre):
+            return
+    return jsonify({
+        "error": "Forbidden. Employees can only access the dispensing portal."
+    }), 403
+
+
+@app.before_request
 def _before_request_inactive_default_503():
     p = request.path or ""
     # Static + assets: never gate
@@ -1095,6 +1140,8 @@ def _ensure_all_columns():
         a_alters = []
         if "password_changed_at" not in existing:
             a_alters.append(f"ADD COLUMN password_changed_at {TIME_T} NULL")
+        if "user_role" not in existing:
+            a_alters.append("ADD COLUMN user_role VARCHAR(20) NOT NULL DEFAULT 'admin'")
         for alt in a_alters:
             db.session.execute(text(f"ALTER TABLE admin_users {alt}"))
         if a_alters:
@@ -4242,6 +4289,33 @@ def notify_consumer(consumer_id):
 #  ADMIN AUTH
 # ═══════════════════════════════════════════════
 
+def _dispense_recorded_by():
+    """Username to stamp on a dispensing write. If session has a valid
+    recording_as target (an active employee of the current admin's tenant),
+    return that; otherwise return the current admin's own username.
+    Self-heals stale toggles by popping session["recording_as"]."""
+    base = session.get("admin_username") or "?"
+    target = session.get("recording_as")
+    if not target or target == base:
+        return base
+    try:
+        cur = _current_admin()
+        if not cur or not cur.tenant_id:
+            session.pop("recording_as", None)
+            return base
+        t = (AdminUser.query
+             .filter_by(username=target, is_active=True,
+                        user_role="employee", tenant_id=cur.tenant_id)
+             .first())
+        if not t:
+            session.pop("recording_as", None)
+            return base
+        return t.username
+    except Exception:
+        session.pop("recording_as", None)
+        return base
+
+
 @app.route("/api/admin/whoami")
 def admin_whoami():
     setup_required = _tenant_query(AdminUser).count() == 0
@@ -4252,9 +4326,11 @@ def admin_whoami():
         return jsonify({
             "authenticated": True,
             "username": admin.username,
+            "user_role": session.get("user_role", "admin"),
             "setup_required": False,
             "active_profile": _prof,
             "enabled_profiles": _enabled,
+            "recording_as": _dispense_recorded_by(),
         })
     return jsonify({"authenticated": False, "setup_required": setup_required})
 
@@ -4367,10 +4443,15 @@ def admin_login_route():
     # admin's OWN tenant_id (not the URL tenant). Defaults to billing
     # if anything goes wrong — matches every existing tenant's state.
     _initial_profile = "billing"
+    _init_role = "admin"
     try:
         _init_ar = AdminUser.query.get(result["admin_id"])
         if _init_ar and _init_ar.tenant_id:
             _initial_profile = _initial_profile_for(_init_ar.tenant_id)
+            _init_role = getattr(_init_ar, "user_role", "admin") or "admin"
+            # Employees are restricted to the dispensing profile
+            if _init_role == "employee":
+                _initial_profile = "dispensing"
     except Exception:
         pass
 
@@ -4400,6 +4481,7 @@ def admin_login_route():
         session["last_activity"] = datetime.utcnow().isoformat()
         session["__tenant_slug"] = _admin_slug
         session["active_profile"] = _initial_profile
+        session["user_role"] = _init_role
 
         return jsonify({
             "ok": True,
@@ -4416,6 +4498,7 @@ def admin_login_route():
     session["login_at"] = datetime.utcnow().isoformat()
     session["__tenant_slug"] = _admin_slug
     session["active_profile"] = _initial_profile
+    session["user_role"] = _init_role
     _audit("login")
     return jsonify({"ok": True, "username": result["username"]}), 200
 
@@ -4900,7 +4983,7 @@ def admin_dispense_reading_post():
             opening_reading_m3=opening,
             closing_reading_m3=closing,
             consumption_m3=consumption,
-            recorded_by=session.get("admin_username"),
+            recorded_by=_dispense_recorded_by(),
         )
         db.session.add(row)
         db.session.commit()
@@ -4915,7 +4998,7 @@ def admin_dispense_reading_post():
         old_closing = float(existing.closing_reading_m3)
         existing.closing_reading_m3 = closing
         existing.consumption_m3 = consumption
-        existing.recorded_by = session.get("admin_username")
+        existing.recorded_by = _dispense_recorded_by()
         db.session.commit()
         _audit("dispense_reading_corrected",
                target_type="tenant", target_id=tenant_id,
@@ -5023,7 +5106,7 @@ def admin_dispense_payments_post():
 
     reference = (data.get("reference") or "").strip()[:80]
     notes = (data.get("notes") or "").strip()[:500]
-    admin_username = session.get("admin_username") or "?"
+    admin_username = _dispense_recorded_by()
 
     if method in ("mpesa_c2b", "manual") and not reference:
         return jsonify({"error": "Reference is required for M-Pesa payments."}), 400
@@ -5221,7 +5304,7 @@ def admin_dispense_sales_post():
     price = float(rate.price_kes)
     total = round(price * qty, 2)
     notes = (data.get("notes") or "").strip()[:500]
-    admin_username = session.get("admin_username") or "?"
+    admin_username = _dispense_recorded_by()
 
     today = _nairobi_today()
     row = DispenseSale(
@@ -5458,7 +5541,7 @@ def admin_dispense_sales_bulk_import():
             "total_liters": total_l,
         })
 
-    admin_username = session.get("admin_username") or "?"
+    admin_username = _dispense_recorded_by()
     try:
         created_ids = []
         for p in parsed:
@@ -7386,6 +7469,211 @@ def admin_d1_backup_run():
 
     status = 200 if result.get("ok") else 500
     return jsonify(result), status
+
+
+# ═══════════════════════════════════════════════
+#  TEAM MANAGEMENT + RECORDING-AS (Step 2)
+# ═══════════════════════════════════════════════
+
+def _require_team_admin():
+    """Return error if the caller is not an admin-role user of their tenant."""
+    u = _require_admin()
+    if u: return u
+    if session.get("user_role", "admin") != "admin":
+        return jsonify({"error": "Only admins can manage the team."}), 403
+    return None
+
+
+@app.route("/api/admin/team", methods=["GET"])
+def admin_team_get():
+    u = _require_team_admin()
+    if u: return u
+    if not _rate_limit("team_get", 30, 60):
+        return _too_many(60)
+    admin = _current_admin()
+    if not admin or not admin.tenant_id:
+        return jsonify({"error": "Unauthorized."}), 401
+    rows = (AdminUser.query
+            .filter_by(tenant_id=admin.tenant_id)
+            .order_by(AdminUser.id.asc())
+            .all())
+    out = []
+    for a in rows:
+        role = getattr(a, "user_role", "admin") or "admin"
+        out.append({
+            "id": a.id,
+            "username": a.username,
+            "user_role": role,
+            "is_super": bool(getattr(a, "is_super", False)),
+            "is_active": bool(a.is_active),
+            "phone_tail": (a.phone[-4:] if a.phone and len(a.phone) >= 4 else None),
+            "email": a.email,
+            "last_login_at": a.last_login_at.isoformat() if a.last_login_at else None,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+            "is_self": (a.id == admin.id),
+        })
+    return jsonify({"ok": True, "team": out, "current_user_id": admin.id})
+
+
+@app.route("/api/admin/team", methods=["POST"])
+def admin_team_create():
+    u = _require_team_admin()
+    if u: return u
+    if not _rate_limit("team_create", 10, 60):
+        return _too_many(60)
+    admin = _current_admin()
+    if not admin or not admin.tenant_id:
+        return jsonify({"error": "Unauthorized."}), 401
+
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip().lower()
+    password = data.get("password") or ""
+    phone    = (data.get("phone") or "").strip()
+    email    = (data.get("email") or "").strip() or None
+
+    if len(username) < 3:
+        return jsonify({"error": "Username must be at least 3 characters."}), 400
+    if len(username) > 60:
+        return jsonify({"error": "Username too long (max 60)."}), 400
+    if len(password) < 8:
+        return jsonify({"error": "Password must be at least 8 characters."}), 400
+    if not phone:
+        return jsonify({"error": "Phone is required for password reset."}), 400
+    if not all(c.isalnum() or c in "@._-" for c in username):
+        return jsonify({"error": "Username can only contain letters, digits, @ . _ -"}), 400
+    if AdminUser.query.filter_by(username=username).first():
+        return jsonify({"error": "Username already taken."}), 409
+
+    emp = AdminUser(
+        tenant_id=admin.tenant_id,
+        username=username,
+        password_hash=generate_password_hash(password),
+        phone=phone,
+        email=email,
+        is_active=True,
+        is_super=False,
+        user_role="employee",
+    )
+    db.session.add(emp)
+    db.session.commit()
+
+    _audit("team_member_created",
+           target_type="tenant", target_id=admin.tenant_id,
+           detail=f"username={username} role=employee")
+    return jsonify({
+        "ok": True,
+        "member": {"id": emp.id, "username": emp.username, "user_role": "employee"},
+    }), 201
+
+
+@app.route("/api/admin/team/<int:user_id>/deactivate", methods=["POST"])
+def admin_team_deactivate(user_id):
+    u = _require_team_admin()
+    if u: return u
+    if not _rate_limit("team_deactivate", 20, 60):
+        return _too_many(60)
+    admin = _current_admin()
+    if not admin or not admin.tenant_id:
+        return jsonify({"error": "Unauthorized."}), 401
+
+    target = AdminUser.query.filter_by(id=user_id, tenant_id=admin.tenant_id).first()
+    if not target:
+        return jsonify({"error": "Team member not found."}), 404
+    if target.id == admin.id:
+        return jsonify({"error": "You cannot deactivate your own account."}), 400
+    if getattr(target, "is_super", False):
+        return jsonify({"error": "Super-admin accounts cannot be deactivated here."}), 400
+    if not target.is_active:
+        return jsonify({"error": "Already deactivated."}), 400
+
+    # Must keep at least one active admin in the tenant
+    if (getattr(target, "user_role", "admin") or "admin") == "admin":
+        active_admins = (AdminUser.query
+                         .filter_by(tenant_id=admin.tenant_id, is_active=True,
+                                    user_role="admin")
+                         .filter(AdminUser.id != target.id)
+                         .count())
+        if active_admins < 1:
+            return jsonify({"error": "Cannot deactivate the last active admin."}), 400
+
+    target.is_active = False
+    db.session.commit()
+    _audit("team_member_deactivated",
+           target_type="tenant", target_id=admin.tenant_id,
+           detail=f"username={target.username}")
+    return jsonify({"ok": True, "deactivated_id": target.id})
+
+
+@app.route("/api/admin/team/<int:user_id>/reactivate", methods=["POST"])
+def admin_team_reactivate(user_id):
+    u = _require_team_admin()
+    if u: return u
+    if not _rate_limit("team_reactivate", 20, 60):
+        return _too_many(60)
+    admin = _current_admin()
+    if not admin or not admin.tenant_id:
+        return jsonify({"error": "Unauthorized."}), 401
+
+    target = AdminUser.query.filter_by(id=user_id, tenant_id=admin.tenant_id).first()
+    if not target:
+        return jsonify({"error": "Team member not found."}), 404
+    if target.is_active:
+        return jsonify({"error": "Already active."}), 400
+
+    target.is_active = True
+    target.failed_attempts = 0
+    target.locked_until = None
+    db.session.commit()
+    _audit("team_member_reactivated",
+           target_type="tenant", target_id=admin.tenant_id,
+           detail=f"username={target.username}")
+    return jsonify({"ok": True, "reactivated_id": target.id})
+
+
+@app.route("/api/admin/dispense/recording_as", methods=["POST"])
+def admin_dispense_recording_as():
+    """Admin-only: set which user's name gets stamped on dispensing writes.
+    Target must be self OR an active employee of the same tenant."""
+    u = _require_team_admin()
+    if u: return u
+    if not _rate_limit("dispense_recording_as", 30, 60):
+        return _too_many(60)
+
+    admin = _current_admin()
+    if not admin or not admin.tenant_id:
+        return jsonify({"error": "Unauthorized."}), 401
+
+    enabled = _tenant_profiles_dict(admin.tenant_id)
+    if not enabled.get("dispensing"):
+        return jsonify({"error": "Dispensing is not enabled for this tenant."}), 403
+
+    data = request.get_json(silent=True) or {}
+    target_username = (data.get("as") or "").strip().lower()
+    if not target_username:
+        return jsonify({"error": "Missing 'as'."}), 400
+
+    # self → clear toggle
+    if target_username == (admin.username or "").lower():
+        _prev = session.pop("recording_as", None)
+        _audit("dispense_recording_as_changed",
+               target_type="tenant", target_id=admin.tenant_id,
+               detail=f"from={_prev or admin.username} to={admin.username} (self)")
+        return jsonify({"ok": True, "recording_as": admin.username})
+
+    # employee of same tenant
+    emp = (AdminUser.query
+           .filter_by(tenant_id=admin.tenant_id, username=target_username,
+                      user_role="employee", is_active=True)
+           .first())
+    if not emp:
+        return jsonify({"error": "Target is not an active employee of this tenant."}), 400
+
+    _prev = session.get("recording_as") or admin.username
+    session["recording_as"] = emp.username
+    _audit("dispense_recording_as_changed",
+           target_type="tenant", target_id=admin.tenant_id,
+           detail=f"from={_prev} to={emp.username}")
+    return jsonify({"ok": True, "recording_as": emp.username})
 
 
 @app.route("/api/admin/consumers/all", methods=["GET"])

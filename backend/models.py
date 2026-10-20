@@ -120,6 +120,11 @@ class AdminUser(db.Model):
     email = db.Column(db.String(120))
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     is_super = db.Column(db.Boolean, nullable=False, default=False)
+    # Role for team management — "admin" | "employee". Defaults to "admin"
+    # so every pre-existing account keeps full access. Employees are
+    # restricted by _before_request_employee_path_guard to /dispense and
+    # its APIs only.
+    user_role = db.Column(db.String(20), nullable=False, default="admin")
     failed_attempts = db.Column(db.Integer, default=0, nullable=False)
     locked_until = db.Column(db.DateTime)
     last_login_at = db.Column(db.DateTime)
