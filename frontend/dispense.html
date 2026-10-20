@@ -19,7 +19,15 @@
     .dtable { width: 100%; border-collapse: collapse; font-size: .85rem; margin-top: .5rem; }
     .dtable th { text-align: left; padding: .5rem; border-bottom: 2px solid #e0e0e0; background: #fafafa; font-weight: 600; white-space: nowrap; }
     .dtable td { padding: .45rem .5rem; border-bottom: 1px solid #eee; }
-    .dtable td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .dtable th,
+    .dtable td,
+    .dtable th.num,
+    .dtable td.num {
+      text-align: left;
+    }
+    .dtable td.num {
+      font-variant-numeric: tabular-nums;
+    }
     .variance-zero { color: #2e7d32; font-weight: 600; }
     .variance-nonzero { color: #c62828; font-weight: 600; }
     .status-pill { display: inline-block; padding: .15rem .5rem; border-radius: 99px; font-size: .72rem; font-weight: 600; white-space: nowrap; }
