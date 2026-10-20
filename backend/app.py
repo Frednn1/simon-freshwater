@@ -3,6 +3,7 @@ import re
 import json
 import secrets
 import hmac
+import math
 import ipaddress
 from datetime import datetime, date, timedelta, timezone
 from collections import deque
@@ -5257,6 +5258,11 @@ def admin_create_consumer():
         lng = float(longitude) if longitude not in (None, "", "null") else None
     except (ValueError, TypeError):
         return jsonify({"error": "latitude/longitude must be numbers."}), 400
+    # C5e1 Finding #5: reject NaN/inf — they defeat range checks below.
+    if lat is not None and not math.isfinite(lat):
+        return jsonify({"error": "latitude must be a finite number."}), 400
+    if lng is not None and not math.isfinite(lng):
+        return jsonify({"error": "longitude must be a finite number."}), 400
     if lat is not None and not (-90 <= lat <= 90):
         return jsonify({"error": "latitude must be between -90 and 90."}), 400
     if lng is not None and not (-180 <= lng <= 180):
@@ -5266,7 +5272,9 @@ def admin_create_consumer():
         initial = float(initial_raw) if initial_raw not in (None, "", "null") else 0.0
     except (ValueError, TypeError):
         return jsonify({"error": "meter_initial_reading_m3 must be a number."}), 400
-    if initial < 0 or initial > 1_000_000:
+    # C5e1 Finding #5: math.isfinite guards against NaN/inf, which pass
+    # both comparison checks above and corrupt consumption math.
+    if not math.isfinite(initial) or initial < 0 or initial > 1_000_000:
         return jsonify({"error": "meter_initial_reading_m3 out of range."}), 400
 
     c = Consumer(cust_name=cust_name, acc_name=acc_name,
@@ -5279,7 +5287,17 @@ def admin_create_consumer():
                  alt_whatsapp_opt_in=alt_whatsapp_opt_in,
                  tenant_id=_tid)
     db.session.add(c)
-    db.session.commit()
+    # C5e1 Finding #4: consumer.meter_acc_no has a GLOBAL unique constraint,
+    # but the pre-check above is tenant-scoped. A cross-tenant collision
+    # reaches this commit and would 500 without the except. Return a clean
+    # 409 instead. Capture the value before commit — after a rollback the
+    # pending object is expunged and its attributes may be inaccessible.
+    _meter = meter_acc_no
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": f"Meter account {_meter} is already in use."}), 409
 
     _audit("create_consumer",
            target_type="consumer", target_id=c.id,
@@ -5334,14 +5352,30 @@ def admin_update_consumer(consumer_id):
             if v in (None, "", "null"):
                 setattr(consumer, f, None)
             else:
-                try: setattr(consumer, f, float(v))
+                try: _llv = float(v)
                 except (ValueError, TypeError):
                     return jsonify({"error": f"{f} must be a number."}), 400
+                # C5e1 Finding #5: reject NaN/inf — they pass every
+                # comparison (`nan < -90` is False) and would corrupt
+                # any downstream geolocation math.
+                if not math.isfinite(_llv):
+                    return jsonify({"error": f"{f} must be a finite number."}), 400
+                if f == "latitude" and not (-90 <= _llv <= 90):
+                    return jsonify({"error": "latitude must be between -90 and 90."}), 400
+                if f == "longitude" and not (-180 <= _llv <= 180):
+                    return jsonify({"error": "longitude must be between -180 and 180."}), 400
+                setattr(consumer, f, _llv)
         elif f == "meter_initial_reading_m3":
             try:
-                setattr(consumer, f, float(v) if v not in (None, "", "null") else 0.0)
+                _init = float(v) if v not in (None, "", "null") else 0.0
             except (ValueError, TypeError):
                 return jsonify({"error": "meter_initial_reading_m3 must be a number."}), 400
+            # C5e1 Finding #2: reject negative / out-of-range / NaN initial
+            # readings. A negative value inflates every future bill by the
+            # full magnitude; a huge value produces enormous false credit.
+            if not math.isfinite(_init) or _init < 0 or _init > 1_000_000:
+                return jsonify({"error": "meter_initial_reading_m3 out of range."}), 400
+            setattr(consumer, f, _init)
         elif f == "whatsapp_opt_in":
             # Accept bool, int (0/1), or strings "true"/"false"/"1"/"0"
             if isinstance(v, bool):
@@ -5374,7 +5408,14 @@ def admin_update_consumer(consumer_id):
     if not consumer.alt_contact and consumer.alt_whatsapp_opt_in:
         consumer.alt_whatsapp_opt_in = False
 
-    db.session.commit()
+    # C5e1 Finding #4: same cross-tenant collision concern as create — the
+    # DB unique constraint is global, the pre-check is tenant-scoped.
+    _meter = consumer.meter_acc_no
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": f"Meter account {_meter} is already in use."}), 409
 
     _audit("update_consumer",
            target_type="consumer", target_id=consumer.id,
@@ -5660,6 +5701,11 @@ def admin_record_payment(consumer_id):
         method=method,
         reference=reference or None,
         recorded_by=recorded_by,
+        # C5e1 Finding #1: PaymentLog.tenant_id must match the consumer's
+        # tenant. Without this line the model default (1) tags every
+        # manual payment as Simon Fresh Water's, breaking receipt
+        # downloads for any other tenant and misattributing reports.
+        tenant_id=consumer.tenant_id,
     )
     db.session.add(log)
     db.session.flush()   # get log.id
