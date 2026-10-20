@@ -6036,9 +6036,18 @@ def admin_seed():
 def admin_recompute_amounts():
     u = _require_admin()
     if u: return u
+    # C5e2 Fix 3: rate limit (was unlimited)
+    if not _rate_limit("recompute_amounts", 3, 300):
+        return _too_many(300)
 
-    updated = scanned = 0
-    for c in Consumer.query.all():
+    # C5e2 Fix 1: tenant-scoped. Before: Consumer.query.all() rewrote the
+    # amount_kes of EVERY reading of EVERY tenant on a single call.
+    tid = _write_tenant_id()
+    if tid < 1:
+        return jsonify({"error": "No tenant context for this request."}), 400
+
+    updated = scanned = skipped_paid = 0
+    for c in Consumer.query.filter_by(tenant_id=tid).all():
         initial = float(c.meter_initial_reading_m3 or 0.0)
         readings = (MeterReading.query
                     .filter_by(consumer_id=c.id)
@@ -6048,14 +6057,32 @@ def admin_recompute_amounts():
         for r in readings:
             scanned += 1
             new_amt = compute_amount(r.reading_m3, prev_m3, initial)
+            # C5e2 Fix 2: never modify a bill that has any money applied.
+            # Silent recompute of a paid bill would make it appear unpaid
+            # and create false debt (amount_kes increases) or wipe credit
+            # (amount_kes decreases) without the admin's intent.
+            if (r.amount_paid or 0.0) > 0:
+                if abs(new_amt - (r.amount_kes or 0.0)) > 0.001:
+                    skipped_paid += 1
+                prev_m3 = r.reading_m3
+                continue
             if abs(new_amt - (r.amount_kes or 0.0)) > 0.001:
                 r.amount_kes = new_amt
                 updated += 1
             prev_m3 = r.reading_m3
 
     db.session.commit()
-    return jsonify({"ok": True, "readings_scanned": scanned,
-                    "readings_updated": updated}), 200
+    # C5e2 Fix 4: audit trail
+    _audit("recompute_amounts",
+           target_type="tenant", target_id=tid,
+           detail=f"scanned={scanned} updated={updated} skipped_paid={skipped_paid}")
+    return jsonify({
+        "ok": True,
+        "tenant_id": tid,
+        "readings_scanned": scanned,
+        "readings_updated": updated,
+        "readings_skipped_paid": skipped_paid,
+    }), 200
 
 
 # ═══════════════════════════════════════════════
