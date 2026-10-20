@@ -20,6 +20,21 @@ from flask import (
 from sqlalchemy import text, inspect
 from sqlalchemy.exc import IntegrityError
 
+# ── Pillow decompression-bomb guard (C5c) ──
+# Cap the maximum pixels Pillow will decode in a single image. Without
+# this, a 500 KB crafted PNG can decompress to ~400 MB in memory during
+# favicon generation (triggered anonymously via /tenant/favicon/<slug>),
+# causing OOM kills on free-tier instances. 16.7 MP = 4096×4096 × 4 bytes
+# ≈ 67 MB per decode — safe ceiling for a logo, still allows high-res
+# uploads. When this ceiling is exceeded, Pillow raises
+# DecompressionBombError at open() time BEFORE allocating pixel memory.
+try:
+    import PIL.Image as _PILImage
+    _PILImage.MAX_IMAGE_PIXELS = 16_777_216
+    _PIL_AVAILABLE = True
+except Exception:
+    _PIL_AVAILABLE = False
+
 from models import (
     db, Consumer, MeterReading, NotificationLog,
     AdminUser, PaymentLog, MpesaLog, SentBillArchive, AdminAuditLog,
@@ -1557,6 +1572,23 @@ def admin_tenants_upload_logo(tenant_id):
     _ok, _err = _validate_image_magic(data, ctype)
     if not _ok:
         return jsonify({"error": _err}), 400
+
+    # C5c: decode-probe guard. Verifies the image actually opens and stays
+    # under MAX_IMAGE_PIXELS BEFORE storing. Catches (a) files with valid
+    # magic bytes but a broken/corrupted body, and (b) crafted decompression
+    # bombs that would OOM the favicon generator on any anonymous
+    # /tenant/favicon/<slug> request after being stored.
+    if _PIL_AVAILABLE:
+        try:
+            from io import BytesIO as _ProbeBytesIO
+            _probe = _PILImage.open(_ProbeBytesIO(data))
+            _probe.load()
+            _probe.close()
+        except _PILImage.DecompressionBombError:
+            return jsonify({"error": "Image dimensions are too large (decompression bomb)."}), 400
+        except Exception as e:
+            return jsonify({"error": f"Image is corrupted or unreadable: {e}"}), 400
+
     key = f"logos/{t.slug}/logo{ALLOWED[ctype]}"
     if not archive.upload_object(key, data, ctype):
         return jsonify({"error": "Storage upload failed."}), 502
@@ -2657,8 +2689,15 @@ def _tenant_favicon_png(slug: str, size: int = 192):
         from PIL import Image
         from io import BytesIO
 
-        im = Image.open(BytesIO(data))
-        im.load()
+        try:
+            im = Image.open(BytesIO(data))
+            im.load()
+        except Image.DecompressionBombError:
+            try:
+                app.logger.warning(f"[Favicon] decompression bomb rejected for {slug}@{size}")
+            except Exception:
+                pass
+            return None
 
         # Flatten transparency to white so the favicon looks consistent on
         # every browser theme.
