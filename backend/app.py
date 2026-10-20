@@ -1230,7 +1230,17 @@ def _svg_render_bars(labels, series, title="", width=900, height=240):
             return _svg_empty_state(title)
 
         m = len(series)
-        pad_l, pad_r, pad_t, pad_b = 64, 20, 46, 54
+
+        # Widen the viewBox in proportion to the number of bars, and set
+        # the same width as the SVG's CSS min-width. This keeps scale = 1
+        # (so SVG-internal font sizes render at native pixel sizes) while
+        # the parent container scrolls horizontally when the SVG is wider
+        # than the viewport.
+        min_w = max(900, n * 50)
+        if min_w > width:
+            width = min_w
+
+        pad_l, pad_r, pad_t, pad_b = 64, 20, 46, 60
         cw = width - pad_l - pad_r
         ch = height - pad_t - pad_b
 
@@ -1255,18 +1265,19 @@ def _svg_render_bars(labels, series, title="", width=900, height=240):
         parts = []
         parts.append(
             f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
-            'style="width:100%;height:auto;font-family:system-ui,-apple-system,sans-serif;">'
+            f'style="width:100%;min-width:{width}px;height:auto;display:block;'
+            'font-family:system-ui,-apple-system,sans-serif;">'
         )
         parts.append(f'<rect x="0" y="0" width="{width}" height="{height}" fill="#fafafa" rx="6"/>')
         if title:
             safe_title = str(title).replace("<", "&lt;").replace(">", "&gt;")[:80]
-            parts.append(f'<text x="{pad_l}" y="24" font-size="13" font-weight="600" fill="#333">{safe_title}</text>')
+            parts.append(f'<text x="{pad_l}" y="24" font-size="14" font-weight="600" fill="#333">{safe_title}</text>')
 
         for i in range(6):
             y_val = (y_max / 5) * i
             y = _y(y_val)
             parts.append(f'<line x1="{pad_l}" y1="{y:.1f}" x2="{width - pad_r}" y2="{y:.1f}" stroke="#e0e0e0" stroke-width="1"/>')
-            parts.append(f'<text x="{pad_l - 6}" y="{y + 4:.1f}" font-size="10" fill="#666" text-anchor="end">{_fmt_axis(y_val)}</text>')
+            parts.append(f'<text x="{pad_l - 6}" y="{y + 4:.1f}" font-size="11" fill="#666" text-anchor="end">{_fmt_axis(y_val)}</text>')
 
         for i, lbl in enumerate(labels):
             gx = pad_l + (i * group_w) + (inner_pad / 2)
@@ -1283,13 +1294,13 @@ def _svg_render_bars(labels, series, title="", width=900, height=240):
                 )
             lx = pad_l + (i + 0.5) * group_w
             safe_lbl = str(lbl).replace("<", "&lt;").replace(">", "&gt;")[:10]
-            parts.append(f'<text x="{lx:.1f}" y="{pad_t + ch + 16}" font-size="10" fill="#666" text-anchor="middle">{safe_lbl}</text>')
+            parts.append(f'<text x="{lx:.1f}" y="{pad_t + ch + 16}" font-size="11" fill="#666" text-anchor="middle">{safe_lbl}</text>')
 
         lx = pad_l
         ly = pad_t + ch + 36
         for sr in series:
             parts.append(f'<rect x="{lx}" y="{ly}" width="10" height="10" fill="{sr["color"]}" rx="1"/>')
-            parts.append(f'<text x="{lx + 14}" y="{ly + 9}" font-size="11" fill="#444">{sr["name"]}</text>')
+            parts.append(f'<text x="{lx + 14}" y="{ly + 10}" font-size="12" fill="#444">{sr["name"]}</text>')
             lx += 14 + len(sr["name"]) * 7 + 20
 
         parts.append('</svg>')

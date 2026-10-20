@@ -22,7 +22,12 @@
     .aPreset a:hover { border-color: #90caf9; }
     .aRange { display: flex; gap: .5rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: .75rem; }
     .aRange .form-row { margin: 0; }
-    .aChart { margin-top: .5rem; }
+    .aChart {
+      margin-top: .5rem;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: 4px;
+    }
     .dtable { width: 100%; border-collapse: collapse; font-size: .85rem; margin-top: .5rem; }
     .dtable th { text-align: left; padding: .5rem; border-bottom: 2px solid #e0e0e0; background: #fafafa; font-weight: 600; white-space: nowrap; }
     .dtable td { padding: .45rem .5rem; border-bottom: 1px solid #eee; }
