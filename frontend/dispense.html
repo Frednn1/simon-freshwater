@@ -82,7 +82,7 @@
         <div class="row"><span class="label">Variance (Meter &minus; Sold)</span><span class="value" id="tVariance">&mdash;</span></div>
         <div class="row"><span class="label">Total Sales</span><span class="value" id="tSales">KES 0.00</span></div>
         <div class="row"><span class="label">Total Paid</span><span class="value" id="tPaid">KES 0.00</span></div>
-        <div class="row"><span class="label">Outstanding</span><span class="value" id="tOutstanding">KES 0.00</span></div>
+        <div class="row"><span class="label" id="tOutstandingLabel">Outstanding</span><span class="value" id="tOutstanding">KES 0.00</span></div>
       </div>
     </div>
 
@@ -244,7 +244,22 @@
         }
         document.getElementById('tSales').textContent = fmtK(d.sales_kes);
         document.getElementById('tPaid').textContent = fmtK(d.paid_kes);
-        document.getElementById('tOutstanding').textContent = fmtK(d.outstanding_kes);
+        // F.1: when sales_kes is zero but payments exist, a negative
+        // "Outstanding" reads as a bug. Label it "Unallocated" (positive
+        // amount). Once Phase F.5 records sales, the standard signed
+        // "Outstanding" returns automatically.
+        const _os = d.outstanding_kes || 0;
+        const _salesZero = (d.sales_kes || 0) === 0;
+        const _paidPositive = (d.paid_kes || 0) > 0;
+        const _osLbl = document.getElementById('tOutstandingLabel');
+        const _osVal = document.getElementById('tOutstanding');
+        if (_salesZero && _paidPositive) {
+          if (_osLbl) _osLbl.textContent = 'Unallocated';
+          _osVal.textContent = fmtK(Math.abs(_os));
+        } else {
+          if (_osLbl) _osLbl.textContent = 'Outstanding';
+          _osVal.textContent = fmtK(_os);
+        }
         if (d.is_first_day) document.getElementById('firstDayCard').style.display = 'block';
         if (d.prev_day_missing) document.getElementById('prevMissingCard').style.display = 'block';
       } catch (_) {}

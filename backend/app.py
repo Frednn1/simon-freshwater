@@ -5910,7 +5910,9 @@ def mpesa_c2b_validation():
     return jsonify({"ResultCode": 0, "ResultDesc": "Accepted"}), 200
 
 
-@app.route("/api/mpesa/c2b/confirmation", methods=["POST"])
+# (Note: deliberately not decorated with @app.route — this helper requires
+# an argument, so Flask cannot dispatch to it. The public route is
+# /api/pay/c2b/confirmation.)
 def _resolve_callback_tenant(business_shortcode: str):
     """Resolve the tenant a C2B callback belongs to. Matches the incoming
     BusinessShortCode against either the tenant's display paybill or its
