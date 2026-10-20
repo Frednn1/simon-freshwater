@@ -1980,6 +1980,21 @@ def admin_tenants_update(tenant_id):
             if clash:
                 return jsonify({"error": f"Paybill {v} is already used by "
                                          f"active tenant '{clash.slug}'."}), 409
+        if f == "dispensing_paybill" and v:
+            # Phase G: dispensing paybill must not collide with this tenant's
+            # billing paybill (would cause routing ambiguity), nor with any
+            # other active tenant's paybill or dispensing_paybill.
+            if v == (t.paybill or "").strip():
+                return jsonify({"error": "Dispensing paybill must differ from "
+                                         "the billing paybill."}), 409
+            clash = (Tenant.query
+                     .filter(Tenant.id != t.id, Tenant.is_active == True)
+                     .filter(db.or_(Tenant.paybill == v,
+                                    Tenant.dispensing_paybill == v))
+                     .first())
+            if clash:
+                return jsonify({"error": f"Shortcode {v} is already used by "
+                                         f"active tenant '{clash.slug}'."}), 409
         if f == "mpesa_env":
             if v not in ("sandbox", "production"):
                 v = "sandbox"
@@ -5914,6 +5929,23 @@ def _resolve_callback_tenant(business_shortcode: str):
         return None
 
 
+def _resolve_dispensing_tenant(business_shortcode: str):
+    """Return the tenant whose dispensing_paybill matches this shortcode,
+    or None. Distinct from _resolve_callback_tenant so the C2B handler
+    can route a dispensing payment to DispensePayment BEFORE the consumer
+    match path runs. A dispensing payment must never credit a consumer."""
+    code = (business_shortcode or "").strip()
+    if not code:
+        return None
+    try:
+        return (Tenant.query
+                .filter(Tenant.dispensing_paybill == code,
+                        Tenant.is_active == True)
+                .first())
+    except Exception:
+        return None
+
+
 def mpesa_c2b_confirmation():
     """
     Safaricom calls this AFTER a payment is processed.
@@ -5928,9 +5960,11 @@ def mpesa_c2b_confirmation():
     if not trans_id:
         return jsonify({"ResultCode": 1, "ResultDesc": "Missing TransID"}), 400
 
-    # Resolve tenant from the paybill in this callback.
+    # Resolve tenant from the paybill in this callback. Two independent
+    # lookups: one for dispensing (priority) and one for consumer billing.
     _shortcode = str(data.get("BusinessShortCode") or "").strip()
-    _cb_tenant = _resolve_callback_tenant(_shortcode)
+    _cb_tenant         = _resolve_callback_tenant(_shortcode)
+    _dispensing_tenant = _resolve_dispensing_tenant(_shortcode)
 
     # Idempotency: if we've seen this TransID (for this tenant), silently accept.
     _dup_q = MpesaLog.query.filter_by(trans_id=trans_id)
@@ -5947,8 +5981,9 @@ def mpesa_c2b_confirmation():
     bill_ref = (data.get("BillRefNumber") or "").strip()
     msisdn = (data.get("MSISDN") or "").strip()
 
+    _effective_tenant = _dispensing_tenant if _dispensing_tenant else _cb_tenant
     log = MpesaLog(
-        tenant_id=_cb_tenant.id if _cb_tenant else -1,
+        tenant_id=_effective_tenant.id if _effective_tenant else -1,
         trans_id=trans_id,
         trans_time=str(data.get("TransTime") or ""),
         trans_amount=amount,
@@ -5963,6 +5998,58 @@ def mpesa_c2b_confirmation():
     )
     db.session.add(log)
     db.session.flush()
+
+    # ── Dispensing branch (Phase G) ──
+    # Fires only when the callback shortcode equals a tenant's
+    # dispensing_paybill. Runs BEFORE the consumer match so a walk-in
+    # water payment can never credit a consumer account.
+    if _dispensing_tenant is not None:
+        # Guard: profile must be enabled for this tenant.
+        _enabled = _tenant_profiles_dict(_dispensing_tenant.id)
+        if not _enabled.get("dispensing"):
+            log.status = "dispensing_disabled"
+            db.session.commit()
+            return jsonify({"ResultCode": 0, "ResultDesc": "Accepted"}), 200
+
+        # Idempotency: TransID already recorded for this tenant.
+        _existing_dp = (DispensePayment.query
+                        .filter_by(tenant_id=_dispensing_tenant.id,
+                                   reference=trans_id)
+                        .first())
+        if _existing_dp is not None:
+            log.status = "duplicate"
+            db.session.commit()
+            return jsonify({"ResultCode": 0, "ResultDesc": "Already processed"}), 200
+
+        if amount <= 0:
+            log.status = "unmatched"
+            db.session.commit()
+            return jsonify({"ResultCode": 0, "ResultDesc": "Accepted"}), 200
+
+        try:
+            _pay = DispensePayment(
+                tenant_id=_dispensing_tenant.id,
+                payment_date=_nairobi_today(),
+                amount_kes=amount,
+                method="mpesa_c2b",
+                reference=trans_id,
+                recorded_by="M-Pesa-C2B",
+                mpesa_log_id=log.id,
+            )
+            db.session.add(_pay)
+            log.status = "matched_dispensing"
+            db.session.commit()
+        except Exception as e:
+            app.logger.exception("[M-Pesa] dispense payment create failed")
+            log.status = "unmatched"
+            db.session.commit()
+            return jsonify({"ResultCode": 0, "ResultDesc": "Accepted"}), 200
+
+        _audit("dispense_payment_auto_recorded",
+               target_type="tenant", target_id=_dispensing_tenant.id,
+               detail=(f"trans_id={trans_id} amount={amount:.2f} "
+                       f"shortcode={_shortcode}"))
+        return jsonify({"ResultCode": 0, "ResultDesc": "Accepted"}), 200
 
     # ── Matching: bill_ref → meter_acc_no, then msisdn → contact ──
     # Scoped to the tenant resolved from the paybill. If no tenant matched
