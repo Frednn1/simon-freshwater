@@ -5229,6 +5229,8 @@ def admin_update_password():
 def admin_create_consumer():
     u = _require_admin()
     if u: return u
+    if not _rate_limit("consumer_create", 20, 60):
+        return _too_many(60)
 
     _tid = _write_tenant_id()
     if _tid < 0:
@@ -5331,6 +5333,8 @@ def admin_create_consumer():
 def admin_update_consumer(consumer_id):
     u = _require_admin()
     if u: return u
+    if not _rate_limit("consumer_update", 30, 60):
+        return _too_many(60)
 
     consumer = _tenant_query(Consumer).filter_by(id=consumer_id).first()
     if not consumer:
@@ -5626,6 +5630,8 @@ def admin_record_payment(consumer_id):
     Stores a full JSON snapshot for later receipt generation."""
     u = _require_admin()
     if u: return u
+    if not _rate_limit("consumer_payment", 20, 60):
+        return _too_many(60)
 
     consumer = _tenant_query(Consumer).filter_by(id=consumer_id).first()
     if not consumer:
@@ -5875,6 +5881,8 @@ def receipt_browser_view(payment_id):
 def admin_terminate_consumer(consumer_id):
     u = _require_admin()
     if u: return u
+    if not _rate_limit("consumer_terminate", 10, 60):
+        return _too_many(60)
 
     consumer = _tenant_query(Consumer).filter_by(id=consumer_id).first()
     if not consumer:
@@ -5899,6 +5907,8 @@ def admin_terminate_consumer(consumer_id):
 def admin_reactivate_consumer(consumer_id):
     u = _require_admin()
     if u: return u
+    if not _rate_limit("consumer_reactivate", 10, 60):
+        return _too_many(60)
 
     consumer = _tenant_query(Consumer).filter_by(id=consumer_id).first()
     if not consumer:
@@ -5920,6 +5930,8 @@ def admin_reactivate_consumer(consumer_id):
 def admin_delete_consumer(consumer_id):
     u = _require_admin()
     if u: return u
+    if not _rate_limit("consumer_delete", 3, 300):
+        return _too_many(300)
 
     consumer = _tenant_query(Consumer).filter_by(id=consumer_id).first()
     if not consumer:
@@ -6015,6 +6027,8 @@ def admin_seed():
     # another tenant's rows by accident.
     u = _require_super_admin()
     if u: return u
+    if not _rate_limit("seed", 3, 300):
+        return _too_many(300)
 
     replace = request.args.get("replace") == "1"
     if replace:
@@ -6791,6 +6805,8 @@ def admin_mpesa_assign():
     """Manually assign an unmatched M-Pesa payment to a consumer."""
     u = _require_admin()
     if u: return u
+    if not _rate_limit("mpesa_assign", 20, 60):
+        return _too_many(60)
 
     data = request.get_json(silent=True) or {}
     log_id = data.get("log_id")
