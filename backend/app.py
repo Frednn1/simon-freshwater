@@ -1189,6 +1189,269 @@ def _ensure_all_columns():
 #  FRONTEND ROUTES
 # ═══════════════════════════════════════════════
 
+# ═══════════════════════════════════════════════
+#  DISPENSING — ANALYTICS (B4)
+# ═══════════════════════════════════════════════
+# Server-rendered SVG charts. No JS chart library, no CDN dependency.
+# Data is numeric; no user-supplied strings enter the SVG.
+
+def _fmt_axis(v):
+    try:
+        v = float(v)
+    except (ValueError, TypeError):
+        return "0"
+    if abs(v) >= 1_000_000:
+        return f"{v/1_000_000:.1f}M"
+    if abs(v) >= 1_000:
+        return f"{v/1_000:.0f}k"
+    return f"{v:.0f}"
+
+
+def _svg_empty_state(title=""):
+    safe = (title or "").replace("<", "&lt;").replace(">", "&gt;")[:80]
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 240" '
+        'style="width:100%;height:auto;font-family:system-ui,sans-serif;">'
+        '<rect width="900" height="240" fill="#fafafa" rx="6"/>'
+        f'<text x="450" y="120" text-anchor="middle" font-size="13" fill="#999">'
+        f'{safe} — no data for this range</text></svg>'
+    )
+
+
+def _svg_render_bars(labels, series, title="", width=900, height=240):
+    """Server-rendered grouped bar chart.
+    labels: list of x-axis strings
+    series: list of dicts {name, color, values}
+    Never raises — falls back to empty state on error."""
+    try:
+        import math
+        n = len(labels)
+        if n == 0 or not series:
+            return _svg_empty_state(title)
+
+        m = len(series)
+        pad_l, pad_r, pad_t, pad_b = 64, 20, 46, 54
+        cw = width - pad_l - pad_r
+        ch = height - pad_t - pad_b
+
+        all_vals = [float(v or 0) for s in series for v in s["values"]]
+        y_max_raw = max(all_vals) if all_vals else 0
+        if y_max_raw <= 0:
+            return _svg_empty_state(title)
+
+        magnitude = 10 ** int(math.floor(math.log10(y_max_raw)))
+        y_max = math.ceil(y_max_raw / magnitude) * magnitude
+        if y_max <= 0:
+            y_max = 1
+
+        group_w = cw / n
+        inner_pad = group_w * 0.15
+        bar_area = group_w - inner_pad
+        bar_w = bar_area / m
+
+        def _y(v):
+            return pad_t + ch - (float(v or 0) / y_max) * ch
+
+        parts = []
+        parts.append(
+            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" '
+            'style="width:100%;height:auto;font-family:system-ui,-apple-system,sans-serif;">'
+        )
+        parts.append(f'<rect x="0" y="0" width="{width}" height="{height}" fill="#fafafa" rx="6"/>')
+        if title:
+            safe_title = str(title).replace("<", "&lt;").replace(">", "&gt;")[:80]
+            parts.append(f'<text x="{pad_l}" y="24" font-size="13" font-weight="600" fill="#333">{safe_title}</text>')
+
+        for i in range(6):
+            y_val = (y_max / 5) * i
+            y = _y(y_val)
+            parts.append(f'<line x1="{pad_l}" y1="{y:.1f}" x2="{width - pad_r}" y2="{y:.1f}" stroke="#e0e0e0" stroke-width="1"/>')
+            parts.append(f'<text x="{pad_l - 6}" y="{y + 4:.1f}" font-size="10" fill="#666" text-anchor="end">{_fmt_axis(y_val)}</text>')
+
+        for i, lbl in enumerate(labels):
+            gx = pad_l + (i * group_w) + (inner_pad / 2)
+            for j, sr in enumerate(series):
+                v = float(sr["values"][i] or 0)
+                if v <= 0:
+                    continue
+                x = gx + j * bar_w
+                y = _y(v)
+                h = pad_t + ch - y
+                parts.append(
+                    f'<rect x="{x:.1f}" y="{y:.1f}" width="{max(bar_w - 1, 1):.1f}" '
+                    f'height="{h:.1f}" fill="{sr["color"]}" rx="1"/>'
+                )
+            lx = pad_l + (i + 0.5) * group_w
+            safe_lbl = str(lbl).replace("<", "&lt;").replace(">", "&gt;")[:10]
+            parts.append(f'<text x="{lx:.1f}" y="{pad_t + ch + 16}" font-size="10" fill="#666" text-anchor="middle">{safe_lbl}</text>')
+
+        lx = pad_l
+        ly = pad_t + ch + 36
+        for sr in series:
+            parts.append(f'<rect x="{lx}" y="{ly}" width="10" height="10" fill="{sr["color"]}" rx="1"/>')
+            parts.append(f'<text x="{lx + 14}" y="{ly + 9}" font-size="11" fill="#444">{sr["name"]}</text>')
+            lx += 14 + len(sr["name"]) * 7 + 20
+
+        parts.append('</svg>')
+        return "".join(parts)
+    except Exception:
+        return _svg_empty_state(title)
+
+
+@app.route("/dispense/analytics")
+def dispense_analytics_page():
+    """Dispensing analytics dashboard (B4). Same guards as /dispense."""
+    admin = _current_admin()
+    if not admin:
+        return redirect("/admin/login")
+    if _current_active_profile() != "dispensing":
+        return redirect("/")
+    enabled = _tenant_profiles_dict(admin.tenant_id) if admin.tenant_id else {}
+    if not enabled.get("dispensing"):
+        return redirect("/")
+    return _serve_frontend("dispense_analytics.html")
+
+
+@app.route("/api/admin/dispense/analytics", methods=["GET"])
+def admin_dispense_analytics():
+    """Aggregate dispensing metrics over a date range + server-rendered SVG
+    charts. Returns JSON; the client inserts charts[i] into the DOM."""
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("dispense_analytics", 30, 60):
+        return _too_many(60)
+    tenant_id, err = _dispense_tenant_or_error()
+    if err: return err
+
+    preset   = (request.args.get("preset") or "").strip()
+    from_str = (request.args.get("from") or "").strip()
+    to_str   = (request.args.get("to") or "").strip()
+
+    today = _nairobi_today()
+
+    if from_str and to_str:
+        try:
+            d_from = datetime.strptime(from_str, "%Y-%m-%d").date()
+            d_to   = datetime.strptime(to_str, "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid date format (YYYY-MM-DD)."}), 400
+        if d_from > d_to:
+            return jsonify({"error": "From date must be <= To date."}), 400
+        if (d_to - d_from).days > 365:
+            return jsonify({"error": "Range cannot exceed 365 days."}), 400
+        if d_to > today:
+            d_to = today
+    elif preset in ("7", "30", "90"):
+        days = int(preset)
+        d_to = today
+        d_from = today - timedelta(days=days - 1)
+    else:
+        d_to = today
+        d_from = today - timedelta(days=29)
+
+    dates = []
+    cur = d_from
+    while cur <= d_to:
+        dates.append(cur)
+        cur += timedelta(days=1)
+
+    stats_map = _dispense_window_stats(tenant_id, dates)
+
+    daily = []
+    for d in dates:
+        st = stats_map[d.isoformat()]
+        daily.append({
+            "date": d.strftime("%d %b"),
+            "date_iso": d.isoformat(),
+            "consumption_l": st["consumption_l"],
+            "sold_l": st["sold_l"],
+            "sales_kes": st["sales_kes"],
+            "paid_kes": st["paid_kes"],
+            "outstanding_kes": st["outstanding_kes"],
+            "variance_l": st["variance_l"],
+            "has_reading": st["has_reading"],
+        })
+
+    totals = {
+        "consumption_l": sum(x["consumption_l"] for x in daily),
+        "sold_l":        sum(x["sold_l"] for x in daily),
+        "variance_l":    sum(x["variance_l"] for x in daily),
+        "sales_kes":     round(sum(x["sales_kes"] for x in daily), 2),
+        "paid_kes":      round(sum(x["paid_kes"] for x in daily), 2),
+        "outstanding_kes": round(sum(x["outstanding_kes"] for x in daily), 2),
+    }
+
+    sales_rows = (DispenseSale.query
+                  .filter(DispenseSale.tenant_id == tenant_id,
+                          DispenseSale.sale_date >= d_from,
+                          DispenseSale.sale_date <= d_to,
+                          DispenseSale.voided == False)  # noqa: E712
+                  .all())
+    by_container = {}
+    for sale in sales_rows:
+        k = int(sale.container_size_L or 0)
+        by_container.setdefault(k, {"container_size_L": k, "qty": 0, "total_kes": 0.0})
+        by_container[k]["qty"] += int(sale.quantity or 0)
+        by_container[k]["total_kes"] += float(sale.total_kes or 0)
+    containers = sorted(by_container.values(), key=lambda x: x["container_size_L"])
+    for c in containers:
+        c["total_kes"] = round(c["total_kes"], 2)
+
+    pay_rows = (DispensePayment.query
+                .filter(DispensePayment.tenant_id == tenant_id,
+                        DispensePayment.payment_date >= d_from,
+                        DispensePayment.payment_date <= d_to,
+                        DispensePayment.voided == False)  # noqa: E712
+                .all())
+    by_method = {}
+    for p in pay_rows:
+        m = (p.method or "unknown")
+        by_method.setdefault(m, {"method": m, "count": 0, "total_kes": 0.0})
+        by_method[m]["count"] += 1
+        by_method[m]["total_kes"] += float(p.amount_kes or 0)
+    methods = sorted(by_method.values(), key=lambda x: x["method"])
+    for m in methods:
+        m["total_kes"] = round(m["total_kes"], 2)
+
+    labels = [x["date"] for x in daily]
+
+    chart_consumption = _svg_render_bars(
+        labels,
+        [
+            {"name": "Meter (L)", "color": "#2e7d32",
+             "values": [x["consumption_l"] for x in daily]},
+            {"name": "Sold (L)", "color": "#1976d2",
+             "values": [x["sold_l"] for x in daily]},
+        ],
+        title="Consumption vs Sold (litres per day)",
+    )
+    chart_money = _svg_render_bars(
+        labels,
+        [
+            {"name": "Sales (KES)", "color": "#f57c00",
+             "values": [x["sales_kes"] for x in daily]},
+            {"name": "Paid (KES)", "color": "#2e7d32",
+             "values": [x["paid_kes"] for x in daily]},
+        ],
+        title="Sales vs Paid (KES per day)",
+    )
+
+    return jsonify({
+        "ok": True,
+        "from_iso": d_from.isoformat(),
+        "to_iso": d_to.isoformat(),
+        "days": len(dates),
+        "daily": daily,
+        "totals": totals,
+        "containers": containers,
+        "payment_methods": methods,
+        "charts": {
+            "consumption_vs_sold": chart_consumption,
+            "sales_vs_paid": chart_money,
+        },
+    })
+
+
 @app.route("/dispense")
 def dispense_home():
     """Water Dispensing portal (Phase C placeholder — real UI arrives Phase D)."""

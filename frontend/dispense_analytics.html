@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{brand_name}} - Dispensing Analytics</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="{{brand_favicon_url}}?v={{tenant_slug}}">
+  <link rel="icon" type="image/png" sizes="192x192" href="{{brand_favicon_url}}?size=192&v={{tenant_slug}}">
+  <link rel="shortcut icon" href="{{brand_favicon_url}}?v={{tenant_slug}}">
+  <link rel="apple-touch-icon" href="{{brand_favicon_url}}?size=192&v={{tenant_slug}}">
+  <link rel="manifest" href="/manifest.webmanifest?__tenant={{tenant_slug}}">
+  <meta name="theme-color" content="#0d47a1">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .aKPI { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .6rem; margin-top: .75rem; }
+    .aKPI .tile { padding: .8rem .9rem; background: #f8f9fa; border-radius: 8px; border-left: 3px solid #0d47a1; }
+    .aKPI .tile .k { font-size: .72rem; color: #666; text-transform: uppercase; letter-spacing: .3px; margin-bottom: .25rem; }
+    .aKPI .tile .v { font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .aPreset { display: flex; gap: .4rem; flex-wrap: wrap; margin-bottom: .75rem; }
+    .aPreset a { padding: .35rem .7rem; font-size: .82rem; border: 1px solid #cfd8dc; border-radius: 6px; text-decoration: none; color: #444; background: #fff; }
+    .aPreset a.active { background: #0d47a1; color: #fff; border-color: #0d47a1; }
+    .aPreset a:hover { border-color: #90caf9; }
+    .aRange { display: flex; gap: .5rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: .75rem; }
+    .aRange .form-row { margin: 0; }
+    .aChart { margin-top: .5rem; }
+    .dtable { width: 100%; border-collapse: collapse; font-size: .85rem; margin-top: .5rem; }
+    .dtable th { text-align: left; padding: .5rem; border-bottom: 2px solid #e0e0e0; background: #fafafa; font-weight: 600; white-space: nowrap; }
+    .dtable td { padding: .45rem .5rem; border-bottom: 1px solid #eee; }
+    .dtable td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body class="settings-body">
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="brand">
+        <img class="brand-logo" src="{{brand_logo_url}}" alt="{{brand_name}}">
+        <div>
+          <h1>{{brand_name}}</h1>
+          <p class="tagline">Dispensing Analytics &middot; {{brand_address}}</p>
+        </div>
+      </div>
+      <nav class="header-actions">
+        <button id="switchBtn" type="button" class="tab-btn" style="display:none;">Switch to Billing</button>
+        <a href="/dispense" class="tab-btn">&larr; Dispensing</a>
+        <a href="/admin/settings" class="tab-btn">Settings</a>
+        <button id="logoutBtn" type="button" class="tab-btn">Logout</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="settings-wrap" style="max-width:1000px;">
+
+    <div class="settings-card">
+      <h2>Dispensing Analytics</h2>
+      <div class="aPreset" id="presetWrap">
+        <a href="?preset=7" data-preset="7">Last 7 days</a>
+        <a href="?preset=30" data-preset="30">Last 30 days</a>
+        <a href="?preset=90" data-preset="90">Last 90 days</a>
+      </div>
+      <form class="aRange" id="rangeForm" autocomplete="off">
+        <div class="form-row">
+          <label for="afFrom">From</label>
+          <input type="date" id="afFrom" required>
+        </div>
+        <div class="form-row">
+          <label for="afTo">To</label>
+          <input type="date" id="afTo" required>
+        </div>
+        <button type="submit" class="btn-secondary btn-fit">Show range</button>
+      </form>
+      <p id="aRangeLabel" style="font-size:.82rem;color:#666;margin:.25rem 0 0;"></p>
+      <div class="aKPI" id="kpiWrap"></div>
+    </div>
+
+    <div class="settings-card">
+      <h2>Consumption vs Sold</h2>
+      <div class="aChart" id="chartConsumption"></div>
+    </div>
+
+    <div class="settings-card">
+      <h2>Sales vs Paid</h2>
+      <div class="aChart" id="chartMoney"></div>
+    </div>
+
+    <div class="settings-card">
+      <h2>By Container Size</h2>
+      <div style="overflow-x:auto;">
+        <table class="dtable">
+          <thead><tr><th>Container</th><th class="num">Quantity</th><th class="num">Total (KES)</th></tr></thead>
+          <tbody id="containersBody">
+            <tr><td colspan="3" class="status-unavailable">Loading&hellip;</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="settings-card">
+      <h2>By Payment Method</h2>
+      <div style="overflow-x:auto;">
+        <table class="dtable">
+          <thead><tr><th>Method</th><th class="num">Count</th><th class="num">Total (KES)</th></tr></thead>
+          <tbody id="methodsBody">
+            <tr><td colspan="3" class="status-unavailable">Loading&hellip;</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    (async function analyticsFetch() {
+      const params = new URLSearchParams(location.search);
+      const qs = params.toString();
+      const apiUrl = '/api/admin/dispense/analytics' + (qs ? '?' + qs : '');
+
+      // Mark active preset
+      const preset = params.get('preset') || (params.get('from') ? 'custom' : '30');
+      document.querySelectorAll('#presetWrap a').forEach(function (a) {
+        a.classList.toggle('active', a.getAttribute('data-preset') === preset);
+      });
+
+      // Switch/logout
+      try {
+        const me = await fetch('/api/admin/whoami', {credentials: 'same-origin'});
+        if (!me.ok) return;
+        const m = await me.json();
+        if (!m.authenticated) { location.href = '/admin/login'; return; }
+        const profiles = m.enabled_profiles || {};
+        const switchBtn = document.getElementById('switchBtn');
+        if (profiles.billing && switchBtn) {
+          switchBtn.style.display = 'inline-flex';
+          switchBtn.addEventListener('click', async function () {
+            switchBtn.disabled = true;
+            try {
+              const r = await fetch('/api/admin/profile/switch', {
+                method: 'POST', credentials: 'same-origin',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({to: 'billing'})
+              });
+              const j = await r.json();
+              if (r.ok && j.ok && j.redirect) { location.href = j.redirect; }
+              else { switchBtn.disabled = false; }
+            } catch (_) { switchBtn.disabled = false; }
+          });
+        }
+        const lo = document.getElementById('logoutBtn');
+        if (lo) lo.addEventListener('click', async function () {
+          await fetch('/api/admin/logout', {method: 'POST', credentials: 'same-origin'});
+          location.href = '/admin/login';
+        });
+      } catch (_) {}
+
+      // Fetch data
+      let d;
+      try {
+        const r = await fetch(apiUrl, {credentials: 'same-origin'});
+        d = await r.json();
+        if (!r.ok || !d.ok) {
+          document.getElementById('kpiWrap').innerHTML =
+            '<div style="color:#c62828;">\u274c ' + (d.error || ('HTTP ' + r.status)) + '</div>';
+          return;
+        }
+      } catch (e) {
+        document.getElementById('kpiWrap').innerHTML =
+          '<div style="color:#c62828;">\u274c Network error</div>';
+        return;
+      }
+
+      // Prefill date inputs
+      document.getElementById('afFrom').value = d.from_iso;
+      document.getElementById('afTo').value = d.to_iso;
+      document.getElementById('aRangeLabel').textContent =
+        'Showing ' + d.from_iso + ' to ' + d.to_iso + ' (' + d.days + ' day' + (d.days === 1 ? '' : 's') + ')';
+
+      // KPI tiles
+      const fmtNum = function (n) {
+        return Number(n || 0).toLocaleString(undefined,
+          {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      };
+      const fmtL = function (n) { return Number(n || 0).toLocaleString(); };
+      const t = d.totals || {};
+      const varNum = Number(t.variance_l || 0);
+      const varColor = varNum === 0 ? '#2e7d32' : '#c62828';
+      const outNum = Number(t.outstanding_kes || 0);
+      const outColor = outNum > 0 ? '#c62828' : (outNum < 0 ? '#1976d2' : '#2e7d32');
+
+      document.getElementById('kpiWrap').innerHTML =
+        '<div class="tile"><div class="k">Sales</div><div class="v">KES ' + fmtNum(t.sales_kes) + '</div></div>'
+        + '<div class="tile"><div class="k">Paid</div><div class="v">KES ' + fmtNum(t.paid_kes) + '</div></div>'
+        + '<div class="tile" style="border-left-color:' + outColor + '"><div class="k">Outstanding</div><div class="v" style="color:' + outColor + '">KES ' + fmtNum(t.outstanding_kes) + '</div></div>'
+        + '<div class="tile" style="border-left-color:' + varColor + '"><div class="k">Variance</div><div class="v" style="color:' + varColor + '">' + (varNum > 0 ? '+' : '') + fmtL(varNum) + ' L</div></div>'
+        + '<div class="tile"><div class="k">Meter</div><div class="v">' + fmtL(t.consumption_l) + ' L</div></div>'
+        + '<div class="tile"><div class="k">Sold</div><div class="v">' + fmtL(t.sold_l) + ' L</div></div>';
+
+      // Charts (SVG returned by server; inserted as innerHTML — no user strings)
+      const charts = d.charts || {};
+      document.getElementById('chartConsumption').innerHTML =
+        charts.consumption_vs_sold || '<p class="status-unavailable">No chart data.</p>';
+      document.getElementById('chartMoney').innerHTML =
+        charts.sales_vs_paid || '<p class="status-unavailable">No chart data.</p>';
+
+      // Containers
+      const containers = d.containers || [];
+      const cBody = document.getElementById('containersBody');
+      cBody.innerHTML = containers.length
+        ? containers.map(function (c) {
+            return '<tr><td>' + c.container_size_L.toLocaleString() + ' L</td>'
+              + '<td class="num">' + c.qty.toLocaleString() + '</td>'
+              + '<td class="num">' + fmtNum(c.total_kes) + '</td></tr>';
+          }).join('')
+        : '<tr><td colspan="3" class="status-unavailable">No container sales in this range.</td></tr>';
+
+      // Payment methods
+      const methods = d.payment_methods || [];
+      const mBody = document.getElementById('methodsBody');
+      mBody.innerHTML = methods.length
+        ? methods.map(function (m) {
+            const label = m.method === 'mpesa_c2b' ? 'M-Pesa (C2B)'
+                        : (m.method === 'cash' ? 'Cash' : m.method);
+            return '<tr><td>' + label + '</td>'
+              + '<td class="num">' + m.count + '</td>'
+              + '<td class="num">' + fmtNum(m.total_kes) + '</td></tr>';
+          }).join('')
+        : '<tr><td colspan="3" class="status-unavailable">No payments in this range.</td></tr>';
+
+      // Custom range form
+      document.getElementById('rangeForm').addEventListener('submit', function (ev) {
+        ev.preventDefault();
+        const f = document.getElementById('afFrom').value;
+        const tt = document.getElementById('afTo').value;
+        if (!f || !tt) return;
+        location.href = '/dispense/analytics?from=' + encodeURIComponent(f)
+                      + '&to=' + encodeURIComponent(tt);
+      });
+    })();
+  </script>
+</body>
+</html>
