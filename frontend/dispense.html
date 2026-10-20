@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{{brand_name}} \u2013 Water Dispensing</title>
+  <title>{{brand_name}} - Water Dispensing</title>
   <link rel="icon" type="image/png" sizes="32x32" href="{{brand_favicon_url}}?v={{tenant_slug}}">
   <link rel="icon" type="image/png" sizes="192x192" href="{{brand_favicon_url}}?size=192&v={{tenant_slug}}">
   <link rel="shortcut icon" href="{{brand_favicon_url}}?v={{tenant_slug}}">
@@ -11,61 +11,132 @@
   <link rel="manifest" href="/manifest.webmanifest?__tenant={{tenant_slug}}">
   <meta name="theme-color" content="#0d47a1">
   <link rel="stylesheet" href="/style.css">
+  <style>
+    .dpanel { display: grid; grid-template-columns: repeat(2, 1fr); gap: .5rem .9rem; margin-top: .5rem; }
+    .dpanel .row { display: flex; justify-content: space-between; padding: .35rem .5rem; background: #f8f9fa; border-radius: 6px; font-size: .9rem; }
+    .dpanel .row .label { color: #666; }
+    .dpanel .row .value { font-weight: 600; }
+    .dtable { width: 100%; border-collapse: collapse; font-size: .85rem; margin-top: .5rem; }
+    .dtable th { text-align: left; padding: .5rem; border-bottom: 2px solid #e0e0e0; background: #fafafa; font-weight: 600; white-space: nowrap; }
+    .dtable td { padding: .45rem .5rem; border-bottom: 1px solid #eee; }
+    .dtable td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .variance-zero { color: #2e7d32; font-weight: 600; }
+    .variance-nonzero { color: #c62828; font-weight: 600; }
+    .status-pill { display: inline-block; padding: .15rem .5rem; border-radius: 99px; font-size: .72rem; font-weight: 600; white-space: nowrap; }
+    .status-due { background: #fff3e0; color: #e65100; }
+    .status-cleared { background: #e8f5e9; color: #2e7d32; }
+    .status-overpaid { background: #e3f2fd; color: #0d47a1; }
+    .status-no-reading { background: #eceff1; color: #607d8b; }
+    .status-unavailable { color: #999; font-style: italic; }
+    @media (max-width: 640px) {
+      .dpanel { grid-template-columns: 1fr; }
+      .dtable { font-size: .78rem; }
+      .dtable th, .dtable td { padding: .35rem .3rem; }
+    }
+  </style>
 </head>
 <body class="settings-body">
-  <main class="settings-wrap" style="max-width:640px;">
-    <a href="/" class="brand-link" aria-label="Go to home">
-      <div class="settings-header">
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="brand">
         <img class="brand-logo" src="{{brand_logo_url}}" alt="{{brand_name}}">
-        <div class="settings-brand-text">
+        <div>
           <h1>{{brand_name}}</h1>
-          <p>Water Dispensing</p>
+          <p class="tagline">Water Dispensing &middot; {{brand_address}}</p>
         </div>
       </div>
-    </a>
-    <div class="settings-card">
-      <h2>\U0001F4A7 Water Dispensing</h2>
-      <p class="form-hint-small" style="margin-bottom:1rem;">
-        The water dispensing portal is being prepared. It will be available here shortly.
-      </p>
-      <div id="switchArea" style="display:none;margin-bottom:1rem;">
-        <a href="#" id="backToBillingLink" class="btn-primary btn-fit" style="text-decoration:none;display:inline-block;">
-          \u21a9 Switch to Billing
-        </a>
-      </div>
-      <a href="/admin/settings" class="btn-secondary btn-fit" style="text-decoration:none;display:inline-block;margin-right:.5rem;">
-        \u2699\ufe0f Settings
-      </a>
-      <button id="logoutBtn" type="button" class="btn-secondary btn-fit">Logout</button>
+      <nav class="header-actions">
+        <button id="switchBtn" type="button" class="tab-btn" style="display:none;">Switch to Billing</button>
+        <a href="/admin/settings" class="tab-btn">Settings</a>
+        <button id="logoutBtn" type="button" class="tab-btn">Logout</button>
+      </nav>
     </div>
+  </header>
+
+  <main class="settings-wrap" style="max-width:900px;">
+
+    <div id="firstDayCard" class="settings-card" style="display:none;border-left:4px solid #1976d2;">
+      <h2>&#x1F4A7; First Day Setup Required</h2>
+      <p class="form-hint-small">
+        No dispensing meter readings have been recorded yet. You will need to record
+        the opening meter reading before the first closing reading.
+        Reading entry becomes available in a later update.
+      </p>
+    </div>
+
+    <div id="prevMissingCard" class="settings-card" style="display:none;border-left:4px solid #f57c00;">
+      <h2>&#x26A0;&#xFE0F; Previous Day's Reading Missing</h2>
+      <p class="form-hint-small">
+        Yesterday's closing reading has not been recorded. This may affect today's
+        opening reading. A dedicated correction flow will arrive in a later update.
+      </p>
+    </div>
+
+    <div class="settings-card">
+      <h2>Today &middot; <span id="todayDate">&hellip;</span></h2>
+      <div class="dpanel">
+        <div class="row"><span class="label">Opening Reading</span><span class="value" id="tOpening">&mdash;</span></div>
+        <div class="row"><span class="label">Closing Reading</span><span class="value" id="tClosing">&mdash;</span></div>
+        <div class="row"><span class="label">Consumption (Meter)</span><span class="value" id="tConsumption">&mdash;</span></div>
+        <div class="row"><span class="label">Litres Sold</span><span class="value" id="tSold">&mdash;</span></div>
+        <div class="row"><span class="label">Variance (Meter &minus; Sold)</span><span class="value" id="tVariance">&mdash;</span></div>
+        <div class="row"><span class="label">Total Sales</span><span class="value" id="tSales">KES 0.00</span></div>
+        <div class="row"><span class="label">Total Paid</span><span class="value" id="tPaid">KES 0.00</span></div>
+        <div class="row"><span class="label">Outstanding</span><span class="value" id="tOutstanding">KES 0.00</span></div>
+      </div>
+    </div>
+
+    <div class="settings-card">
+      <h2>Last 7 Days</h2>
+      <div style="overflow-x:auto;">
+        <table class="dtable">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th class="num">Meter (L)</th>
+              <th class="num">Sold (L)</th>
+              <th class="num">Variance (L)</th>
+              <th class="num">Sales (KES)</th>
+              <th class="num">Paid (KES)</th>
+              <th class="num">Outstanding (KES)</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="windowBody">
+            <tr><td colspan="8" class="status-unavailable">Loading&hellip;</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </main>
+
   <script>
     (async () => {
       try {
-        const r = await fetch('/api/admin/whoami', {credentials: 'same-origin'});
-        if (!r.ok) return;
-        const d = await r.json();
-        if (!d.authenticated) return;
-        const profiles = d.enabled_profiles || {};
-        const switchArea = document.getElementById('switchArea');
-        const backLink = document.getElementById('backToBillingLink');
-        if (profiles.billing && switchArea && backLink) {
-          switchArea.style.display = 'block';
-          backLink.addEventListener('click', async (e) => {
-            e.preventDefault();
-            backLink.style.pointerEvents = 'none';
-            const orig = backLink.textContent;
-            backLink.textContent = 'Switching\u2026';
+        const me = await fetch('/api/admin/whoami', {credentials: 'same-origin'});
+        if (!me.ok) return;
+        const m = await me.json();
+        if (!m.authenticated) { location.href = '/admin/login'; return; }
+        const profiles = m.enabled_profiles || {};
+        const switchBtn = document.getElementById('switchBtn');
+        if (profiles.billing && switchBtn) {
+          switchBtn.style.display = 'inline-flex';
+          switchBtn.addEventListener('click', async () => {
+            switchBtn.disabled = true;
+            switchBtn.textContent = 'Switching\u2026';
             try {
-              const r2 = await fetch('/api/admin/profile/switch', {
+              const r = await fetch('/api/admin/profile/switch', {
                 method: 'POST', credentials: 'same-origin',
                 headers: {'Content-Type':'application/json'},
                 body: JSON.stringify({ to: 'billing' })
               });
-              const j = await r2.json();
-              if (r2.ok && j.ok && j.redirect) { location.href = j.redirect; }
-              else { alert('\u274c ' + (j.error || 'Switch failed.')); backLink.style.pointerEvents=''; backLink.textContent=orig; }
-            } catch (_) { alert('\u274c Network error.'); backLink.style.pointerEvents=''; backLink.textContent=orig; }
+              const j = await r.json();
+              if (r.ok && j.ok && j.redirect) { location.href = j.redirect; }
+              else { alert('\u274c ' + (j.error || 'Switch failed.')); switchBtn.disabled = false; switchBtn.textContent = 'Switch to Billing'; }
+            } catch (_) {
+              alert('\u274c Network error.'); switchBtn.disabled = false; switchBtn.textContent = 'Switch to Billing';
+            }
           });
         }
         const lo = document.getElementById('logoutBtn');
@@ -73,6 +144,66 @@
           await fetch('/api/admin/logout', { method: 'POST', credentials: 'same-origin' });
           location.href = '/admin/login';
         });
+      } catch (_) {}
+
+      const fmtM = (v) => (v === null || v === undefined) ? '\u2014' : Number(v).toFixed(2) + ' m\u00b3';
+      const fmtL = (v) => (v === null || v === undefined) ? '\u2014' : Number(v).toLocaleString() + ' L';
+      const fmtK = (v) => 'KES ' + Number(v || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+      try {
+        const r = await fetch('/api/admin/dispense/today', {credentials: 'same-origin'});
+        if (!r.ok) return;
+        const d = await r.json();
+        if (!d.ok) return;
+        document.getElementById('todayDate').textContent = d.date || '\u2014';
+        document.getElementById('tOpening').textContent = fmtM(d.opening_reading_m3);
+        document.getElementById('tClosing').textContent = fmtM(d.closing_reading_m3);
+        document.getElementById('tConsumption').textContent = d.has_reading ? fmtL(d.consumption_l) : '\u2014';
+        document.getElementById('tSold').textContent = fmtL(d.sold_l);
+        const varEl = document.getElementById('tVariance');
+        if (d.has_reading) {
+          varEl.textContent = (d.variance_l > 0 ? '+' : '') + Number(d.variance_l).toLocaleString() + ' L';
+          varEl.className = 'value ' + (d.variance_l === 0 ? 'variance-zero' : 'variance-nonzero');
+        } else {
+          varEl.textContent = '\u2014';
+          varEl.className = 'value';
+        }
+        document.getElementById('tSales').textContent = fmtK(d.sales_kes);
+        document.getElementById('tPaid').textContent = fmtK(d.paid_kes);
+        document.getElementById('tOutstanding').textContent = fmtK(d.outstanding_kes);
+        if (d.is_first_day) document.getElementById('firstDayCard').style.display = 'block';
+        if (d.prev_day_missing) document.getElementById('prevMissingCard').style.display = 'block';
+      } catch (_) {}
+
+      try {
+        const r = await fetch('/api/admin/dispense/window?days=7', {credentials: 'same-origin'});
+        if (!r.ok) return;
+        const d = await r.json();
+        if (!d.ok || !Array.isArray(d.days)) return;
+        const tbody = document.getElementById('windowBody');
+        if (!d.days.length) {
+          tbody.innerHTML = '<tr><td colspan="8" class="status-unavailable">No data yet.</td></tr>';
+          return;
+        }
+        const fmtL = (v) => v === null || v === undefined ? '\u2014' : Number(v).toLocaleString();
+        const fmtK = (v) => Number(v || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        const fmtVariance = (v) => (v > 0 ? '+' : '') + fmtL(v);
+        const statusCls = (s) => 'status-' + String(s || 'unavailable').toLowerCase().replace(/\s+/g, '-');
+        tbody.innerHTML = d.days.map(row => {
+          const meter = row.has_reading ? fmtL(row.consumption_l) : '\u2014';
+          const variance = row.has_reading ? fmtVariance(row.variance_l) : '\u2014';
+          const varCls = row.has_reading ? (row.variance_l === 0 ? 'variance-zero' : 'variance-nonzero') : '';
+          return '<tr>'
+            + '<td>' + row.date + '</td>'
+            + '<td class="num">' + meter + '</td>'
+            + '<td class="num">' + fmtL(row.sold_l) + '</td>'
+            + '<td class="num ' + varCls + '">' + variance + '</td>'
+            + '<td class="num">' + fmtK(row.sales_kes) + '</td>'
+            + '<td class="num">' + fmtK(row.paid_kes) + '</td>'
+            + '<td class="num">' + fmtK(row.outstanding_kes) + '</td>'
+            + '<td><span class="status-pill ' + statusCls(row.status) + '">' + row.status + '</span></td>'
+            + '</tr>';
+        }).join('');
       } catch (_) {}
     })();
   </script>

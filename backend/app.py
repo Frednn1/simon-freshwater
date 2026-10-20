@@ -24,6 +24,7 @@ from models import (
     db, Consumer, MeterReading, NotificationLog,
     AdminUser, PaymentLog, MpesaLog, SentBillArchive, AdminAuditLog,
     Tenant, TenantProfile, DispenseRate,
+    DispenseMeterReading, DispenseSale, DispensePayment,
 )
 from billing import (
     compute_amount, compute_consumption,
@@ -4124,6 +4125,172 @@ def admin_profile_switch():
         "active_profile": target,
         "redirect": "/dispense" if target == "dispensing" else "/",
     })
+
+
+# ═══════════════════════════════════════════════
+#  DISPENSING — READ-ONLY VIEWS (Phase D)
+# ═══════════════════════════════════════════════
+
+def _dispense_tenant_or_error():
+    """Return (tenant_id, None) or (None, error_response).
+    Guards: authenticated admin + dispensing profile active + dispensing enabled."""
+    admin = _current_admin()
+    if not admin or not admin.tenant_id:
+        return None, (jsonify({"error": "Unauthorized."}), 401)
+    if _current_active_profile() != "dispensing":
+        return None, (jsonify({"error": "Not on dispensing profile."}), 403)
+    enabled = _tenant_profiles_dict(admin.tenant_id)
+    if not enabled.get("dispensing"):
+        return None, (jsonify({"error": "Dispensing not enabled for this tenant."}), 403)
+    return admin.tenant_id, None
+
+
+def _dispense_window_stats(tenant_id, dates):
+    """Bulk-compute dispensing metrics for a list of date objects.
+    Returns {iso_date: stats_dict}. Three queries total regardless of window size."""
+    if not dates:
+        return {}
+    readings = {r.reading_date.isoformat(): r for r in
+                DispenseMeterReading.query
+                .filter(DispenseMeterReading.tenant_id == tenant_id,
+                        DispenseMeterReading.reading_date.in_(dates))
+                .all()}
+    sales_by_date = {}
+    for row in (DispenseSale.query
+                .filter(DispenseSale.tenant_id == tenant_id,
+                        DispenseSale.sale_date.in_(dates))
+                .all()):
+        sales_by_date.setdefault(row.sale_date.isoformat(), []).append(row)
+    payments_by_date = {}
+    for row in (DispensePayment.query
+                .filter(DispensePayment.tenant_id == tenant_id,
+                        DispensePayment.payment_date.in_(dates),
+                        DispensePayment.voided == False)  # noqa: E712
+                .all()):
+        payments_by_date.setdefault(row.payment_date.isoformat(), []).append(row)
+
+    out = {}
+    for d in dates:
+        iso = d.isoformat()
+        reading = readings.get(iso)
+        sales = sales_by_date.get(iso, [])
+        payments = payments_by_date.get(iso, [])
+        sales_kes = round(sum(float(r.total_kes or 0) for r in sales), 2)
+        sold_l = sum(int(r.container_size_L or 0) * int(r.quantity or 0) for r in sales)
+        paid_kes = round(sum(float(p.amount_kes or 0) for p in payments), 2)
+        consumption_m3 = round(float(reading.consumption_m3 or 0), 4) if reading else 0.0
+        consumption_l = int(round(consumption_m3 * 1000))
+        out[iso] = {
+            "reading": reading,
+            "consumption_m3": consumption_m3,
+            "consumption_l": consumption_l,
+            "sold_l": sold_l,
+            "sales_kes": sales_kes,
+            "paid_kes": paid_kes,
+            "outstanding_kes": round(sales_kes - paid_kes, 2),
+            "variance_l": consumption_l - sold_l,
+            "has_reading": reading is not None,
+        }
+    return out
+
+
+def _dispense_status(stats):
+    if not stats["has_reading"]:
+        return "No reading"
+    if stats["outstanding_kes"] > 0.01:
+        return "Due"
+    if stats["outstanding_kes"] < -0.01:
+        return "Overpaid"
+    return "Cleared"
+
+
+@app.route("/api/admin/dispense/today", methods=["GET"])
+def admin_dispense_today():
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("dispense_today", 60, 60):
+        return _too_many(60)
+    tenant_id, err = _dispense_tenant_or_error()
+    if err: return err
+
+    today = _nairobi_today()
+    yesterday = today - timedelta(days=1)
+    stats_map = _dispense_window_stats(tenant_id, [today, yesterday])
+    tstats = stats_map[today.isoformat()]
+    ystats = stats_map[yesterday.isoformat()]
+
+    any_reading_ever = (DispenseMeterReading.query
+                        .filter_by(tenant_id=tenant_id)
+                        .first())
+    any_before_yesterday = (DispenseMeterReading.query
+                            .filter(DispenseMeterReading.tenant_id == tenant_id,
+                                    DispenseMeterReading.reading_date < yesterday)
+                            .first())
+
+    is_first_day = (any_reading_ever is None) and (not tstats["has_reading"])
+    prev_day_missing = (not ystats["has_reading"]
+                        and any_before_yesterday is not None)
+
+    return jsonify({
+        "ok": True,
+        "date": today.strftime("%d %b %Y"),
+        "date_iso": today.isoformat(),
+        "opening_reading_m3": (float(tstats["reading"].opening_reading_m3)
+                               if tstats["reading"] else None),
+        "closing_reading_m3": (float(tstats["reading"].closing_reading_m3)
+                               if tstats["reading"] else None),
+        "consumption_m3": tstats["consumption_m3"],
+        "consumption_l": tstats["consumption_l"],
+        "sold_l": tstats["sold_l"],
+        "sales_kes": tstats["sales_kes"],
+        "paid_kes": tstats["paid_kes"],
+        "outstanding_kes": tstats["outstanding_kes"],
+        "variance_l": tstats["variance_l"],
+        "has_reading": tstats["has_reading"],
+        "is_first_day": is_first_day,
+        "prev_day_missing": prev_day_missing,
+    })
+
+
+@app.route("/api/admin/dispense/window", methods=["GET"])
+def admin_dispense_window():
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("dispense_window", 30, 60):
+        return _too_many(60)
+    tenant_id, err = _dispense_tenant_or_error()
+    if err: return err
+
+    try:
+        n = int(request.args.get("days", "7"))
+    except (ValueError, TypeError):
+        n = 7
+    if n < 1: n = 1
+    if n > 30: n = 30
+
+    today = _nairobi_today()
+    dates = [today - timedelta(days=i) for i in range(n)]
+    stats_map = _dispense_window_stats(tenant_id, dates)
+
+    days = []
+    for d in dates:
+        iso = d.isoformat()
+        st = stats_map[iso]
+        days.append({
+            "date": d.strftime("%d %b %Y"),
+            "date_iso": iso,
+            "consumption_l": st["consumption_l"],
+            "consumption_m3": st["consumption_m3"],
+            "sold_l": st["sold_l"],
+            "sales_kes": st["sales_kes"],
+            "paid_kes": st["paid_kes"],
+            "outstanding_kes": st["outstanding_kes"],
+            "variance_l": st["variance_l"],
+            "has_reading": st["has_reading"],
+            "status": _dispense_status(st),
+        })
+
+    return jsonify({"ok": True, "days": days})
 
 
 @app.route("/api/admin/logout", methods=["POST"])
