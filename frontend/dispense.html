@@ -319,8 +319,17 @@
         }
         const lo = document.getElementById('logoutBtn');
         if (lo) lo.addEventListener('click', async () => {
-          await fetch('/api/admin/logout', { method: 'POST', credentials: 'same-origin' });
-          location.href = '/admin/login';
+          // Tenant-aware logout — backend returns /admin/login?__tenant=<slug>
+          // for this session's tenant. Fall back to templated slug if the
+          // response is missing (e.g. network failure).
+          const fallback = '/admin/login?__tenant={{tenant_slug}}';
+          try {
+            const r = await fetch('/api/admin/logout', { method: 'POST', credentials: 'same-origin' });
+            const d = await r.json();
+            location.href = (d && d.redirect) || fallback;
+          } catch (_) {
+            location.href = fallback;
+          }
         });
       } catch (_) {}
 
