@@ -107,6 +107,59 @@
       </form>
     </div>
 
+    <!-- Phase F — payment recording -->
+    <div class="settings-card">
+      <h2>Record Payment</h2>
+      <form id="dPayForm" autocomplete="off">
+        <div class="form-row">
+          <label for="dPayAmount">Amount (KES) *</label>
+          <input type="number" id="dPayAmount" step="0.01" min="0.01" placeholder="e.g. 500.00" required>
+        </div>
+        <div class="form-row">
+          <label>Method</label>
+          <div style="display:flex;gap:1rem;flex-wrap:wrap;">
+            <label style="display:inline-flex;align-items:center;gap:.35rem;">
+              <input type="radio" name="dPayMethod" value="cash" checked> Cash
+            </label>
+            <label style="display:inline-flex;align-items:center;gap:.35rem;">
+              <input type="radio" name="dPayMethod" value="mpesa_c2b"> M-Pesa (manual reference)
+            </label>
+          </div>
+        </div>
+        <div class="form-row" id="dPayRefRow" style="display:none;">
+          <label for="dPayRef">M-Pesa Reference *</label>
+          <input type="text" id="dPayRef" placeholder="e.g. UJ48Q8QPW6">
+        </div>
+        <div class="form-row">
+          <label for="dPayNotes">Notes (optional)</label>
+          <input type="text" id="dPayNotes" placeholder="e.g. Customer name or note">
+        </div>
+        <button type="submit" id="dPaySubmitBtn" class="btn-primary btn-fit">Save Payment</button>
+        <div id="dPayMsg" class="alert hidden" style="margin-top:.5rem;"></div>
+      </form>
+    </div>
+
+    <div class="settings-card">
+      <h2>Today&#39;s Payments</h2>
+      <div style="overflow-x:auto;">
+        <table class="dtable">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th class="num">Amount (KES)</th>
+              <th>Method</th>
+              <th>Reference</th>
+              <th>Recorded By</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="dPayListBody">
+            <tr><td colspan="6" class="status-unavailable">Loading&hellip;</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <div class="settings-card">
       <h2>Last 7 Days</h2>
       <div style="overflow-x:auto;">
@@ -354,6 +407,145 @@
       });
 
       await loadContext();
+    })();
+  </script>
+
+  <!-- Phase F — payment recording -->
+  <script>
+    (async () => {
+      const form = document.getElementById('dPayForm');
+      if (!form) return;
+      const msg = document.getElementById('dPayMsg');
+      const refRow = document.getElementById('dPayRefRow');
+      const refInput = document.getElementById('dPayRef');
+
+      function getMethod() {
+        const el = form.querySelector('input[name="dPayMethod"]:checked');
+        return el ? el.value : 'cash';
+      }
+
+      function syncMethodUI() {
+        const m = getMethod();
+        refRow.style.display = (m === 'mpesa_c2b') ? 'block' : 'none';
+        if (m !== 'mpesa_c2b') refInput.value = '';
+      }
+
+      form.querySelectorAll('input[name="dPayMethod"]').forEach(r =>
+        r.addEventListener('change', syncMethodUI));
+
+      async function loadPayments() {
+        try {
+          const r = await fetch('/api/admin/dispense/payments', {credentials: 'same-origin'});
+          if (!r.ok) return;
+          const d = await r.json();
+          if (!d.ok) return;
+          const tbody = document.getElementById('dPayListBody');
+          const rows = d.payments || [];
+          if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="6" class="status-unavailable">No payments today.</td></tr>';
+            return;
+          }
+          const fmtTime = (iso) => {
+            if (!iso) return '\u2014';
+            try {
+              return new Date(iso).toLocaleTimeString(undefined,
+                {hour: '2-digit', minute: '2-digit'});
+            } catch (_) { return '\u2014'; }
+          };
+          tbody.innerHTML = rows.map(p => {
+            const amt = Number(p.amount_kes || 0).toLocaleString(undefined,
+              {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            const strike = p.voided ? 'text-decoration:line-through;opacity:.55;' : '';
+            const actionBtn = p.voided
+              ? '<span class="status-pill status-no-reading">Voided</span>'
+              : `<button class="dev-btn dev-btn--danger" type="button" onclick="voidPay(${p.id})">Void</button>`;
+            return '<tr style="' + strike + '">'
+              + '<td>' + fmtTime(p.created_at) + '</td>'
+              + '<td class="num">' + amt + '</td>'
+              + '<td>' + (p.method || '') + '</td>'
+              + '<td>' + (p.reference || '\u2014') + '</td>'
+              + '<td>' + (p.recorded_by || '\u2014') + '</td>'
+              + '<td>' + actionBtn + '</td>'
+              + '</tr>';
+          }).join('');
+        } catch (_) {}
+      }
+
+      window.voidPay = async (id) => {
+        const reason = prompt('Reason for voiding this payment:');
+        if (!reason || !reason.trim()) return;
+        try {
+          const r = await fetch(`/api/admin/dispense/payments/${id}/void`, {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({reason: reason.trim()})
+          });
+          const d = await r.json();
+          if (r.ok && d.ok) {
+            await loadPayments();
+            await new Promise(r => setTimeout(r, 800));
+            location.reload();
+          } else {
+            alert('\u274c ' + (d.error || 'Void failed.'));
+          }
+        } catch (_) {
+          alert('\u274c Network error.');
+        }
+      };
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('dPaySubmitBtn');
+        const orig = btn.textContent;
+        btn.disabled = true; btn.textContent = 'Saving\u2026';
+        if (msg) msg.className = 'alert hidden';
+        try {
+          const amount = parseFloat(document.getElementById('dPayAmount').value);
+          if (!Number.isFinite(amount) || amount <= 0) {
+            throw new Error('Amount must be a positive number.');
+          }
+          const method = getMethod();
+          const body = {
+            amount_kes: amount,
+            method: method,
+            notes: document.getElementById('dPayNotes').value.trim(),
+          };
+          if (method === 'mpesa_c2b') {
+            const ref = refInput.value.trim();
+            if (!ref) throw new Error('Reference is required for M-Pesa.');
+            body.reference = ref;
+          }
+          const r = await fetch('/api/admin/dispense/payments', {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+          });
+          const d = await r.json();
+          if (r.ok && d.ok) {
+            if (msg) {
+              msg.className = 'alert alert-success';
+              msg.textContent = '\u2705 Payment recorded (KES '
+                + Number(d.payment.amount_kes).toLocaleString(undefined,
+                    {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ').';
+            }
+            document.getElementById('dPayAmount').value = '';
+            document.getElementById('dPayNotes').value = '';
+            refInput.value = '';
+            await loadPayments();
+            await new Promise(r => setTimeout(r, 1200));
+            location.reload();
+          } else {
+            if (msg) { msg.className = 'alert alert-error'; msg.textContent = '\u274c ' + (d.error || 'Save failed.'); }
+            btn.disabled = false; btn.textContent = orig;
+          }
+        } catch (err) {
+          if (msg) { msg.className = 'alert alert-error'; msg.textContent = '\u274c ' + (err.message || 'Save failed.'); }
+          btn.disabled = false; btn.textContent = orig;
+        }
+      });
+
+      await loadPayments();
+      syncMethodUI();
     })();
   </script>
 </body>

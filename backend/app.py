@@ -4445,6 +4445,180 @@ def admin_dispense_reading_post():
     })
 
 
+# ═══════════════════════════════════════════════
+#  DISPENSING — PAYMENT RECORDING (Phase F)
+# ═══════════════════════════════════════════════
+
+@app.route("/api/admin/dispense/payments", methods=["GET"])
+def admin_dispense_payments_get():
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("dispense_payments_get", 60, 60):
+        return _too_many(60)
+    tenant_id, err = _dispense_tenant_or_error()
+    if err: return err
+
+    date_str = (request.args.get("date") or "").strip()
+    if date_str:
+        try:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid date (expected YYYY-MM-DD)."}), 400
+    else:
+        target_date = _nairobi_today()
+
+    rows = (DispensePayment.query
+            .filter_by(tenant_id=tenant_id, payment_date=target_date)
+            .order_by(DispensePayment.created_at.asc())
+            .all())
+
+    total_paid = round(sum(float(r.amount_kes or 0) for r in rows if not r.voided), 2)
+
+    return jsonify({
+        "ok": True,
+        "date": target_date.strftime("%d %b %Y"),
+        "date_iso": target_date.isoformat(),
+        "total_paid_kes": total_paid,
+        "payments": [{
+            "id": r.id,
+            "amount_kes": float(r.amount_kes),
+            "method": r.method,
+            "reference": r.reference,
+            "notes": r.notes,
+            "voided": bool(r.voided),
+            "voided_at": r.voided_at.isoformat() if r.voided_at else None,
+            "voided_by": r.voided_by,
+            "recorded_by": r.recorded_by,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        } for r in rows],
+    })
+
+
+@app.route("/api/admin/dispense/payments", methods=["POST"])
+def admin_dispense_payments_post():
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("dispense_payments_post", 30, 60):
+        return _too_many(60)
+    tenant_id, err = _dispense_tenant_or_error()
+    if err: return err
+
+    data = request.get_json(silent=True) or {}
+
+    try:
+        amount = float(data.get("amount_kes"))
+    except (ValueError, TypeError):
+        return jsonify({"error": "amount_kes must be a number."}), 400
+    if amount <= 0:
+        return jsonify({"error": "Amount must be greater than zero."}), 400
+    if amount > 1_000_000:
+        return jsonify({"error": "Amount exceeds the 1,000,000 KES limit."}), 400
+
+    method = (data.get("method") or "").strip().lower()
+    if method not in ("cash", "mpesa_c2b", "manual"):
+        return jsonify({"error": "method must be cash, mpesa_c2b, or manual."}), 400
+
+    reference = (data.get("reference") or "").strip()[:80]
+    notes = (data.get("notes") or "").strip()[:500]
+    admin_username = session.get("admin_username") or "?"
+
+    if method in ("mpesa_c2b", "manual") and not reference:
+        return jsonify({"error": "Reference is required for M-Pesa payments."}), 400
+
+    if not reference:
+        ts = int(datetime.utcnow().timestamp())
+        reference = f"cash-{ts}-{admin_username}"[:80]
+
+    if method in ("mpesa_c2b", "manual"):
+        dup = (DispensePayment.query
+               .filter_by(tenant_id=tenant_id, reference=reference)
+               .first())
+        if dup:
+            return jsonify({
+                "error": f"A payment with reference '{reference}' already exists.",
+                "existing_payment_id": dup.id,
+            }), 409
+
+    today = _nairobi_today()
+    row = DispensePayment(
+        tenant_id=tenant_id,
+        payment_date=today,
+        amount_kes=amount,
+        method=method,
+        reference=reference,
+        recorded_by=admin_username,
+        notes=notes or None,
+    )
+    db.session.add(row)
+    db.session.commit()
+
+    _audit("dispense_payment_recorded",
+           target_type="tenant", target_id=tenant_id,
+           detail=f"amount={amount:.2f} method={method} ref={reference[:40]}")
+
+    stats = _dispense_window_stats(tenant_id, [today])
+    st = stats[today.isoformat()]
+
+    return jsonify({
+        "ok": True,
+        "payment": {
+            "id": row.id,
+            "amount_kes": float(row.amount_kes),
+            "method": row.method,
+            "reference": row.reference,
+            "voided": False,
+            "recorded_by": row.recorded_by,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        },
+        "today_paid_kes": st["paid_kes"],
+        "today_outstanding_kes": st["outstanding_kes"],
+    })
+
+
+@app.route("/api/admin/dispense/payments/<int:payment_id>/void", methods=["POST"])
+def admin_dispense_payment_void(payment_id):
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("dispense_payment_void", 30, 60):
+        return _too_many(60)
+    tenant_id, err = _dispense_tenant_or_error()
+    if err: return err
+
+    data = request.get_json(silent=True) or {}
+    reason = (data.get("reason") or "").strip()[:200]
+    if not reason:
+        return jsonify({"error": "A reason is required to void a payment."}), 400
+
+    row = DispensePayment.query.filter_by(
+        id=payment_id, tenant_id=tenant_id).first()
+    if not row:
+        return jsonify({"error": "Payment not found."}), 404
+    if row.voided:
+        return jsonify({"error": "Payment is already voided."}), 400
+
+    row.voided = True
+    row.voided_at = datetime.utcnow()
+    row.voided_by = session.get("admin_username") or "?"
+    db.session.commit()
+
+    _audit("dispense_payment_voided",
+           target_type="tenant", target_id=tenant_id,
+           detail=f"payment_id={row.id} amount={row.amount_kes:.2f} reason={reason[:100]}")
+
+    stats = _dispense_window_stats(tenant_id, [row.payment_date])
+    st = stats[row.payment_date.isoformat()]
+
+    return jsonify({
+        "ok": True,
+        "payment_id": row.id,
+        "voided": True,
+        "voided_at": row.voided_at.isoformat(),
+        "voided_by": row.voided_by,
+        "today_paid_kes": st["paid_kes"],
+        "today_outstanding_kes": st["outstanding_kes"],
+    })
+
+
 @app.route("/api/admin/dispense/window", methods=["GET"])
 def admin_dispense_window():
     u = _require_admin()
