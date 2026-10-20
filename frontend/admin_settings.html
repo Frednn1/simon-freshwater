@@ -85,8 +85,24 @@
       <div id="passwordMsg" class="alert hidden"></div>
     </div>
 
+    <!-- Team Members (admin only) -->
+    <div class="settings-card" id="teamCard" style="display:none;">
+      <h2>&#x1F465; Team Members</h2>
+      <p class="form-hint-small" style="margin-bottom:.75rem;">
+        Add employees who can record sales and payments at the dispensing counter.
+        Each action is attributed to whoever is currently recording.
+      </p>
+      <div id="teamList">
+        <p class="form-hint-small">Loading&hellip;</p>
+      </div>
+      <button id="addTeamBtn" type="button" class="btn-primary btn-fit" style="margin-top:.75rem;">
+        &#x2795; Add Team Member
+      </button>
+      <div id="teamMsg" class="alert hidden" style="margin-top:.5rem;"></div>
+    </div>
+
     <!-- Activity Log (read-only audit trail) -->
-    <div class="settings-card">
+    <div class="settings-card" id="auditCard">
       <h2>📋 Activity Log</h2>
       <p class="form-hint-small" style="margin-bottom:.75rem;">
         Audit trail of admin actions. Records auto-delete after 7 days.
@@ -106,7 +122,7 @@
     </div>
 
     <!-- Backup to Cloudflare R2 -->
-    <div class="settings-card">
+    <div class="settings-card" id="backupCard">
       <h2>📦 Backup to Cloudflare R2</h2>
       <p class="form-hint-small" style="margin-bottom:.75rem;">
         Build a full Excel backup (8 tabs — summary, consumers, readings,
@@ -118,6 +134,46 @@
         <span class="btn-icon">📦</span> Run Backup Now
       </button>
       <div id="backupMsg" class="alert hidden"></div>
+    </div>
+
+    <!-- Team modal -->
+    <div id="teamModal" class="modal-overlay hidden">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Add Team Member</h3>
+          <button type="button" class="modal-close" onclick="closeTeamModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="teamForm" autocomplete="off">
+            <div class="form-row">
+              <label for="tmUsername">Username *</label>
+              <input type="text" id="tmUsername" required minlength="3" maxlength="60"
+                     placeholder="e.g. counter_jane" pattern="[a-zA-Z0-9@._\-]+">
+            </div>
+            <div class="form-row">
+              <label for="tmPassword">Password * (min 8 characters)</label>
+              <input type="password" id="tmPassword" required minlength="8" autocomplete="new-password">
+            </div>
+            <div class="form-row">
+              <label for="tmConfirm">Confirm Password *</label>
+              <input type="password" id="tmConfirm" required minlength="8" autocomplete="new-password">
+            </div>
+            <div class="form-row">
+              <label for="tmPhone">Phone * (used for password reset)</label>
+              <input type="tel" id="tmPhone" required placeholder="e.g. 0712345678">
+            </div>
+            <div class="form-row">
+              <label for="tmEmail">Email (optional)</label>
+              <input type="email" id="tmEmail" placeholder="e.g. employee@example.com">
+            </div>
+          </form>
+          <div id="tmMsg" class="alert hidden" style="margin-top:.5rem;"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" onclick="closeTeamModal()">Cancel</button>
+          <button type="button" class="btn-primary" id="teamSaveBtn" onclick="submitNewMember()">Save</button>
+        </div>
+      </div>
     </div>
 
     <div class="settings-back">
@@ -332,5 +388,190 @@
       .addEventListener('click', runBackup);
   </script>
   <script src="/tenant-watchdog.js"></script>
+  <!-- Step 2: Team management + role-based UI -->
+  <script>
+    (async () => {
+      let ME = null;
+      try {
+        const r = await fetch('/api/admin/whoami', { credentials: 'same-origin' });
+        if (r.ok) ME = await r.json();
+      } catch {}
+      const role = (ME && ME.user_role) || 'admin';
+
+      if (role !== 'admin') {
+        for (const id of ['teamCard', 'backupCard', 'auditCard']) {
+          const el = document.getElementById(id);
+          if (el) el.style.display = 'none';
+        }
+        const back = document.querySelector('.settings-back a');
+        if (back) { back.href = '/dispense'; back.textContent = '\u2190 Back to Dispensing'; }
+        return;
+      }
+
+      const card = document.getElementById('teamCard');
+      if (card) card.style.display = '';
+
+      const esc = (x) => String(x == null ? '' : x)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+
+      function showTeamMsg(kind, text) {
+        const el = document.getElementById('teamMsg');
+        if (!el) return;
+        el.className = 'alert alert-' + kind;
+        el.textContent = text;
+        el.classList.remove('hidden');
+      }
+      function showTmMsg(kind, text) {
+        const el = document.getElementById('tmMsg');
+        if (!el) return;
+        el.className = 'alert alert-' + kind;
+        el.textContent = text;
+        el.classList.remove('hidden');
+      }
+      function clearTmMsg() {
+        const el = document.getElementById('tmMsg');
+        if (el) el.classList.add('hidden');
+      }
+
+      async function loadTeam() {
+        const listEl = document.getElementById('teamList');
+        if (!listEl) return;
+        try {
+          const r = await fetch('/api/admin/team', { credentials: 'same-origin' });
+          const d = await r.json();
+          if (!r.ok || !d.ok) {
+            listEl.innerHTML = '<p class="form-hint-small">Failed to load team.</p>';
+            return;
+          }
+          const team = d.team || [];
+          if (!team.length) {
+            listEl.innerHTML = '<p class="form-hint-small">No team members yet.</p>';
+            return;
+          }
+          const pill = (bg, fg, label) =>
+            '<span style="display:inline-block;background:' + bg + ';color:' + fg +
+            ';padding:.15rem .55rem;border-radius:99px;font-size:.72rem;font-weight:600;letter-spacing:.3px;">' + label + '</span>';
+
+          listEl.innerHTML =
+            '<table style="width:100%;border-collapse:collapse;font-size:.9rem;">' +
+            '<thead><tr style="background:#f5f5f5;text-align:left;">' +
+              '<th style="padding:.5rem;font-weight:600;">Username</th>' +
+              '<th style="padding:.5rem;font-weight:600;">Role</th>' +
+              '<th style="padding:.5rem;font-weight:600;">Status</th>' +
+              '<th style="padding:.5rem;font-weight:600;text-align:right;">Actions</th>' +
+            '</tr></thead><tbody>' +
+            team.map(m => {
+              const roleBadge = m.user_role === 'admin'
+                ? pill('#e3f2fd','#0d47a1','Admin')
+                : pill('#fff3e0','#e65100','Employee');
+              const statusBadge = m.is_active
+                ? pill('#e8f5e9','#2e7d32','Active')
+                : pill('#eceff1','#607d8b','Inactive');
+              let actions = '';
+              if (m.is_self) {
+                actions = '<span style="color:#999;font-size:.78rem;">(you)</span>';
+              } else if (m.is_super) {
+                actions = '<span style="color:#999;font-size:.78rem;">super</span>';
+              } else if (m.is_active) {
+                actions = '<button type="button" class="btn-secondary" style="font-size:.78rem;padding:.25rem .6rem;" onclick="deactivateMember(' + m.id + ')">Deactivate</button>';
+              } else {
+                actions = '<button type="button" class="btn-secondary" style="font-size:.78rem;padding:.25rem .6rem;" onclick="reactivateMember(' + m.id + ')">Reactivate</button>';
+              }
+              return '<tr style="border-top:1px solid #eee;">' +
+                '<td style="padding:.55rem .5rem;">' + esc(m.username) + '</td>' +
+                '<td style="padding:.55rem .5rem;">' + roleBadge + '</td>' +
+                '<td style="padding:.55rem .5rem;">' + statusBadge + '</td>' +
+                '<td style="padding:.55rem .5rem;text-align:right;">' + actions + '</td>' +
+                '</tr>';
+            }).join('') +
+            '</tbody></table>';
+        } catch {
+          listEl.innerHTML = '<p class="form-hint-small">Failed to load team.</p>';
+        }
+      }
+
+      window.openTeamModal = function () {
+        ['tmUsername','tmPassword','tmConfirm','tmPhone','tmEmail'].forEach(id => {
+          const el = document.getElementById(id); if (el) el.value = '';
+        });
+        clearTmMsg();
+        document.getElementById('teamModal').classList.remove('hidden');
+        const u = document.getElementById('tmUsername');
+        if (u) u.focus();
+      };
+      window.closeTeamModal = function () {
+        document.getElementById('teamModal').classList.add('hidden');
+      };
+
+      window.submitNewMember = async function () {
+        const btn = document.getElementById('teamSaveBtn');
+        const orig = btn.textContent;
+        btn.disabled = true; btn.textContent = 'Saving\u2026';
+
+        const username = (document.getElementById('tmUsername').value || '').trim().toLowerCase();
+        const password = document.getElementById('tmPassword').value || '';
+        const confirm  = document.getElementById('tmConfirm').value || '';
+        const phone    = (document.getElementById('tmPhone').value || '').trim();
+        const email    = (document.getElementById('tmEmail').value || '').trim();
+
+        const fail = (m) => { showTmMsg('error', m); btn.disabled = false; btn.textContent = orig; };
+
+        if (username.length < 3) return fail('Username must be at least 3 characters.');
+        if (password.length < 8) return fail('Password must be at least 8 characters.');
+        if (password !== confirm) return fail('Passwords do not match.');
+        if (!phone) return fail('Phone is required.');
+
+        try {
+          const r = await fetch('/api/admin/team', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password, phone, email: email || null }),
+          });
+          const d = await r.json();
+          if (r.ok && d.ok) {
+            const added = (d.member && d.member.username) || username;
+            showTeamMsg('success', '\u2705 Team member "' + added + '" added.');
+            window.closeTeamModal();
+            await loadTeam();
+          } else {
+            showTmMsg('error', d.error || 'Create failed.');
+            btn.disabled = false; btn.textContent = orig;
+          }
+        } catch {
+          showTmMsg('error', 'Network error.');
+          btn.disabled = false; btn.textContent = orig;
+        }
+      };
+
+      window.deactivateMember = async function (id) {
+        if (!confirm('Deactivate this team member? They will lose access immediately.')) return;
+        try {
+          const r = await fetch('/api/admin/team/' + id + '/deactivate', {
+            method: 'POST', credentials: 'same-origin',
+          });
+          const d = await r.json();
+          if (r.ok && d.ok) { showTeamMsg('success', '\u2705 Member deactivated.'); await loadTeam(); }
+          else { showTeamMsg('error', d.error || 'Deactivate failed.'); }
+        } catch { showTeamMsg('error', 'Network error.'); }
+      };
+
+      window.reactivateMember = async function (id) {
+        try {
+          const r = await fetch('/api/admin/team/' + id + '/reactivate', {
+            method: 'POST', credentials: 'same-origin',
+          });
+          const d = await r.json();
+          if (r.ok && d.ok) { showTeamMsg('success', '\u2705 Member reactivated.'); await loadTeam(); }
+          else { showTeamMsg('error', d.error || 'Reactivate failed.'); }
+        } catch { showTeamMsg('error', 'Network error.'); }
+      };
+
+      const addBtn = document.getElementById('addTeamBtn');
+      if (addBtn) addBtn.addEventListener('click', window.openTeamModal);
+      await loadTeam();
+    })();
+  </script>
+
 </body>
 </html>
