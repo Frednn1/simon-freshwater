@@ -1130,8 +1130,28 @@ def _ensure_all_columns():
 #  FRONTEND ROUTES
 # ═══════════════════════════════════════════════
 
+@app.route("/dispense")
+def dispense_home():
+    """Water Dispensing portal (Phase C placeholder — real UI arrives Phase D)."""
+    admin = _current_admin()
+    if not admin:
+        return redirect("/admin/login")
+    if _current_active_profile() != "dispensing":
+        return redirect("/")
+    enabled = _tenant_profiles_dict(admin.tenant_id) if admin.tenant_id else {}
+    if not enabled.get("dispensing"):
+        return redirect("/")
+    return _serve_frontend("dispense.html")
+
+
 @app.route("/")
 def home():
+    if session.get("admin_id"):
+        try:
+            if _current_active_profile() == "dispensing":
+                return redirect("/dispense")
+        except Exception:
+            pass
     return _serve_frontend("index.html")
 
 @app.route("/consumer")
@@ -1270,6 +1290,48 @@ def _tenant_profiles_dict(tenant_id):
         if r.profile_name in out:
             out[r.profile_name] = bool(r.enabled)
     return out
+
+
+def _initial_profile_for(tenant_id):
+    """Default profile on login. Billing wins if both are enabled
+    (matches design §1.3). Falls back to dispensing for P2-only tenants."""
+    if not tenant_id:
+        return "billing"
+    enabled = _tenant_profiles_dict(tenant_id)
+    if enabled.get("billing"):
+        return "billing"
+    if enabled.get("dispensing"):
+        return "dispensing"
+    return "billing"
+
+
+def _current_active_profile():
+    """Return 'billing' or 'dispensing' for the session's admin.
+    Self-heals if the tenant's enabled profiles changed since login."""
+    aid = session.get("admin_id")
+    if not aid:
+        return None
+    try:
+        a = AdminUser.query.get(aid)
+        tenant_id = a.tenant_id if a else None
+    except Exception:
+        tenant_id = None
+    if not tenant_id:
+        return None
+    enabled = _tenant_profiles_dict(tenant_id)
+    cur = session.get("active_profile")
+    if cur == "dispensing" and enabled.get("dispensing"):
+        return "dispensing"
+    if cur == "billing" and enabled.get("billing"):
+        return "billing"
+    # Self-heal
+    if enabled.get("billing"):
+        session["active_profile"] = "billing"
+        return "billing"
+    if enabled.get("dispensing"):
+        session["active_profile"] = "dispensing"
+        return "dispensing"
+    return "billing"
 
 
 def _tenant_to_dict(t):
@@ -3813,8 +3875,15 @@ def admin_whoami():
     setup_required = _tenant_query(AdminUser).count() == 0
     admin = _current_admin()
     if admin:
-        return jsonify({"authenticated": True, "username": admin.username,
-                        "setup_required": False})
+        _prof = _current_active_profile()
+        _enabled = _tenant_profiles_dict(admin.tenant_id) if admin.tenant_id else {"billing": True, "dispensing": False}
+        return jsonify({
+            "authenticated": True,
+            "username": admin.username,
+            "setup_required": False,
+            "active_profile": _prof,
+            "enabled_profiles": _enabled,
+        })
     return jsonify({"authenticated": False, "setup_required": setup_required})
 
 
@@ -3922,6 +3991,17 @@ def admin_login_route():
     except Exception:
         pass
 
+    # Determine the initial profile (billing or dispensing) from the
+    # admin's OWN tenant_id (not the URL tenant). Defaults to billing
+    # if anything goes wrong — matches every existing tenant's state.
+    _initial_profile = "billing"
+    try:
+        _init_ar = AdminUser.query.get(result["admin_id"])
+        if _init_ar and _init_ar.tenant_id:
+            _initial_profile = _initial_profile_for(_init_ar.tenant_id)
+    except Exception:
+        pass
+
     if _requested_slug and _admin_slug != _requested_slug:
         _audit("login_failed_tenant_mismatch",
                detail=(f"attempted_username={_safe_username_str(data.get('username'))[:40]} "
@@ -3947,6 +4027,7 @@ def admin_login_route():
         session["pending_2fa_admin_id"] = admin.id
         session["last_activity"] = datetime.utcnow().isoformat()
         session["__tenant_slug"] = _admin_slug
+        session["active_profile"] = _initial_profile
 
         return jsonify({
             "ok": True,
@@ -3962,6 +4043,7 @@ def admin_login_route():
     session["last_activity"] = datetime.utcnow().isoformat()
     session["login_at"] = datetime.utcnow().isoformat()
     session["__tenant_slug"] = _admin_slug
+    session["active_profile"] = _initial_profile
     _audit("login")
     return jsonify({"ok": True, "username": result["username"]}), 200
 
@@ -4013,6 +4095,35 @@ def admin_login_resend_otp():
         return jsonify({"ok": False, "error": send.get("error")}), 429
 
     return jsonify({"ok": True, "message": send.get("message")}), 200
+
+
+@app.route("/api/admin/profile/switch", methods=["POST"])
+def admin_profile_switch():
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("profile_switch", 30, 60):
+        return _too_many(60)
+    admin = _current_admin()
+    if not admin or not admin.tenant_id:
+        return jsonify({"error": "Unauthorized."}), 401
+    enabled = _tenant_profiles_dict(admin.tenant_id)
+    data = request.get_json(silent=True) or {}
+    target = (data.get("to") or "").strip().lower()
+    if target not in ("billing", "dispensing"):
+        return jsonify({"error": "Invalid target."}), 400
+    if not enabled.get(target):
+        # Neutral 403 — never reveal what profiles exist for this tenant.
+        return jsonify({"error": "Profile not available for this tenant."}), 403
+    _from = session.get("active_profile") or "?"
+    session["active_profile"] = target
+    _audit("profile_switched",
+           target_type="tenant", target_id=admin.tenant_id,
+           detail=f"from={_from}, to={target}")
+    return jsonify({
+        "ok": True,
+        "active_profile": target,
+        "redirect": "/dispense" if target == "dispensing" else "/",
+    })
 
 
 @app.route("/api/admin/logout", methods=["POST"])

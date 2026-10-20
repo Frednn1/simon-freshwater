@@ -14,6 +14,61 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+  <div id="profileBanner" style="display:none;background:#e3f2fd;padding:.5rem 1rem;font-size:.85rem;text-align:center;border-bottom:1px solid #90caf9;color:#0d47a1;">
+    <span id="profileBannerText"></span>
+    <span id="profileSwitchLink" style="display:none;"> &middot; <a href="#" id="switchProfileLink" style="color:#0d47a1;font-weight:600;text-decoration:underline;"></a></span>
+  </div>
+  <script>
+    (async () => {
+      try {
+        const r = await fetch('/api/admin/whoami', {credentials: 'same-origin'});
+        if (!r.ok) return;
+        const d = await r.json();
+        if (!d.authenticated) return;
+        const banner = document.getElementById('profileBanner');
+        const text = document.getElementById('profileBannerText');
+        const switchSpan = document.getElementById('profileSwitchLink');
+        const switchLink = document.getElementById('switchProfileLink');
+        if (!banner || !text) return;
+        banner.style.display = 'block';
+        const profiles = d.enabled_profiles || {};
+        const profLabel = d.active_profile === 'dispensing' ? 'Dispensing' : 'Billing';
+        text.textContent = 'Signed in as ' + d.username + ' \u00b7 ' + profLabel + ' profile';
+        const bothOn = !!(profiles.billing && profiles.dispensing);
+        if (bothOn && switchSpan && switchLink) {
+          const target = d.active_profile === 'dispensing' ? 'billing' : 'dispensing';
+          const targetLabel = target === 'billing' ? 'Billing' : 'Dispensing';
+          switchSpan.style.display = 'inline';
+          switchLink.textContent = 'Switch to ' + targetLabel;
+          switchLink.addEventListener('click', async (e) => {
+            e.preventDefault();
+            switchLink.style.pointerEvents = 'none';
+            const orig = switchLink.textContent;
+            switchLink.textContent = 'Switching\u2026';
+            try {
+              const r2 = await fetch('/api/admin/profile/switch', {
+                method: 'POST', credentials: 'same-origin',
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ to: target })
+              });
+              const j = await r2.json();
+              if (r2.ok && j.ok && j.redirect) {
+                location.href = j.redirect;
+              } else {
+                alert('\u274c ' + (j.error || 'Switch failed.'));
+                switchLink.style.pointerEvents = '';
+                switchLink.textContent = orig;
+              }
+            } catch (_) {
+              alert('\u274c Network error.');
+              switchLink.style.pointerEvents = '';
+              switchLink.textContent = orig;
+            }
+          });
+        }
+      } catch (_) {}
+    })();
+  </script>
   <header class="site-header">
     <div class="header-inner">
       <a href="/?__tenant={{tenant_slug}}" class="brand-link" aria-label="Go to home"><div class="brand">

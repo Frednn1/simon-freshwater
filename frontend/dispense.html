@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{brand_name}} \u2013 Water Dispensing</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="{{brand_favicon_url}}?v={{tenant_slug}}">
+  <link rel="icon" type="image/png" sizes="192x192" href="{{brand_favicon_url}}?size=192&v={{tenant_slug}}">
+  <link rel="shortcut icon" href="{{brand_favicon_url}}?v={{tenant_slug}}">
+  <link rel="apple-touch-icon" href="{{brand_favicon_url}}?size=192&v={{tenant_slug}}">
+  <link rel="manifest" href="/manifest.webmanifest?__tenant={{tenant_slug}}">
+  <meta name="theme-color" content="#0d47a1">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="settings-body">
+  <main class="settings-wrap" style="max-width:640px;">
+    <a href="/" class="brand-link" aria-label="Go to home">
+      <div class="settings-header">
+        <img class="brand-logo" src="{{brand_logo_url}}" alt="{{brand_name}}">
+        <div class="settings-brand-text">
+          <h1>{{brand_name}}</h1>
+          <p>Water Dispensing</p>
+        </div>
+      </div>
+    </a>
+    <div class="settings-card">
+      <h2>\U0001F4A7 Water Dispensing</h2>
+      <p class="form-hint-small" style="margin-bottom:1rem;">
+        The water dispensing portal is being prepared. It will be available here shortly.
+      </p>
+      <div id="switchArea" style="display:none;margin-bottom:1rem;">
+        <a href="#" id="backToBillingLink" class="btn-primary btn-fit" style="text-decoration:none;display:inline-block;">
+          \u21a9 Switch to Billing
+        </a>
+      </div>
+      <a href="/admin/settings" class="btn-secondary btn-fit" style="text-decoration:none;display:inline-block;margin-right:.5rem;">
+        \u2699\ufe0f Settings
+      </a>
+      <button id="logoutBtn" type="button" class="btn-secondary btn-fit">Logout</button>
+    </div>
+  </main>
+  <script>
+    (async () => {
+      try {
+        const r = await fetch('/api/admin/whoami', {credentials: 'same-origin'});
+        if (!r.ok) return;
+        const d = await r.json();
+        if (!d.authenticated) return;
+        const profiles = d.enabled_profiles || {};
+        const switchArea = document.getElementById('switchArea');
+        const backLink = document.getElementById('backToBillingLink');
+        if (profiles.billing && switchArea && backLink) {
+          switchArea.style.display = 'block';
+          backLink.addEventListener('click', async (e) => {
+            e.preventDefault();
+            backLink.style.pointerEvents = 'none';
+            const orig = backLink.textContent;
+            backLink.textContent = 'Switching\u2026';
+            try {
+              const r2 = await fetch('/api/admin/profile/switch', {
+                method: 'POST', credentials: 'same-origin',
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ to: 'billing' })
+              });
+              const j = await r2.json();
+              if (r2.ok && j.ok && j.redirect) { location.href = j.redirect; }
+              else { alert('\u274c ' + (j.error || 'Switch failed.')); backLink.style.pointerEvents=''; backLink.textContent=orig; }
+            } catch (_) { alert('\u274c Network error.'); backLink.style.pointerEvents=''; backLink.textContent=orig; }
+          });
+        }
+        const lo = document.getElementById('logoutBtn');
+        if (lo) lo.addEventListener('click', async () => {
+          await fetch('/api/admin/logout', { method: 'POST', credentials: 'same-origin' });
+          location.href = '/admin/login';
+        });
+      } catch (_) {}
+    })();
+  </script>
+</body>
+</html>
