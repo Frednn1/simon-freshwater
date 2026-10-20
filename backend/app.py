@@ -5029,6 +5029,203 @@ def admin_dispense_sale_void(sale_id):
     })
 
 
+@app.route("/api/admin/dispense/sales/bulk_import", methods=["POST"])
+def admin_dispense_sales_bulk_import():
+    """Bulk-import sales from a CSV paste.
+
+    Body (JSON):
+      {
+        "csv": "<multiline CSV text>",
+        "dry_run": true|false
+      }
+
+    CSV format (header optional, blank lines ignored):
+      size_l,quantity[,date][,notes]
+      size_l,quantity[,notes]
+      size_l,quantity
+
+    - size_l  — must match an ACTIVE dispensing rate for this tenant
+    - quantity — 1..10000
+    - date    — YYYY-MM-DD, must be within the last 7 days (default today)
+    - notes   — optional free text, up to 500 chars
+
+    All-or-nothing: if ANY row is invalid, no sales are written and 400 is
+    returned with row-by-row errors. With dry_run=true, valid data is
+    returned in the response but never written.
+    """
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("dispense_sales_bulk", 5, 60):
+        return _too_many(60)
+    tenant_id, err = _dispense_tenant_or_error()
+    if err: return err
+
+    data = request.get_json(silent=True) or {}
+    csv_text = (data.get("csv") or "").lstrip("\ufeff")
+    dry_run  = bool(data.get("dry_run"))
+
+    if not csv_text or not csv_text.strip():
+        return jsonify({
+            "error": "Empty CSV. Expected lines like: size_l,quantity[,date][,notes]"
+        }), 400
+
+    import csv as _csv
+    import io as _io
+
+    rates = {r.container_size_L: float(r.price_kes)
+             for r in _dispense_active_rates(tenant_id)}
+    if not rates:
+        return jsonify({
+            "error": "No active dispensing rates configured. "
+                     "Set them up in the dev portal before importing sales."
+        }), 400
+
+    today    = _nairobi_today()
+    earliest = today - timedelta(days=6)
+
+    reader = _csv.reader(_io.StringIO(csv_text))
+    parsed = []
+    errors = []
+
+    for lineno, row in enumerate(reader, start=1):
+        if not row or not any(str(c).strip() for c in row):
+            continue
+        # Header detection (only on the first non-empty row)
+        if lineno == 1 and str(row[0]).strip().lower() in ("size_l", "size", "container"):
+            continue
+
+        cells = [str(c).strip() for c in row]
+        while len(cells) < 2:
+            cells.append("")
+
+        try:
+            size = int(cells[0])
+        except (ValueError, TypeError):
+            errors.append({"line": lineno, "error": f"invalid size_l {cells[0]!r}"})
+            continue
+        if size not in rates:
+            errors.append({"line": lineno, "error": f"{size} L has no active rate"})
+            continue
+
+        try:
+            qty = int(cells[1])
+        except (ValueError, TypeError):
+            errors.append({"line": lineno, "error": f"invalid quantity {cells[1]!r}"})
+            continue
+        if qty < 1 or qty > 10000:
+            errors.append({"line": lineno, "error": f"quantity {qty} out of range (1..10000)"})
+            continue
+
+        # Optional date column at position 3
+        sale_date   = today
+        notes_parts = []
+        rest        = cells[2:]
+        if rest:
+            first = rest[0]
+            if first:
+                try:
+                    sale_date = datetime.strptime(first, "%Y-%m-%d").date()
+                    notes_parts.extend([c for c in rest[1:] if c])
+                except (ValueError, TypeError):
+                    notes_parts.extend([c for c in rest if c])
+            else:
+                notes_parts.extend([c for c in rest if c])
+
+        if sale_date < earliest or sale_date > today:
+            errors.append({
+                "line": lineno,
+                "error": f"date {sale_date.isoformat()} outside last 7 days"
+            })
+            continue
+
+        price = rates[size]
+        total = round(price * qty, 2)
+        notes = (" ".join(notes_parts)).strip()[:500] or None
+
+        parsed.append({
+            "line": lineno,
+            "size_l": size,
+            "quantity": qty,
+            "date_iso": sale_date.isoformat(),
+            "price_per_unit_kes": price,
+            "total_kes": total,
+            "notes": notes,
+        })
+
+    if not parsed and not errors:
+        return jsonify({"error": "No data rows found in CSV."}), 400
+
+    total_kes = round(sum(p["total_kes"] for p in parsed), 2)
+    total_l   = sum(p["size_l"] * p["quantity"] for p in parsed)
+
+    if errors:
+        return jsonify({
+            "ok": False,
+            "dry_run": dry_run,
+            "parsed": parsed,
+            "errors": errors,
+            "count_ok": len(parsed),
+            "count_err": len(errors),
+            "total_kes": total_kes,
+            "total_liters": total_l,
+        }), 400
+
+    if dry_run:
+        return jsonify({
+            "ok": True,
+            "dry_run": True,
+            "parsed": parsed,
+            "errors": [],
+            "count_ok": len(parsed),
+            "count_err": 0,
+            "total_kes": total_kes,
+            "total_liters": total_l,
+        })
+
+    admin_username = session.get("admin_username") or "?"
+    try:
+        created_ids = []
+        for p in parsed:
+            row = DispenseSale(
+                tenant_id=tenant_id,
+                sale_date=datetime.strptime(p["date_iso"], "%Y-%m-%d").date(),
+                container_size_L=p["size_l"],
+                quantity=p["quantity"],
+                price_per_unit_kes=p["price_per_unit_kes"],
+                total_kes=p["total_kes"],
+                recorded_by=admin_username,
+                notes=p["notes"],
+            )
+            db.session.add(row)
+            db.session.flush()
+            created_ids.append(row.id)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        app.logger.exception("[BulkSales] commit failed")
+        return jsonify({"ok": False, "error": f"Database write failed: {e}"}), 500
+
+    _audit("dispense_sales_bulk_imported",
+           target_type="tenant", target_id=tenant_id,
+           detail=(f"count={len(parsed)} total_kes={total_kes:.2f} "
+                   f"liters={total_l}"))
+
+    stats = _dispense_window_stats(tenant_id, [today])
+    st = stats[today.isoformat()]
+
+    return jsonify({
+        "ok": True,
+        "dry_run": False,
+        "count": len(parsed),
+        "total_kes": total_kes,
+        "total_liters": total_l,
+        "created_ids": created_ids,
+        "today_sales_kes": st["sales_kes"],
+        "today_sold_l": st["sold_l"],
+        "today_variance_l": st["variance_l"],
+    })
+
+
 @app.route("/api/admin/dispense/window", methods=["GET"])
 def admin_dispense_window():
     u = _require_admin()
