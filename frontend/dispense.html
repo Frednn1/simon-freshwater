@@ -228,6 +228,7 @@
               <th class="num">Paid (KES)</th>
               <th class="num">Outstanding (KES)</th>
               <th>Status</th>
+              <th>Report</th>
             </tr>
           </thead>
           <tbody id="windowBody">
@@ -325,7 +326,7 @@
         if (!d.ok || !Array.isArray(d.days)) return;
         const tbody = document.getElementById('windowBody');
         if (!d.days.length) {
-          tbody.innerHTML = '<tr><td colspan="8" class="status-unavailable">No data yet.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="9" class="status-unavailable">No data yet.</td></tr>';
           return;
         }
         const fmtL = (v) => v === null || v === undefined ? '\u2014' : Number(v).toLocaleString();
@@ -336,6 +337,12 @@
           const meter = row.has_reading ? fmtL(row.consumption_l) : '\u2014';
           const variance = row.has_reading ? fmtVariance(row.variance_l) : '\u2014';
           const varCls = row.has_reading ? (row.variance_l === 0 ? 'variance-zero' : 'variance-nonzero') : '';
+          const _vr = Number(row.variance_l || 0);
+          const _or = Number(row.outstanding_kes || 0);
+          const showReport = row.has_reading && (_vr !== 0 || _or !== 0);
+          const reportCell = showReport
+            ? '<button type="button" style="padding:.2rem .55rem;font-size:.72rem;border:1px solid #1976d2;color:#1976d2;background:transparent;border-radius:5px;cursor:pointer;font-weight:600;" onclick="sendReconReport(\'' + row.date_iso + '\')">Send</button>'
+            : '<span style="opacity:.35;">\u2014</span>';
           return '<tr>'
             + '<td>' + row.date + '</td>'
             + '<td class="num">' + meter + '</td>'
@@ -345,6 +352,7 @@
             + '<td class="num">' + fmtK(row.paid_kes) + '</td>'
             + '<td class="num">' + fmtK(row.outstanding_kes) + '</td>'
             + '<td><span class="status-pill ' + statusCls(row.status) + '">' + row.status + '</span></td>'
+            + '<td>' + reportCell + '</td>'
             + '</tr>';
         }).join('');
       } catch (_) {}
@@ -777,6 +785,27 @@
 
       await loadSales();
     })();
+  </script>
+
+  <!-- A2 — dispensing reconciliation send -->
+  <script>
+    window.sendReconReport = async (date_iso) => {
+      if (!confirm('Send reconciliation SMS for ' + date_iso + '?')) return;
+      try {
+        const r = await fetch(
+          '/api/admin/dispense/reconciliation/send?date=' + encodeURIComponent(date_iso),
+          { method: 'POST', credentials: 'same-origin' }
+        );
+        const d = await r.json();
+        if (r.ok && d.ok) {
+          alert('\u2705 SMS sent to ' + d.sent_count + ' recipient(s).\n\n' + d.sms_text);
+        } else {
+          alert('\u274c ' + (d.error || 'Send failed.'));
+        }
+      } catch (_) {
+        alert('\u274c Network error.');
+      }
+    };
   </script>
 </body>
 </html>

@@ -4302,6 +4302,136 @@ def _dispense_status(stats):
     return "Cleared"
 
 
+# ═══════════════════════════════════════════════
+#  DISPENSING — DAILY RECONCILIATION SMS (A2)
+# ═══════════════════════════════════════════════
+# Manual, on-demand. Fired by the "Send" button on each qualifying row
+# of the 7-day table. No scheduler — the operator decides when to notify.
+
+def _fmt_kes_sms(v):
+    """Compact KES for SMS: whole numbers lose the decimals, else 2 dp."""
+    try:
+        n = float(v or 0)
+    except (ValueError, TypeError):
+        n = 0.0
+    if abs(n - round(n)) < 0.005:
+        return f"{int(round(n)):,}"
+    return f"{n:,.2f}"
+
+
+def _fmt_l_sms(v):
+    """Compact litres for SMS: integer, comma thousands."""
+    try:
+        return f"{int(round(float(v or 0))):,}"
+    except (ValueError, TypeError):
+        return "0"
+
+
+def _dispense_recon_sms_text(tenant, st, target_date):
+    """Build one SMS for a day's dispensing reconciliation.
+    Target ~130 chars so it usually fits one SMS segment. SMSGate
+    handles multipart if a value ever pushes past 160."""
+    label = ""
+    if tenant:
+        label = ((tenant.short_name or "").strip() or
+                 (tenant.org_name or "").strip())[:14]
+    dd_mm = target_date.strftime("%d/%m")
+    cons = _fmt_l_sms(st["consumption_l"])
+    sold = _fmt_l_sms(st["sold_l"])
+    var  = int(round(float(st["variance_l"] or 0)))
+    var_s = f"+{var:,}" if var > 0 else (f"{var:,}" if var < 0 else "0")
+    sales = _fmt_kes_sms(st["sales_kes"])
+    paid  = _fmt_kes_sms(st["paid_kes"])
+    out   = _fmt_kes_sms(st["outstanding_kes"])
+    return (
+        f"[{label}] Recon {dd_mm}:\n"
+        f"Meter {cons}L | Sold {sold}L | Var {var_s}L\n"
+        f"Sales {sales} | Paid {paid} | Due {out}\n"
+        f"Detail: dispensing portal"
+    )
+
+
+@app.route("/api/admin/dispense/reconciliation/send", methods=["POST"])
+def admin_dispense_reconciliation_send():
+    """Send a reconciliation SMS to all active admins of the current tenant
+    for a given day (must be within the last 7 days, must have a reading).
+    Manual only — no scheduler fires this."""
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("dispense_recon_send", 10, 60):
+        return _too_many(60)
+    tenant_id, err = _dispense_tenant_or_error()
+    if err: return err
+
+    date_str = (request.args.get("date") or "").strip()
+    if not date_str:
+        return jsonify({"error": "date query parameter required (YYYY-MM-DD)."}), 400
+    try:
+        target = datetime.strptime(date_str, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid date format (YYYY-MM-DD expected)."}), 400
+
+    today = _nairobi_today()
+    earliest = today - timedelta(days=6)
+    if target < earliest or target > today:
+        return jsonify({"error": "Date must be within the last 7 days."}), 400
+
+    stats_map = _dispense_window_stats(tenant_id, [target])
+    st = stats_map[target.isoformat()]
+    if not st["has_reading"]:
+        return jsonify({"error": "This day has no closing reading recorded."}), 400
+
+    tenant = Tenant.query.get(tenant_id)
+    sms_text = _dispense_recon_sms_text(tenant, st, target)
+    date_display = target.strftime("%d %b %Y")
+
+    admins = (AdminUser.query
+              .filter_by(tenant_id=tenant_id, is_active=True)
+              .order_by(AdminUser.id.asc())
+              .all())
+    if not admins:
+        return jsonify({"error": "No active admins for this tenant."}), 400
+
+    results = []
+    for a in admins:
+        if not a.phone:
+            results.append({"username": a.username, "ok": False,
+                            "error": "no phone on file"})
+            continue
+        r = send_sms_with_retry(a.phone, sms_text, max_attempts=2)
+        tail = a.phone[-4:] if len(a.phone) >= 4 else "****"
+        results.append({
+            "username": a.username,
+            "phone_tail": tail,
+            "ok": bool(r.get("ok")),
+            "provider_id": r.get("provider_id"),
+            "error": r.get("error"),
+        })
+
+    sent   = sum(1 for r in results if r["ok"])
+    failed = len(results) - sent
+
+    try:
+        _audit("dispense_reconciliation_sent",
+               target_type="tenant", target_id=tenant_id,
+               detail=(f"date={date_str} sent={sent} failed={failed} "
+                       f"variance_l={st['variance_l']} "
+                       f"outstanding_kes={st['outstanding_kes']}"))
+    except Exception:
+        pass
+
+    status = 200 if sent > 0 else 502
+    return jsonify({
+        "ok": sent > 0,
+        "date_iso": date_str,
+        "date_display": date_display,
+        "sms_text": sms_text,
+        "recipients": results,
+        "sent_count": sent,
+        "failed_count": failed,
+    }), status
+
+
 @app.route("/api/admin/dispense/today", methods=["GET"])
 def admin_dispense_today():
     u = _require_admin()
