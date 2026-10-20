@@ -447,7 +447,20 @@ if DATABASE_URL.startswith("cloudflare_d1://"):
 
 app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-change-me")
+# ── SECRET_KEY hardening (C5a) ──
+# On Render, refuse to boot unless SECRET_KEY is set to a strong value.
+# Without this guard a missing/weak env var silently falls back to a
+# public string (visible on GitHub) — which would let anyone forge any
+# session cookie. Loud boot failure beats silent auth bypass.
+_secret_key = os.environ.get("SECRET_KEY", "").strip()
+_on_render  = bool(os.environ.get("RENDER"))
+if _on_render and (not _secret_key or _secret_key == "dev-change-me" or len(_secret_key) < 32):
+    raise RuntimeError(
+        "[BOOT] SECRET_KEY env var must be set to a strong random value "
+        "(minimum 32 characters) on Render. Refusing to start with an "
+        "insecure fallback — this protects against silent auth bypass."
+    )
+app.config["SECRET_KEY"] = _secret_key or "dev-change-me"
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=30)
 app.config["SESSION_REFRESH_EACH_REQUEST"] = True
 SESSION_IDLE_MINUTES = 30
