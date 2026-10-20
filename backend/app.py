@@ -23,7 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from models import (
     db, Consumer, MeterReading, NotificationLog,
     AdminUser, PaymentLog, MpesaLog, SentBillArchive, AdminAuditLog,
-    Tenant,
+    Tenant, TenantProfile, DispenseRate,
 )
 from billing import (
     compute_amount, compute_consumption,
@@ -1252,6 +1252,26 @@ def _valid_slug(slug: str) -> bool:
     return all(c.isalnum() or c == "-" for c in slug)
 
 
+def _tenant_profiles_dict(tenant_id):
+    """Return {billing: bool, dispensing: bool}.
+
+    Missing rows default to billing=True, dispensing=False — this is the
+    exact behaviour every existing tenant has today, so nothing changes
+    visually until the dev operator toggles a profile."""
+    default = {"billing": True, "dispensing": False}
+    try:
+        rows = TenantProfile.query.filter_by(tenant_id=tenant_id).all()
+    except Exception:
+        return default
+    if not rows:
+        return default
+    out = {"billing": False, "dispensing": False}
+    for r in rows:
+        if r.profile_name in out:
+            out[r.profile_name] = bool(r.enabled)
+    return out
+
+
 def _tenant_to_dict(t):
     return {
         "id": t.id,
@@ -1265,11 +1285,14 @@ def _tenant_to_dict(t):
         "location": t.location,
         "paybill": t.paybill,
         "payment_account": t.payment_account,
+        "dispensing_paybill": t.dispensing_paybill,
+        "dispensing_account": t.dispensing_account,
         "mpesa_shortcode": t.mpesa_shortcode,
         "mpesa_env": t.mpesa_env or "sandbox",
         "logo_key": t.logo_key,
         "theme_primary": t.theme_primary,
         "is_active": bool(t.is_active),
+        "enabled_profiles": _tenant_profiles_dict(t.id),
         "created_at": t.created_at.isoformat() if t.created_at else None,
     }
 
@@ -1637,6 +1660,154 @@ def admin_tenants_delete_template(tenant_id):
     return jsonify({"ok": True, "kind": kind, "removed": bool(removed)})
 
 
+# ═══════════════════════════════════════════════
+#  DISPENSING PROFILE — CONTROLS (Phase B)
+# ═══════════════════════════════════════════════
+
+@app.route("/api/admin/tenants/<int:tenant_id>/profiles", methods=["GET"])
+def admin_tenant_profiles_get(tenant_id):
+    u = _require_super_admin()
+    if u: return u
+    if not _rate_limit("tenant_profiles_get", 30, 60):
+        return _too_many(60)
+    t = Tenant.query.get(tenant_id)
+    if not t:
+        return jsonify({"error": "Tenant not found."}), 404
+    return jsonify({"ok": True, "tenant_id": t.id,
+                    "profiles": _tenant_profiles_dict(t.id)})
+
+
+@app.route("/api/admin/tenants/<int:tenant_id>/profiles", methods=["POST"])
+def admin_tenant_profiles_post(tenant_id):
+    u = _require_super_admin()
+    if u: return u
+    if not _rate_limit("tenant_profiles_post", 20, 60):
+        return _too_many(60)
+    t = Tenant.query.get(tenant_id)
+    if not t:
+        return jsonify({"error": "Tenant not found."}), 404
+
+    data = request.get_json(silent=True) or {}
+    billing = bool(data.get("billing"))
+    dispensing = bool(data.get("dispensing"))
+    if not billing and not dispensing:
+        return jsonify({"error": "At least one profile must be enabled."}), 400
+
+    now = datetime.utcnow()
+    actor = session.get("admin_username") or "?"
+    for name, enabled in (("billing", billing), ("dispensing", dispensing)):
+        row = (TenantProfile.query
+               .filter_by(tenant_id=t.id, profile_name=name)
+               .first())
+        if row is None:
+            row = TenantProfile(tenant_id=t.id, profile_name=name,
+                                enabled=enabled, enabled_at=now,
+                                enabled_by=actor)
+            db.session.add(row)
+        elif bool(row.enabled) != enabled:
+            row.enabled = enabled
+            row.enabled_at = now
+            row.enabled_by = actor
+    db.session.commit()
+
+    _audit("tenant_profiles_updated",
+           target_type="tenant", target_id=t.id,
+           target_label=f"{t.org_name} · {t.slug}",
+           detail=f"billing={billing}, dispensing={dispensing}")
+    return jsonify({"ok": True, "profiles": _tenant_profiles_dict(t.id)})
+
+
+@app.route("/api/admin/tenants/<int:tenant_id>/dispense_rates", methods=["GET"])
+def admin_tenant_dispense_rates_get(tenant_id):
+    u = _require_super_admin()
+    if u: return u
+    if not _rate_limit("tenant_dispense_rates_get", 30, 60):
+        return _too_many(60)
+    t = Tenant.query.get(tenant_id)
+    if not t:
+        return jsonify({"error": "Tenant not found."}), 404
+    rows = (DispenseRate.query
+            .filter_by(tenant_id=t.id)
+            .order_by(DispenseRate.container_size_L.asc())
+            .all())
+    return jsonify({"ok": True, "rates": [
+        {"id": r.id, "container_size_L": r.container_size_L,
+         "price_kes": r.price_kes, "is_active": bool(r.is_active)}
+        for r in rows
+    ]})
+
+
+@app.route("/api/admin/tenants/<int:tenant_id>/dispense_rates", methods=["POST"])
+def admin_tenant_dispense_rates_post(tenant_id):
+    u = _require_super_admin()
+    if u: return u
+    if not _rate_limit("tenant_dispense_rates_post", 30, 60):
+        return _too_many(60)
+    t = Tenant.query.get(tenant_id)
+    if not t:
+        return jsonify({"error": "Tenant not found."}), 404
+
+    data = request.get_json(silent=True) or {}
+    try:
+        size = int(data.get("container_size_L"))
+        price = float(data.get("price_kes"))
+    except (ValueError, TypeError):
+        return jsonify({"error": "container_size_L and price_kes must be numbers."}), 400
+    if size < 1 or size > 1_000_000:
+        return jsonify({"error": "container_size_L out of range."}), 400
+    if price < 0 or price > 1_000_000:
+        return jsonify({"error": "price_kes out of range."}), 400
+
+    row = (DispenseRate.query
+           .filter_by(tenant_id=t.id, container_size_L=size)
+           .first())
+    if row is None:
+        row = DispenseRate(tenant_id=t.id, container_size_L=size,
+                           price_kes=price, is_active=True)
+        db.session.add(row)
+        action = "created"
+    else:
+        row.price_kes = price
+        row.is_active = True
+        action = "updated"
+    db.session.commit()
+
+    _audit("tenant_dispense_rate_saved",
+           target_type="tenant", target_id=t.id,
+           target_label=f"{t.org_name} · {t.slug}",
+           detail=f"{action} size={size}L price={price}")
+    return jsonify({"ok": True, "action": action, "rate": {
+        "id": row.id,
+        "container_size_L": row.container_size_L,
+        "price_kes": row.price_kes,
+        "is_active": bool(row.is_active),
+    }})
+
+
+@app.route("/api/admin/tenants/<int:tenant_id>/dispense_rates/<int:rate_id>",
+           methods=["DELETE"])
+def admin_tenant_dispense_rates_delete(tenant_id, rate_id):
+    u = _require_super_admin()
+    if u: return u
+    if not _rate_limit("tenant_dispense_rates_delete", 30, 60):
+        return _too_many(60)
+    t = Tenant.query.get(tenant_id)
+    if not t:
+        return jsonify({"error": "Tenant not found."}), 404
+    row = DispenseRate.query.filter_by(id=rate_id, tenant_id=t.id).first()
+    if not row:
+        return jsonify({"error": "Rate not found."}), 404
+    size = row.container_size_L
+    db.session.delete(row)
+    db.session.commit()
+
+    _audit("tenant_dispense_rate_deleted",
+           target_type="tenant", target_id=t.id,
+           target_label=f"{t.org_name} · {t.slug}",
+           detail=f"size={size}L")
+    return jsonify({"ok": True, "deleted_id": rate_id})
+
+
 @app.route("/api/admin/tenants", methods=["GET"])
 def admin_tenants_list():
     u = _require_super_admin()
@@ -1730,6 +1901,7 @@ def admin_tenants_update(tenant_id):
     data = request.get_json(silent=True) or {}
     allowed = ("org_name", "short_name", "tagline", "email", "phone",
                "address", "location", "paybill", "payment_account",
+               "dispensing_paybill", "dispensing_account",
                "mpesa_shortcode", "mpesa_env",
                "logo_key", "theme_primary")
     updated = []

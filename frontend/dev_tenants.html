@@ -109,6 +109,14 @@
             <input type="text" id="tfPaymentAccount" placeholder="e.g. 255333K12">
           </div>
           <div class="form-row">
+            <label for="tfDispensingPaybill">Dispensing Paybill (optional — water dispensing profile)</label>
+            <input type="text" id="tfDispensingPaybill" placeholder="e.g. 4082977">
+          </div>
+          <div class="form-row">
+            <label for="tfDispensingAccount">Dispensing Account (optional — fixed account shown to walk-in customers)</label>
+            <input type="text" id="tfDispensingAccount" placeholder="e.g. DISP-01">
+          </div>
+          <div class="form-row">
             <label for="tfLogoKey">Logo Key (R2 object key, optional)</label>
             <input type="text" id="tfLogoKey" placeholder="e.g. images/SimonW_Logo.png">
           </div>
@@ -174,7 +182,54 @@
     </div>
   </div>
 
-  <!-- Create-Admin modal -->
+  <!-- Profiles & Rates modal -->
+  <div id="profilesModal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="profilesModalTitle">Profiles &amp; Rates</h3>
+        <button class="modal-close" onclick="closeProfilesModal()" type="button">×</button>
+      </div>
+      <div class="modal-body">
+        <h4 style="margin-bottom:.5rem;">Enabled Profiles</h4>
+        <p class="form-hint-small" style="margin-bottom:.5rem;opacity:.7;">
+          At least one profile must remain enabled. Changes take effect on the tenant's next login.
+        </p>
+        <div class="form-row">
+          <label><input type="checkbox" id="pfBilling" style="margin-right:.5rem;"> Water Billing</label>
+        </div>
+        <div class="form-row">
+          <label><input type="checkbox" id="pfDispensing" style="margin-right:.5rem;"> Water Dispensing</label>
+        </div>
+        <button id="pfSaveBtn" type="button" class="btn-primary btn-fit">Save Profiles</button>
+        <div id="pfMsg" class="alert hidden" style="margin-top:.5rem;"></div>
+
+        <hr style="margin:1.25rem 0;border:none;border-top:1px solid #e0e0e0;">
+
+        <h4 style="margin-bottom:.5rem;">Water Dispensing Rates</h4>
+        <p class="form-hint-small" style="margin-bottom:.5rem;opacity:.7;">
+          One row per container size. Adding a rate for an existing size updates its price.
+        </p>
+        <div id="ratesList" style="margin-bottom:.75rem;"></div>
+        <div class="form-row" style="display:flex;gap:.5rem;align-items:flex-end;">
+          <div style="flex:1;">
+            <label for="rateSize">Container (L)</label>
+            <input type="number" id="rateSize" placeholder="e.g. 10000" min="1" step="1">
+          </div>
+          <div style="flex:1;">
+            <label for="ratePrice">Price (KES)</label>
+            <input type="number" id="ratePrice" placeholder="e.g. 1600" min="0" step="0.01">
+          </div>
+          <button id="rateAddBtn" type="button" class="btn-secondary btn-fit">+ Add rate</button>
+        </div>
+        <div id="ratesMsg" class="alert hidden" style="margin-top:.5rem;"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-secondary" onclick="closeProfilesModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+    <!-- Create-Admin modal -->
   <div id="adminModal" class="modal-overlay hidden">
     <div class="modal">
       <div class="modal-header">
@@ -307,6 +362,7 @@
               <button class="dev-btn dev-btn--ghost" type="button" onclick="openLogoUpload(${t.id})">Logo</button>
               <button class="dev-btn dev-btn--ghost" type="button" onclick="openTemplateUpload(${t.id}, 'water_bill')">Bill Template</button>
               <button class="dev-btn dev-btn--ghost" type="button" onclick="openTemplateUpload(${t.id}, 'receipt')">Receipt Template</button>
+              <button class="dev-btn dev-btn--ghost" type="button" onclick="openProfilesModal(${t.id})">Profiles &amp; Rates</button>
               <button class="dev-btn dev-btn--ghost" type="button" onclick="openEditTenant(${t.id})">Edit</button>
               <button class="dev-btn dev-btn--ghost" type="button" onclick="toggleTenant(${t.id}, ${!t.is_active})">${toggleLabel}</button>
               <button class="dev-btn dev-btn--danger" type="button" onclick="deleteTenant(${t.id})">Delete</button>
@@ -339,6 +395,8 @@
       document.getElementById('tfLocation').value = t.location || '';
       document.getElementById('tfPaybill').value = t.paybill || '';
       document.getElementById('tfPaymentAccount').value = t.payment_account || '';
+      document.getElementById('tfDispensingPaybill').value = t.dispensing_paybill || '';
+      document.getElementById('tfDispensingAccount').value = t.dispensing_account || '';
       document.getElementById('tfLogoKey').value = t.logo_key || '';
       document.getElementById('tfMpesaShortcode').value = t.mpesa_shortcode || '';
       document.getElementById('tfMpesaEnv').value = t.mpesa_env || 'sandbox';
@@ -368,6 +426,8 @@
         location:      document.getElementById('tfLocation').value.trim(),
         paybill:       document.getElementById('tfPaybill').value.trim(),
         payment_account: document.getElementById('tfPaymentAccount').value.trim(),
+        dispensing_paybill: document.getElementById('tfDispensingPaybill').value.trim(),
+        dispensing_account: document.getElementById('tfDispensingAccount').value.trim(),
         mpesa_shortcode: document.getElementById('tfMpesaShortcode').value.trim(),
         mpesa_env:       document.getElementById('tfMpesaEnv').value,
         logo_key:      document.getElementById('tfLogoKey').value.trim(),
@@ -483,6 +543,150 @@
     function closeLogoModal() {
       document.getElementById('logoModal').classList.add('hidden');
       _logoTenantId = null;
+    }
+
+    // ── Profiles & Rates ──
+    let _profilesTenantId = null;
+
+    function openProfilesModal(id) {
+      _profilesTenantId = id;
+      const t = _tenants.find(x => x.id === id);
+      document.getElementById('profilesModalTitle').textContent =
+        'Profiles & Rates — ' + (t ? t.org_name : '');
+      document.getElementById('pfMsg').className = 'alert hidden';
+      document.getElementById('ratesMsg').className = 'alert hidden';
+      document.getElementById('rateSize').value = '';
+      document.getElementById('ratePrice').value = '';
+      document.getElementById('profilesModal').classList.remove('hidden');
+      loadProfiles();
+      loadDispenseRates();
+    }
+
+    function closeProfilesModal() {
+      document.getElementById('profilesModal').classList.add('hidden');
+      _profilesTenantId = null;
+    }
+
+    async function loadProfiles() {
+      try {
+        const r = await fetch(
+          `/api/admin/tenants/${_profilesTenantId}/profiles`,
+          { credentials: 'same-origin' });
+        const d = await r.json();
+        if (r.ok && d.ok && d.profiles) {
+          document.getElementById('pfBilling').checked = !!d.profiles.billing;
+          document.getElementById('pfDispensing').checked = !!d.profiles.dispensing;
+        }
+      } catch (_) {}
+    }
+
+    async function saveProfiles() {
+      const msg = document.getElementById('pfMsg');
+      const body = {
+        billing:    document.getElementById('pfBilling').checked,
+        dispensing: document.getElementById('pfDispensing').checked,
+      };
+      try {
+        const r = await fetch(
+          `/api/admin/tenants/${_profilesTenantId}/profiles`,
+          { method: 'POST', credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body) });
+        const d = await r.json();
+        if (r.ok && d.ok) {
+          msg.className = 'alert alert-success';
+          msg.textContent = '✅ Profiles saved.';
+          await loadTenants();
+        } else {
+          msg.className = 'alert alert-error';
+          msg.textContent = '❌ ' + (d.error || 'Save failed.');
+        }
+      } catch (_) {
+        msg.className = 'alert alert-error'; msg.textContent = '❌ Network error.';
+      }
+    }
+
+    async function loadDispenseRates() {
+      try {
+        const r = await fetch(
+          `/api/admin/tenants/${_profilesTenantId}/dispense_rates`,
+          { credentials: 'same-origin' });
+        const d = await r.json();
+        const list = document.getElementById('ratesList');
+        if (!r.ok || !d.ok) {
+          list.innerHTML = '<p class="form-hint-small" style="opacity:.7;">Could not load rates.</p>';
+          return;
+        }
+        const rates = d.rates || [];
+        if (!rates.length) {
+          list.innerHTML = '<p class="form-hint-small" style="opacity:.7;">No rates configured.</p>';
+          return;
+        }
+        list.innerHTML = rates.map(r => `
+          <div style="display:flex;align-items:center;gap:.6rem;padding:.4rem .5rem;border:1px solid #e0e0e0;border-radius:6px;margin-bottom:.35rem;background:#fafafa;">
+            <span style="flex:1;font-weight:600;">${esc(r.container_size_L)} L</span>
+            <span style="flex:1;text-align:right;">KES ${Number(r.price_kes).toFixed(2)}</span>
+            <button class="dev-btn dev-btn--danger" type="button" onclick="removeRate(${r.id})">Remove</button>
+          </div>
+        `).join('');
+      } catch (_) {}
+    }
+
+    async function addRate() {
+      const msg = document.getElementById('ratesMsg');
+      const size = parseInt(document.getElementById('rateSize').value, 10);
+      const price = parseFloat(document.getElementById('ratePrice').value);
+      if (!Number.isFinite(size) || size < 1) {
+        msg.className = 'alert alert-error';
+        msg.textContent = '❌ Enter a valid container size (litres).';
+        return;
+      }
+      if (!Number.isFinite(price) || price < 0) {
+        msg.className = 'alert alert-error';
+        msg.textContent = '❌ Enter a valid price (KES).';
+        return;
+      }
+      try {
+        const r = await fetch(
+          `/api/admin/tenants/${_profilesTenantId}/dispense_rates`,
+          { method: 'POST', credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ container_size_L: size, price_kes: price }) });
+        const d = await r.json();
+        if (r.ok && d.ok) {
+          document.getElementById('rateSize').value = '';
+          document.getElementById('ratePrice').value = '';
+          msg.className = 'alert alert-success';
+          msg.textContent = '✅ Rate ' + (d.action || 'saved') + '.';
+          await loadDispenseRates();
+        } else {
+          msg.className = 'alert alert-error';
+          msg.textContent = '❌ ' + (d.error || 'Save failed.');
+        }
+      } catch (_) {
+        msg.className = 'alert alert-error'; msg.textContent = '❌ Network error.';
+      }
+    }
+
+    async function removeRate(id) {
+      if (!confirm('Remove this rate?')) return;
+      const msg = document.getElementById('ratesMsg');
+      try {
+        const r = await fetch(
+          `/api/admin/tenants/${_profilesTenantId}/dispense_rates/${id}`,
+          { method: 'DELETE', credentials: 'same-origin' });
+        const d = await r.json();
+        if (r.ok && d.ok) {
+          msg.className = 'alert alert-success';
+          msg.textContent = '✅ Rate removed.';
+          await loadDispenseRates();
+        } else {
+          msg.className = 'alert alert-error';
+          msg.textContent = '❌ ' + (d.error || 'Remove failed.');
+        }
+      } catch (_) {
+        msg.className = 'alert alert-error'; msg.textContent = '❌ Network error.';
+      }
     }
 
     // ── Custom PDF template upload ──
@@ -757,6 +961,9 @@
     window.closeLogoModal = closeLogoModal;
     window.openTemplateUpload = openTemplateUpload;
     window.closeTemplateModal = closeTemplateModal;
+    window.openProfilesModal = openProfilesModal;
+    window.closeProfilesModal = closeProfilesModal;
+    window.removeRate = removeRate;
 
     window.openCreateAdmin = openCreateAdmin;
     window.closeAdminModal = closeAdminModal;
@@ -771,6 +978,8 @@
     document.getElementById('logoUploadBtn').addEventListener('click', doLogoUpload);
     document.getElementById('templateUploadBtn').addEventListener('click', doTemplateUpload);
     document.getElementById('templateRemoveBtn').addEventListener('click', doTemplateRemove);
+    document.getElementById('pfSaveBtn').addEventListener('click', saveProfiles);
+    document.getElementById('rateAddBtn').addEventListener('click', addRate);
 
     document.getElementById('tfTemplateFile').addEventListener('change', function () {
       const meta = document.getElementById('tfTemplateFileMeta');
