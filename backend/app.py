@@ -4231,10 +4231,29 @@ def admin_dispense_today():
     prev_day_missing = (not ystats["has_reading"]
                         and any_before_yesterday is not None)
 
+    # Determine whether the admin must supply the opening reading manually.
+    # Both "first day of dispensing" and "yesterday's reading missing" require it.
+    manual_opening_required = is_first_day or prev_day_missing
+
+    # For the normal case, expose the auto-computed opening (previous day's
+    # closing, or the most recent prior reading's closing).
+    suggested_opening = None
+    if not manual_opening_required and not tstats["has_reading"]:
+        prev_reading = (DispenseMeterReading.query
+                        .filter(DispenseMeterReading.tenant_id == tenant_id,
+                                DispenseMeterReading.reading_date < today)
+                        .order_by(DispenseMeterReading.reading_date.desc())
+                        .first())
+        if prev_reading:
+            suggested_opening = float(prev_reading.closing_reading_m3)
+
+    reading_id = tstats["reading"].id if tstats["reading"] else None
+
     return jsonify({
         "ok": True,
         "date": today.strftime("%d %b %Y"),
         "date_iso": today.isoformat(),
+        "reading_id": reading_id,
         "opening_reading_m3": (float(tstats["reading"].opening_reading_m3)
                                if tstats["reading"] else None),
         "closing_reading_m3": (float(tstats["reading"].closing_reading_m3)
@@ -4249,6 +4268,174 @@ def admin_dispense_today():
         "has_reading": tstats["has_reading"],
         "is_first_day": is_first_day,
         "prev_day_missing": prev_day_missing,
+        "manual_opening_required": manual_opening_required,
+        "suggested_opening_m3": suggested_opening,
+    })
+
+
+@app.route("/api/admin/dispense/reading", methods=["POST"])
+def admin_dispense_reading_post():
+    """Record or correct today's dispensing meter reading.
+
+    Phase E accepts TODAY only. Past-day corrections (with reason field
+    fully wired) arrive in a follow-up. The opening reading is auto-computed
+    from the previous reading's closing, EXCEPT on the first day or when
+    yesterday's reading is missing — in those cases the admin must supply it.
+
+    Corrections of an existing reading require force=true AND a reason."""
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("dispense_reading_post", 20, 60):
+        return _too_many(60)
+    tenant_id, err = _dispense_tenant_or_error()
+    if err: return err
+
+    data = request.get_json(silent=True) or {}
+
+    # ── 1. Parse reading_date (default = today) ──
+    date_str = (data.get("reading_date") or "").strip()
+    if date_str:
+        try:
+            requested = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid reading_date."}), 400
+    else:
+        requested = _nairobi_today()
+
+    today = _nairobi_today()
+    if requested > today:
+        return jsonify({"error": "Reading date cannot be in the future."}), 400
+    if requested != today:
+        return jsonify({
+            "error": "Only today's reading can be recorded in Phase E. "
+                     "Past-day corrections arrive in a follow-up."
+        }), 400
+
+    # ── 2. Parse closing_reading_m3 ──
+    try:
+        closing = float(data.get("closing_reading_m3"))
+    except (ValueError, TypeError):
+        return jsonify({"error": "closing_reading_m3 must be a number."}), 400
+    if closing < 0 or closing > 10_000_000:
+        return jsonify({"error": "Closing reading is out of range."}), 400
+
+    # ── 3. Check for existing reading today ──
+    existing = (DispenseMeterReading.query
+                .filter_by(tenant_id=tenant_id, reading_date=requested)
+                .first())
+    force  = bool(data.get("force"))
+    reason = (data.get("reason") or "").strip()
+
+    if existing is not None:
+        if not force:
+            return jsonify({
+                "error": "Reading already exists for today. "
+                         "Set force=true with a reason to correct it.",
+                "existing_reading_id": existing.id,
+            }), 409
+        if not reason:
+            return jsonify({
+                "error": "A reason is required when correcting an existing reading."
+            }), 400
+
+    # ── 4. Determine whether opening must be supplied manually ──
+    previous = (DispenseMeterReading.query
+                .filter(DispenseMeterReading.tenant_id == tenant_id,
+                        DispenseMeterReading.reading_date < requested)
+                .order_by(DispenseMeterReading.reading_date.desc())
+                .first())
+    any_reading_ever = (DispenseMeterReading.query
+                        .filter_by(tenant_id=tenant_id)
+                        .first())
+
+    bootstrap_required = (any_reading_ever is None) and (existing is None)
+
+    yesterday = requested - timedelta(days=1)
+    has_yesterday = (DispenseMeterReading.query
+                     .filter_by(tenant_id=tenant_id, reading_date=yesterday)
+                     .first())
+    previous_day_missing = (
+        (not bootstrap_required)
+        and existing is None
+        and has_yesterday is None
+        and any_reading_ever is not None
+    )
+    manual_opening_required = bootstrap_required or previous_day_missing
+
+    # ── 5. Resolve opening ──
+    if manual_opening_required:
+        try:
+            opening = float(data.get("opening_reading_m3"))
+        except (ValueError, TypeError):
+            return jsonify({
+                "error": "opening_reading_m3 is required for the first day "
+                         "or when yesterday's reading is missing."
+            }), 400
+        if opening < 0 or opening > 10_000_000:
+            return jsonify({"error": "Opening reading is out of range."}), 400
+    else:
+        # Auto-compute from previous day's closing, ignore any body value
+        opening = float(previous.closing_reading_m3) if previous else 0.0
+
+    if closing < opening:
+        return jsonify({
+            "error": f"Closing reading ({closing:g}) must be >= opening reading ({opening:g})."
+        }), 400
+
+    consumption = round(closing - opening, 4)
+
+    # ── 6. Write or update ──
+    if existing is None:
+        row = DispenseMeterReading(
+            tenant_id=tenant_id,
+            reading_date=requested,
+            opening_reading_m3=opening,
+            closing_reading_m3=closing,
+            consumption_m3=consumption,
+            recorded_by=session.get("admin_username"),
+        )
+        db.session.add(row)
+        db.session.commit()
+        _audit("dispense_reading_recorded",
+               target_type="tenant", target_id=tenant_id,
+               detail=(f"date={requested.isoformat()} "
+                       f"opening={opening:g} closing={closing:g} consumption={consumption:g}"))
+        action = "created"
+        rid = row.id
+    else:
+        # Opening is NEVER modified on update (design §5.5).
+        old_closing = float(existing.closing_reading_m3)
+        existing.closing_reading_m3 = closing
+        existing.consumption_m3 = consumption
+        existing.recorded_by = session.get("admin_username")
+        db.session.commit()
+        _audit("dispense_reading_corrected",
+               target_type="tenant", target_id=tenant_id,
+               detail=(f"date={requested.isoformat()} "
+                       f"old_closing={old_closing:g} new_closing={closing:g} "
+                       f"reason={reason[:100]}"))
+        action = "corrected"
+        rid = existing.id
+
+    # ── 7. Reload fresh stats for the response ──
+    stats_map = _dispense_window_stats(tenant_id, [requested])
+    st = stats_map[requested.isoformat()]
+
+    return jsonify({
+        "ok": True,
+        "action": action,
+        "reading_id": rid,
+        "date_iso": requested.isoformat(),
+        "opening_reading_m3": opening,
+        "closing_reading_m3": closing,
+        "consumption_m3": consumption,
+        "consumption_l": st["consumption_l"],
+        "sold_l": st["sold_l"],
+        "sales_kes": st["sales_kes"],
+        "paid_kes": st["paid_kes"],
+        "outstanding_kes": st["outstanding_kes"],
+        "variance_l": st["variance_l"],
+        "has_reading": True,
     })
 
 

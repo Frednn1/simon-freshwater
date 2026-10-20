@@ -86,6 +86,27 @@
       </div>
     </div>
 
+    <!-- Reading entry form -->
+    <div id="dFormCard" class="settings-card" style="display:none;">
+      <h2 id="dFormTitle">Record Today's Reading</h2>
+      <form id="dReadingForm" autocomplete="off">
+        <div class="form-row" id="dOpenRow" style="display:none;">
+          <label for="dOpenInput">Opening Reading (m&sup3;) *</label>
+          <input type="number" id="dOpenInput" step="0.01" min="0" placeholder="e.g. 100.00">
+        </div>
+        <div class="form-row">
+          <label for="dCloseInput">Closing Reading (m&sup3;) *</label>
+          <input type="number" id="dCloseInput" step="0.01" min="0" placeholder="e.g. 200.00" required>
+        </div>
+        <div class="form-row" id="dReasonRow" style="display:none;">
+          <label for="dReasonInput">Reason for Correction *</label>
+          <input type="text" id="dReasonInput" placeholder="e.g. Meter reading typo">
+        </div>
+        <button type="submit" id="dSubmitBtn" class="btn-primary btn-fit">Save Reading</button>
+        <div id="dFormMsg" class="alert hidden" style="margin-top:.5rem;"></div>
+      </form>
+    </div>
+
     <div class="settings-card">
       <h2>Last 7 Days</h2>
       <div style="overflow-x:auto;">
@@ -205,6 +226,134 @@
             + '</tr>';
         }).join('');
       } catch (_) {}
+    })();
+  </script>
+
+  <!-- Phase E — reading entry form -->
+  <script>
+    (async () => {
+      const form = document.getElementById('dReadingForm');
+      if (!form) return;
+      const msg = document.getElementById('dFormMsg');
+
+      async function loadContext() {
+        try {
+          const r = await fetch('/api/admin/dispense/today', {credentials: 'same-origin'});
+          if (!r.ok) return;
+          const d = await r.json();
+          if (!d.ok) return;
+
+          const card       = document.getElementById('dFormCard');
+          const title      = document.getElementById('dFormTitle');
+          const openRow    = document.getElementById('dOpenRow');
+          const openInput  = document.getElementById('dOpenInput');
+          const closeInput = document.getElementById('dCloseInput');
+          const reasonRow  = document.getElementById('dReasonRow');
+          const reasonInp  = document.getElementById('dReasonInput');
+          const submitBtn  = document.getElementById('dSubmitBtn');
+
+          card.style.display = 'block';
+          if (msg) msg.className = 'alert hidden';
+
+          if (d.has_reading) {
+            title.textContent = "Correct Today's Reading";
+            openRow.style.display = 'none';
+            openInput.value = '';
+            closeInput.value = d.closing_reading_m3 != null ? String(d.closing_reading_m3) : '';
+            reasonRow.style.display = 'block';
+            reasonInp.value = '';
+            submitBtn.textContent = 'Save Correction';
+          } else if (d.is_first_day) {
+            title.textContent = 'First Day Setup';
+            openRow.style.display = 'block';
+            openInput.value = '';
+            closeInput.value = '';
+            reasonRow.style.display = 'none';
+            reasonInp.value = '';
+            submitBtn.textContent = 'Save First Reading';
+          } else if (d.prev_day_missing) {
+            title.textContent = 'Previous Reading Missing';
+            openRow.style.display = 'block';
+            openInput.value = '';
+            closeInput.value = '';
+            reasonRow.style.display = 'none';
+            reasonInp.value = '';
+            submitBtn.textContent = 'Save Reading';
+          } else {
+            title.textContent = "Record Today's Reading";
+            openRow.style.display = 'none';
+            openInput.value = '';
+            closeInput.value = '';
+            reasonRow.style.display = 'none';
+            reasonInp.value = '';
+            submitBtn.textContent = 'Save Reading';
+          }
+        } catch (_) {}
+      }
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('dSubmitBtn');
+        const orig = btn.textContent;
+        btn.disabled = true; btn.textContent = 'Saving…';
+        if (msg) msg.className = 'alert hidden';
+
+        try {
+          const ctxResp = await fetch('/api/admin/dispense/today', {credentials: 'same-origin'});
+          const ctx = await ctxResp.json();
+          if (!ctx.ok) throw new Error(ctx.error || 'Cannot load today data.');
+
+          const body = {
+            reading_date: ctx.date_iso,
+            closing_reading_m3: parseFloat(document.getElementById('dCloseInput').value),
+          };
+
+          const openRow = document.getElementById('dOpenRow');
+          if (openRow.style.display !== 'none') {
+            body.opening_reading_m3 = parseFloat(document.getElementById('dOpenInput').value);
+          }
+
+          if (ctx.has_reading) {
+            body.force = true;
+            body.reason = document.getElementById('dReasonInput').value.trim();
+            if (!body.reason) {
+              if (msg) { msg.className = 'alert alert-error'; msg.textContent = '❌ Reason is required for corrections.'; }
+              btn.disabled = false; btn.textContent = orig;
+              return;
+            }
+          }
+
+          if (!Number.isFinite(body.closing_reading_m3) || body.closing_reading_m3 < 0) {
+            if (msg) { msg.className = 'alert alert-error'; msg.textContent = '❌ Closing reading must be a non-negative number.'; }
+            btn.disabled = false; btn.textContent = orig;
+            return;
+          }
+
+          const r = await fetch('/api/admin/dispense/reading', {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify(body)
+          });
+          const d = await r.json();
+          if (r.ok && d.ok) {
+            if (msg) {
+              msg.className = 'alert alert-success';
+              msg.textContent = '✅ Reading ' + (d.action === 'corrected' ? 'corrected' : 'saved') +
+                                ' (' + (d.consumption_l || 0).toLocaleString() + ' L).';
+            }
+            await new Promise(r => setTimeout(r, 800));
+            location.reload();
+          } else {
+            if (msg) { msg.className = 'alert alert-error'; msg.textContent = '❌ ' + (d.error || 'Save failed.'); }
+            btn.disabled = false; btn.textContent = orig;
+          }
+        } catch (err) {
+          if (msg) { msg.className = 'alert alert-error'; msg.textContent = '❌ ' + (err.message || 'Network error.'); }
+          btn.disabled = false; btn.textContent = orig;
+        }
+      });
+
+      await loadContext();
     })();
   </script>
 </body>
