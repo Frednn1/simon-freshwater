@@ -4971,7 +4971,8 @@ def admin_dispense_payments_get():
 
     rows = (DispensePayment.query
             .filter_by(tenant_id=tenant_id, payment_date=target_date)
-            .order_by(DispensePayment.created_at.asc())
+            .order_by(DispensePayment.created_at.desc(),
+                      DispensePayment.id.desc())
             .all())
 
     total_paid = round(sum(float(r.amount_kes or 0) for r in rows if not r.voided), 2)
@@ -5153,7 +5154,8 @@ def admin_dispense_sales_get():
 
     rows = (DispenseSale.query
             .filter_by(tenant_id=tenant_id, sale_date=target_date)
-            .order_by(DispenseSale.created_at.asc())
+            .order_by(DispenseSale.created_at.desc(),
+                      DispenseSale.id.desc())
             .all())
 
     active_sales = [r for r in rows if not r.voided]

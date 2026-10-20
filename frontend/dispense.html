@@ -31,8 +31,9 @@
     /* Step 1: explicit left-alignment for form labels + full-width selects.
        Fixes inherited text-align:center from a parent, and makes the
        Container Size <select> match the inputs below it. */
-    .settings-card .form-row {
-      text-align: left;
+    .settings-card .form-row,
+    .settings-card .form-row > label {
+      text-align: left !important;
     }
     .settings-card .form-row select {
       width: 100%;
@@ -551,8 +552,11 @@
           const fmtTime = (iso) => {
             if (!iso) return '\u2014';
             try {
-              return new Date(iso).toLocaleTimeString(undefined,
-                {hour: '2-digit', minute: '2-digit'});
+              const s = iso.endsWith('Z') ? iso : (iso + 'Z');
+              return new Date(s).toLocaleTimeString('en-GB', {
+                hour: '2-digit', minute: '2-digit',
+                timeZone: 'Africa/Nairobi'
+              });
             } catch (_) { return '\u2014'; }
           };
           tbody.innerHTML = rows.map(p => {
@@ -716,8 +720,13 @@
           }
           const fmtTime = (iso) => {
             if (!iso) return '—';
-            try { return new Date(iso).toLocaleTimeString(undefined,
-              {hour: '2-digit', minute: '2-digit'}); } catch (_) { return '—'; }
+            try {
+              const s = iso.endsWith('Z') ? iso : (iso + 'Z');
+              return new Date(s).toLocaleTimeString('en-GB', {
+                hour: '2-digit', minute: '2-digit',
+                timeZone: 'Africa/Nairobi'
+              });
+            } catch (_) { return '—'; }
           };
           const fmtN = (n) => Number(n || 0).toLocaleString(undefined,
             {minimumFractionDigits: 2, maximumFractionDigits: 2});
