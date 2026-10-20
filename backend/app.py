@@ -1039,6 +1039,11 @@ def _ensure_all_columns():
             t_alters.append("ADD COLUMN mpesa_shortcode VARCHAR(30) NULL")
         if "mpesa_env" not in existing:
             t_alters.append("ADD COLUMN mpesa_env VARCHAR(20) DEFAULT 'sandbox'")
+        # Dispensing profile payment identifiers (Phase A)
+        if "dispensing_paybill" not in existing:
+            t_alters.append("ADD COLUMN dispensing_paybill VARCHAR(30) NULL")
+        if "dispensing_account" not in existing:
+            t_alters.append("ADD COLUMN dispensing_account VARCHAR(60) NULL")
         for alt in t_alters:
             db.session.execute(text(f"ALTER TABLE tenants {alt}"))
         if t_alters:

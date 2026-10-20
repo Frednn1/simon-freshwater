@@ -242,6 +242,10 @@ class Tenant(db.Model):
     location = db.Column(db.String(60))
     paybill = db.Column(db.String(30))
     payment_account = db.Column(db.String(60))
+    # Dispensing profile: separate paybill + fixed account shown to
+    # walk-in customers. Independent of the billing paybill above.
+    dispensing_paybill = db.Column(db.String(30))
+    dispensing_account = db.Column(db.String(60))
     # Per-tenant M-Pesa configuration (public identifiers only — the
     # consumer key and secret live in Render env vars, one set per tenant).
     mpesa_shortcode = db.Column(db.String(30))
@@ -250,3 +254,92 @@ class Tenant(db.Model):
     theme_primary = db.Column(db.String(10), default="#0d47a1")
     is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# ═══════════════════════════════════════════════
+#  WATER DISPENSING PROFILE (Phase A)
+# ═══════════════════════════════════════════════
+
+class TenantProfile(db.Model):
+    """One row per (tenant, profile). Enabled/disabled from the dev portal."""
+    __tablename__ = 'tenant_profiles'
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, nullable=False, index=True)
+    profile_name = db.Column(db.String(30), nullable=False)   # 'billing' | 'dispensing'
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+    enabled_at = db.Column(db.DateTime, default=datetime.utcnow)
+    enabled_by = db.Column(db.String(60))
+    __table_args__ = (
+        db.UniqueConstraint('tenant_id', 'profile_name', name='uq_tenant_profile'),
+    )
+
+
+class DispenseMeterReading(db.Model):
+    """Daily closing meter reading per tenant. One row per (tenant, date)."""
+    __tablename__ = 'dispense_meter_readings'
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, nullable=False, index=True)
+    reading_date = db.Column(db.Date, nullable=False, index=True)
+    opening_reading_m3 = db.Column(db.Float, nullable=False)
+    closing_reading_m3 = db.Column(db.Float, nullable=False)
+    consumption_m3 = db.Column(db.Float, nullable=False)
+    recorded_by = db.Column(db.String(60))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           onupdate=datetime.utcnow)
+    __table_args__ = (
+        db.UniqueConstraint('tenant_id', 'reading_date',
+                            name='uq_dispense_reading_day'),
+    )
+
+
+class DispenseSale(db.Model):
+    """One transaction per customer purchase (walk-in)."""
+    __tablename__ = 'dispense_sales'
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, nullable=False, index=True)
+    sale_date = db.Column(db.Date, nullable=False, index=True)
+    container_size_L = db.Column(db.Integer, nullable=False)   # 20 | 200 | 5000 | 10000
+    quantity = db.Column(db.Integer, nullable=False, default=1)
+    price_per_unit_kes = db.Column(db.Float, nullable=False)
+    total_kes = db.Column(db.Float, nullable=False)
+    recorded_by = db.Column(db.String(60))
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           nullable=False, index=True)
+
+
+class DispensePayment(db.Model):
+    """Payment received against dispensing sales. Cash or M-Pesa."""
+    __tablename__ = 'dispense_payments'
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, nullable=False, index=True)
+    payment_date = db.Column(db.Date, nullable=False, index=True)
+    amount_kes = db.Column(db.Float, nullable=False)
+    method = db.Column(db.String(20), nullable=False)  # cash | mpesa_c2b | manual
+    reference = db.Column(db.String(80), index=True)
+    mpesa_log_id = db.Column(db.Integer, db.ForeignKey('mpesa_log.id'),
+                             nullable=True)
+    recorded_by = db.Column(db.String(60))
+    # Soft-void — see Phase 4 §4.4 of the design doc
+    voided = db.Column(db.Boolean, nullable=False, default=False)
+    voided_at = db.Column(db.DateTime)
+    voided_by = db.Column(db.String(60))
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           nullable=False, index=True)
+
+
+class DispenseRate(db.Model):
+    """Configurable rate card per tenant (container_size → price)."""
+    __tablename__ = 'dispense_rates'
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, nullable=False, index=True)
+    container_size_L = db.Column(db.Integer, nullable=False)
+    price_kes = db.Column(db.Float, nullable=False)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    __table_args__ = (
+        db.UniqueConstraint('tenant_id', 'container_size_L',
+                            name='uq_dispense_rate_size'),
+    )
