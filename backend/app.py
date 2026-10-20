@@ -19,7 +19,7 @@ from flask import (
 # with credentials reflected any Origin header, which is a CWE-942 misconfig.
 # If future cross-origin use is required, restore with an explicit origins list.
 from sqlalchemy import text, inspect
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 # ── Pillow decompression-bomb guard (C5c) ──
 # Cap the maximum pixels Pillow will decode in a single image. Without
@@ -5295,9 +5295,17 @@ def admin_create_consumer():
     _meter = meter_acc_no
     try:
         db.session.commit()
-    except IntegrityError:
+    except (IntegrityError, OperationalError) as _e:
+        # C5e1-FIX2: D1 dialect raises OperationalError (not IntegrityError)
+        # for unique-constraint violations, wrapping the D1 HTTP 400
+        # response. Only convert to 409 when the message proves a UNIQUE
+        # constraint failed; other operational errors (connection down,
+        # D1 unreachable) must stay visible as 500s.
         db.session.rollback()
-        return jsonify({"error": f"Meter account {_meter} is already in use."}), 409
+        _msg = str(_e).lower()
+        if "unique constraint" in _msg or "sqlite_constraint_unique" in _msg:
+            return jsonify({"error": f"Meter account {_meter} is already in use."}), 409
+        raise
 
     _audit("create_consumer",
            target_type="consumer", target_id=c.id,
@@ -5413,9 +5421,13 @@ def admin_update_consumer(consumer_id):
     _meter = consumer.meter_acc_no
     try:
         db.session.commit()
-    except IntegrityError:
+    except (IntegrityError, OperationalError) as _e:
+        # C5e1-FIX2: same treatment as create-path. See comment there.
         db.session.rollback()
-        return jsonify({"error": f"Meter account {_meter} is already in use."}), 409
+        _msg = str(_e).lower()
+        if "unique constraint" in _msg or "sqlite_constraint_unique" in _msg:
+            return jsonify({"error": f"Meter account {_meter} is already in use."}), 409
+        raise
 
     _audit("update_consumer",
            target_type="consumer", target_id=consumer.id,
