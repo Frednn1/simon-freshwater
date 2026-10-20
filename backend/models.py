@@ -305,6 +305,10 @@ class DispenseSale(db.Model):
     total_kes = db.Column(db.Float, nullable=False)
     recorded_by = db.Column(db.String(60))
     notes = db.Column(db.Text)
+    # Soft-void — Phase F.5, matches DispensePayment void pattern
+    voided = db.Column(db.Boolean, nullable=False, default=False)
+    voided_at = db.Column(db.DateTime)
+    voided_by = db.Column(db.String(60))
     created_at = db.Column(db.DateTime, default=datetime.utcnow,
                            nullable=False, index=True)
 

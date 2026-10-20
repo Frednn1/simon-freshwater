@@ -1069,6 +1069,25 @@ def _ensure_all_columns():
             db.session.commit()
             app.logger.info("[Migration] Added receipt_json to payment_log")
 
+    # Phase F.5: add void columns to dispense_sales.
+    if "dispense_sales" in tables:
+        existing = {c["name"] for c in insp.get_columns("dispense_sales")}
+        ds_alters = []
+        if "voided" not in existing:
+            if dialect == "sqlite":
+                ds_alters.append("ADD COLUMN voided INTEGER NOT NULL DEFAULT 0")
+            else:
+                ds_alters.append("ADD COLUMN voided BOOLEAN NOT NULL DEFAULT FALSE")
+        if "voided_at" not in existing:
+            ds_alters.append(f"ADD COLUMN voided_at {TIME_T} NULL")
+        if "voided_by" not in existing:
+            ds_alters.append("ADD COLUMN voided_by VARCHAR(60) NULL")
+        for alt in ds_alters:
+            db.session.execute(text(f"ALTER TABLE dispense_sales {alt}"))
+        if ds_alters:
+            db.session.commit()
+            app.logger.info(f"[Migration] Applied {len(ds_alters)} column(s) to dispense_sales")
+
     if "tenants" in tables:
         existing = {c["name"] for c in insp.get_columns("tenants")}
         if "location" not in existing:
@@ -4173,7 +4192,8 @@ def _dispense_window_stats(tenant_id, dates):
     sales_by_date = {}
     for row in (DispenseSale.query
                 .filter(DispenseSale.tenant_id == tenant_id,
-                        DispenseSale.sale_date.in_(dates))
+                        DispenseSale.sale_date.in_(dates),
+                        DispenseSale.voided == False)  # noqa: E712
                 .all()):
         sales_by_date.setdefault(row.sale_date.isoformat(), []).append(row)
     payments_by_date = {}
@@ -4631,6 +4651,188 @@ def admin_dispense_payment_void(payment_id):
         "voided_by": row.voided_by,
         "today_paid_kes": st["paid_kes"],
         "today_outstanding_kes": st["outstanding_kes"],
+    })
+
+
+# ═══════════════════════════════════════════════
+#  DISPENSING — SALES RECORDING (Phase F.5)
+# ═══════════════════════════════════════════════
+
+def _dispense_active_rates(tenant_id):
+    """Return active rate card for the tenant, ordered by size asc."""
+    return (DispenseRate.query
+            .filter_by(tenant_id=tenant_id, is_active=True)
+            .order_by(DispenseRate.container_size_L.asc())
+            .all())
+
+
+@app.route("/api/admin/dispense/sales", methods=["GET"])
+def admin_dispense_sales_get():
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("dispense_sales_get", 60, 60):
+        return _too_many(60)
+    tenant_id, err = _dispense_tenant_or_error()
+    if err: return err
+
+    date_str = (request.args.get("date") or "").strip()
+    if date_str:
+        try:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid date (expected YYYY-MM-DD)."}), 400
+    else:
+        target_date = _nairobi_today()
+
+    rows = (DispenseSale.query
+            .filter_by(tenant_id=tenant_id, sale_date=target_date)
+            .order_by(DispenseSale.created_at.asc())
+            .all())
+
+    active_sales = [r for r in rows if not r.voided]
+    total_sales_kes = round(sum(float(r.total_kes or 0) for r in active_sales), 2)
+    total_sold_l = sum(int(r.container_size_L or 0) * int(r.quantity or 0) for r in active_sales)
+
+    rates = [{"container_size_L": r.container_size_L,
+              "price_kes": float(r.price_kes)} for r in _dispense_active_rates(tenant_id)]
+
+    return jsonify({
+        "ok": True,
+        "date": target_date.strftime("%d %b %Y"),
+        "date_iso": target_date.isoformat(),
+        "total_sales_kes": total_sales_kes,
+        "total_sold_l": total_sold_l,
+        "rates": rates,
+        "sales": [{
+            "id": r.id,
+            "container_size_L": r.container_size_L,
+            "quantity": r.quantity,
+            "price_per_unit_kes": float(r.price_per_unit_kes),
+            "total_kes": float(r.total_kes),
+            "notes": r.notes,
+            "voided": bool(r.voided),
+            "voided_at": r.voided_at.isoformat() if r.voided_at else None,
+            "voided_by": r.voided_by,
+            "recorded_by": r.recorded_by,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        } for r in rows],
+    })
+
+
+@app.route("/api/admin/dispense/sales", methods=["POST"])
+def admin_dispense_sales_post():
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("dispense_sales_post", 30, 60):
+        return _too_many(60)
+    tenant_id, err = _dispense_tenant_or_error()
+    if err: return err
+
+    data = request.get_json(silent=True) or {}
+
+    try:
+        size = int(data.get("container_size_L"))
+        qty  = int(data.get("quantity"))
+    except (ValueError, TypeError):
+        return jsonify({"error": "container_size_L and quantity must be integers."}), 400
+    if size < 1 or size > 1_000_000:
+        return jsonify({"error": "container_size_L out of range."}), 400
+    if qty < 1 or qty > 10_000:
+        return jsonify({"error": "quantity out of range (1..10000)."}), 400
+
+    rate = (DispenseRate.query
+            .filter_by(tenant_id=tenant_id, container_size_L=size, is_active=True)
+            .first())
+    if not rate:
+        return jsonify({
+            "error": f"No active dispensing rate for {size} L. "
+                     f"Configure it in the dev portal before recording sales."
+        }), 400
+
+    price = float(rate.price_kes)
+    total = round(price * qty, 2)
+    notes = (data.get("notes") or "").strip()[:500]
+    admin_username = session.get("admin_username") or "?"
+
+    today = _nairobi_today()
+    row = DispenseSale(
+        tenant_id=tenant_id,
+        sale_date=today,
+        container_size_L=size,
+        quantity=qty,
+        price_per_unit_kes=price,
+        total_kes=total,
+        recorded_by=admin_username,
+        notes=notes or None,
+    )
+    db.session.add(row)
+    db.session.commit()
+
+    _audit("dispense_sale_recorded",
+           target_type="tenant", target_id=tenant_id,
+           detail=f"size={size}L qty={qty} price={price:.2f} total={total:.2f}")
+
+    stats = _dispense_window_stats(tenant_id, [today])
+    st = stats[today.isoformat()]
+
+    return jsonify({
+        "ok": True,
+        "sale": {
+            "id": row.id,
+            "container_size_L": size,
+            "quantity": qty,
+            "price_per_unit_kes": price,
+            "total_kes": total,
+            "voided": False,
+        },
+        "today_sales_kes": st["sales_kes"],
+        "today_sold_l": st["sold_l"],
+        "today_variance_l": st["variance_l"],
+    })
+
+
+@app.route("/api/admin/dispense/sales/<int:sale_id>/void", methods=["POST"])
+def admin_dispense_sale_void(sale_id):
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("dispense_sale_void", 30, 60):
+        return _too_many(60)
+    tenant_id, err = _dispense_tenant_or_error()
+    if err: return err
+
+    data = request.get_json(silent=True) or {}
+    reason = (data.get("reason") or "").strip()[:200]
+    if not reason:
+        return jsonify({"error": "A reason is required to void a sale."}), 400
+
+    row = DispenseSale.query.filter_by(id=sale_id, tenant_id=tenant_id).first()
+    if not row:
+        return jsonify({"error": "Sale not found."}), 404
+    if row.voided:
+        return jsonify({"error": "Sale is already voided."}), 400
+
+    row.voided = True
+    row.voided_at = datetime.utcnow()
+    row.voided_by = session.get("admin_username") or "?"
+    db.session.commit()
+
+    _audit("dispense_sale_voided",
+           target_type="tenant", target_id=tenant_id,
+           detail=f"sale_id={row.id} size={row.container_size_L}L qty={row.quantity} "
+                  f"total={row.total_kes:.2f} reason={reason[:100]}")
+
+    stats = _dispense_window_stats(tenant_id, [row.sale_date])
+    st = stats[row.sale_date.isoformat()]
+
+    return jsonify({
+        "ok": True,
+        "sale_id": row.id,
+        "voided": True,
+        "voided_at": row.voided_at.isoformat(),
+        "voided_by": row.voided_by,
+        "today_sales_kes": st["sales_kes"],
+        "today_sold_l": st["sold_l"],
+        "today_variance_l": st["variance_l"],
     })
 
 

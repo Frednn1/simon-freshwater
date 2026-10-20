@@ -107,6 +107,60 @@
       </form>
     </div>
 
+    <!-- Phase F.5 — sales recording -->
+    <div class="settings-card">
+      <h2>Record Sale</h2>
+      <form id="dSaleForm" autocomplete="off">
+        <div id="dSaleNoRates" class="alert alert-error hidden" style="margin-bottom:.75rem;">
+          No dispensing rates configured. Set them up in the dev portal before recording sales.
+        </div>
+        <div class="form-row">
+          <label for="dSaleContainer">Container Size *</label>
+          <select id="dSaleContainer" required>
+            <option value="">Loading&hellip;</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="dSaleQty">Quantity *</label>
+          <input type="number" id="dSaleQty" min="1" step="1" value="1" required>
+        </div>
+        <div class="form-row">
+          <label>Total (computed)</label>
+          <div id="dSaleTotal" style="padding:.55rem .7rem;background:#f8f9fa;border-radius:6px;font-weight:600;">
+            KES 0.00
+          </div>
+        </div>
+        <div class="form-row">
+          <label for="dSaleNotes">Notes (optional)</label>
+          <input type="text" id="dSaleNotes" placeholder="e.g. Lorry reg or customer note">
+        </div>
+        <button type="submit" id="dSaleSubmitBtn" class="btn-primary btn-fit">Save Sale</button>
+        <div id="dSaleMsg" class="alert hidden" style="margin-top:.5rem;"></div>
+      </form>
+    </div>
+
+    <div class="settings-card">
+      <h2>Today&#39;s Sales</h2>
+      <div style="overflow-x:auto;">
+        <table class="dtable">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Container</th>
+              <th class="num">Qty</th>
+              <th class="num">Rate (KES)</th>
+              <th class="num">Total (KES)</th>
+              <th>Recorded By</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="dSaleListBody">
+            <tr><td colspan="7" class="status-unavailable">Loading&hellip;</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Phase F — payment recording -->
     <div class="settings-card">
       <h2>Record Payment</h2>
@@ -561,6 +615,167 @@
 
       await loadPayments();
       syncMethodUI();
+    })();
+  </script>
+
+  <!-- Phase F.5 — sales recording -->
+  <script>
+    (async () => {
+      const form = document.getElementById('dSaleForm');
+      if (!form) return;
+      const msg        = document.getElementById('dSaleMsg');
+      const containerEl = document.getElementById('dSaleContainer');
+      const qtyEl      = document.getElementById('dSaleQty');
+      const totalEl    = document.getElementById('dSaleTotal');
+      const noRatesEl  = document.getElementById('dSaleNoRates');
+      let _rates = [];
+
+      function computeTotal() {
+        const size = parseInt(containerEl.value, 10);
+        const qty  = parseInt(qtyEl.value, 10);
+        const rate = _rates.find(r => r.container_size_L === size);
+        if (!rate || !Number.isFinite(qty) || qty < 1) {
+          totalEl.textContent = 'KES 0.00';
+          return 0;
+        }
+        const total = rate.price_kes * qty;
+        totalEl.textContent = 'KES ' + total.toLocaleString(undefined,
+          {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        return total;
+      }
+
+      function populateRates(rates) {
+        _rates = rates || [];
+        if (!_rates.length) {
+          containerEl.innerHTML = '<option value="">(no rates)</option>';
+          noRatesEl.classList.remove('hidden');
+          document.getElementById('dSaleSubmitBtn').disabled = true;
+          return;
+        }
+        noRatesEl.classList.add('hidden');
+        document.getElementById('dSaleSubmitBtn').disabled = false;
+        containerEl.innerHTML = _rates.map(r =>
+          '<option value="' + r.container_size_L + '">'
+          + r.container_size_L.toLocaleString() + ' L — KES '
+          + Number(r.price_kes).toFixed(2)
+          + '</option>'
+        ).join('');
+        computeTotal();
+      }
+
+      qtyEl.addEventListener('input', computeTotal);
+      containerEl.addEventListener('change', computeTotal);
+
+      async function loadSales() {
+        try {
+          const r = await fetch('/api/admin/dispense/sales', {credentials: 'same-origin'});
+          if (!r.ok) return;
+          const d = await r.json();
+          if (!d.ok) return;
+          populateRates(d.rates || []);
+
+          const tbody = document.getElementById('dSaleListBody');
+          const rows = d.sales || [];
+          if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="7" class="status-unavailable">No sales today.</td></tr>';
+            return;
+          }
+          const fmtTime = (iso) => {
+            if (!iso) return '—';
+            try { return new Date(iso).toLocaleTimeString(undefined,
+              {hour: '2-digit', minute: '2-digit'}); } catch (_) { return '—'; }
+          };
+          const fmtN = (n) => Number(n || 0).toLocaleString(undefined,
+            {minimumFractionDigits: 2, maximumFractionDigits: 2});
+          tbody.innerHTML = rows.map(s => {
+            const strike = s.voided ? 'text-decoration:line-through;opacity:.55;' : '';
+            const actionBtn = s.voided
+              ? '<span class="status-pill status-no-reading">Voided</span>'
+              : '<button class="dev-btn dev-btn--danger" type="button" onclick="voidSale(' + s.id + ')">Void</button>';
+            return '<tr style="' + strike + '">'
+              + '<td>' + fmtTime(s.created_at) + '</td>'
+              + '<td>' + s.container_size_L.toLocaleString() + ' L</td>'
+              + '<td class="num">' + s.quantity + '</td>'
+              + '<td class="num">' + fmtN(s.price_per_unit_kes) + '</td>'
+              + '<td class="num">' + fmtN(s.total_kes) + '</td>'
+              + '<td>' + (s.recorded_by || '—') + '</td>'
+              + '<td>' + actionBtn + '</td>'
+              + '</tr>';
+          }).join('');
+        } catch (_) {}
+      }
+
+      window.voidSale = async (id) => {
+        const reason = prompt('Reason for voiding this sale:');
+        if (!reason || !reason.trim()) return;
+        try {
+          const r = await fetch('/api/admin/dispense/sales/' + id + '/void', {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({reason: reason.trim()})
+          });
+          const d = await r.json();
+          if (r.ok && d.ok) {
+            await loadSales();
+            await new Promise(r => setTimeout(r, 800));
+            location.reload();
+          } else {
+            alert('❌ ' + (d.error || 'Void failed.'));
+          }
+        } catch (_) {
+          alert('❌ Network error.');
+        }
+      };
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('dSaleSubmitBtn');
+        const orig = btn.textContent;
+        btn.disabled = true; btn.textContent = 'Saving…';
+        if (msg) msg.className = 'alert hidden';
+        try {
+          const size = parseInt(containerEl.value, 10);
+          const qty  = parseInt(qtyEl.value, 10);
+          if (!Number.isFinite(size) || size < 1) throw new Error('Select a container size.');
+          if (!Number.isFinite(qty) || qty < 1) throw new Error('Quantity must be at least 1.');
+          const body = {
+            container_size_L: size,
+            quantity: qty,
+            notes: document.getElementById('dSaleNotes').value.trim(),
+          };
+          const r = await fetch('/api/admin/dispense/sales', {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(body)
+          });
+          const d = await r.json();
+          if (r.ok && d.ok) {
+            if (msg) {
+              msg.className = 'alert alert-success';
+              msg.textContent = '✅ Sale recorded: ' + qty + ' × '
+                + size.toLocaleString() + ' L = KES '
+                + Number(d.sale.total_kes).toLocaleString(undefined,
+                    {minimumFractionDigits: 2, maximumFractionDigits: 2});
+            }
+            qtyEl.value = '1';
+            document.getElementById('dSaleNotes').value = '';
+            computeTotal();
+            await loadSales();
+            await new Promise(r => setTimeout(r, 1200));
+            location.reload();
+          } else {
+            if (msg) { msg.className = 'alert alert-error';
+              msg.textContent = '❌ ' + (d.error || 'Save failed.'); }
+            btn.disabled = false; btn.textContent = orig;
+          }
+        } catch (err) {
+          if (msg) { msg.className = 'alert alert-error';
+            msg.textContent = '❌ ' + (err.message || 'Save failed.'); }
+          btn.disabled = false; btn.textContent = orig;
+        }
+      });
+
+      await loadSales();
     })();
   </script>
 </body>
