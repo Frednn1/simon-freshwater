@@ -28,6 +28,28 @@
     .status-overpaid { background: #e3f2fd; color: #0d47a1; }
     .status-no-reading { background: #eceff1; color: #607d8b; }
     .status-unavailable { color: #999; font-style: italic; }
+    /* Step 1: explicit left-alignment for form labels + full-width selects.
+       Fixes inherited text-align:center from a parent, and makes the
+       Container Size <select> match the inputs below it. */
+    .settings-card .form-row {
+      text-align: left;
+    }
+    .settings-card .form-row select {
+      width: 100%;
+      padding: .75rem .85rem;
+      border: 2px solid #cfd8dc;
+      border-radius: 9px;
+      font-size: 1rem;
+      font-family: inherit;
+      background: #fff;
+      transition: border-color .2s;
+    }
+    .settings-card .form-row select:focus {
+      outline: none;
+      border-color: #1976d2;
+      box-shadow: 0 0 0 3px rgba(25,118,210,.12);
+    }
+
     @media (max-width: 640px) {
       .dpanel { grid-template-columns: 1fr; }
       .dtable { font-size: .78rem; }
