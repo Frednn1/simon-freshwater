@@ -812,6 +812,16 @@ def _current_admin():
 
     # Roll the activity timestamp forward on each authenticated request
     session["last_activity"] = now.isoformat()
+
+    # Lazy D1 backup trigger — first successful auth after the scheduled
+    # hour each day. Runs in a daemon thread; internally guarded so it
+    # fires at most once per process per day. Never blocks the request.
+    try:
+        from d1_backup import maybe_run_lazy_backup
+        maybe_run_lazy_backup()
+    except Exception:
+        pass
+
     return a
 
 
@@ -6741,6 +6751,38 @@ def admin_backup_run():
     _audit("backup_run_failed",
            detail=(result.get("error") or "")[:200])
     return jsonify(result), 502
+
+
+@app.route("/api/admin/backup/d1/run", methods=["POST"])
+def admin_d1_backup_run():
+    """Manually trigger a D1 SQL backup to R2. Super-admin only.
+    Rate limit: 2/hour. Useful for testing and for external cron
+    (e.g. GitHub Actions) to fire the backup during low-traffic hours."""
+    u = _require_super_admin()
+    if u: return u
+    if not _rate_limit("d1_backup_run", 2, 3600):
+        return _too_many(3600)
+
+    try:
+        from d1_backup import run_backup
+    except Exception as e:
+        return jsonify({"ok": False,
+                        "error": f"d1_backup module unavailable: {e}"}), 500
+
+    result = run_backup(reason="manual")
+
+    try:
+        _audit("d1_backup_manual",
+               target_type="tenant", target_id=1,
+               detail=(f"ok={result.get('ok')} "
+                       f"key={result.get('key') or '—'} "
+                       f"bytes={result.get('bytes') or 0} "
+                       f"error={(result.get('error') or '—')[:100]}"))
+    except Exception:
+        pass
+
+    status = 200 if result.get("ok") else 500
+    return jsonify(result), status
 
 
 @app.route("/api/admin/consumers/all", methods=["GET"])
