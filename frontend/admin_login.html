@@ -199,7 +199,7 @@
           // Regular login (no 2FA)
           showMsg('success', '✅ Signed in. Redirecting…');
           if (d.requires_profile_choice && d.profiles && d.profiles.length > 1) {
-            showProfileChooser(d.profiles);
+            showProfileChooser(d.profiles, { showSignOut: true });
             return;
           }
           setTimeout(() => { location.href = (d && d.redirect_to) || (NEXT + TENANT_QS); }, 500);
@@ -229,7 +229,7 @@
         if (r.ok && d.ok) {
           showMsg('success', '✅ Signed in. Redirecting…');
           if (d.requires_profile_choice && d.profiles && d.profiles.length > 1) {
-            showProfileChooser(d.profiles);
+            showProfileChooser(d.profiles, { showSignOut: true });
             return;
           }
           setTimeout(() => { location.href = (d && d.redirect_to) || (NEXT + TENANT_QS); }, 500);

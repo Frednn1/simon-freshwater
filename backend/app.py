@@ -1811,7 +1811,11 @@ def admin_login_page():
                 g.tenant = Tenant.query.filter_by(slug=_url_slug).first()
             except Exception:
                 pass
-        else:
+        elif not session.get("pending_profile_choice"):
+            # Upgrade 3 fix: pending user must see the login page so the
+            # auto-chooser can fire. Without this, "logged in → redirect
+            # to dashboard" loops against the guard's pending-block
+            # redirect (ERR_TOO_MANY_REDIRECTS).
             return redirect("/")
 
     slug = _url_slug
