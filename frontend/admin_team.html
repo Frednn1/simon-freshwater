@@ -470,14 +470,21 @@
           } catch (_) { /* leave as-is */ }
         })();
         const perms = member.permissions || {};
-        const keys = ['settings', 'analytics', 'reports', 'bulk_sms', 'mpesa'];
         const labels = {
           settings:  { title: 'Settings',        desc: 'Profile, password, phone' },
           analytics: { title: 'Analytics',       desc: 'Dispensing analytics' },
           reports:   { title: 'Monthly Reports', desc: 'Download billing PDF' },
           bulk_sms:  { title: 'Bulk SMS',        desc: 'Send reminders to consumers' },
           mpesa:     { title: 'M-Pesa',          desc: 'Payments & callbacks' },
+          new_customer: { title: 'New Customer', desc: 'Register new consumers (billing)' },
+          terminate:    { title: 'Terminate',    desc: 'Deactivate consumer accounts (billing)' },
         };
+        // Step 1 upgrade: only show billing-only perms when employee has billing profile
+        const _hasBilling = _profs.indexOf('billing') >= 0;
+        const keys = ['settings', 'analytics', 'reports', 'bulk_sms', 'mpesa'];
+        if (_hasBilling) {
+          keys.push('new_customer', 'terminate');
+        }
         // Step 2 fix: defensive save button reset on every modal open
         const _saveBtn = document.getElementById('permSaveBtn');
         if (_saveBtn) { _saveBtn.disabled = false; _saveBtn.textContent = 'Save'; }
@@ -508,11 +515,14 @@
         btn.disabled = true; btn.textContent = 'Saving\u2026';
         const id = _permTargetId;
         if (!id) { btn.disabled = false; btn.textContent = orig; return; }
-        const keys = ['settings', 'analytics', 'reports', 'bulk_sms', 'mpesa'];
+        const allKeys = ['settings', 'analytics', 'reports', 'bulk_sms', 'mpesa',
+                         'new_customer', 'terminate'];
         const permissions = {};
-        keys.forEach(function (k) {
+        allKeys.forEach(function (k) {
+          // Step 1 upgrade: only include keys whose checkbox is in the DOM
+          // (dispensing-only employees don't render new_customer/terminate)
           const el = document.getElementById('perm_' + k);
-          permissions[k] = !!(el && el.checked);
+          if (el) permissions[k] = !!el.checked;
         });
         // Step 4: collect profiles
         const profiles = [];

@@ -122,6 +122,9 @@ _EMPLOYEE_PERMISSION_DEFAULTS = {
     "reports":   False,
     "bulk_sms":  False,
     "mpesa":     False,
+    # Step 1 upgrade: billing profile permissions
+    "new_customer": False,
+    "terminate":    False,
 }
 
 
@@ -212,6 +215,9 @@ _EMPLOYEE_GATED_PATHS = (
     ("bulk_sms",  "prefix", "/api/admin/bulk_sms/"),
     ("mpesa",     "exact",  "/admin/mpesa"),
     ("mpesa",     "prefix", "/api/admin/mpesa/"),
+    # Step 1 upgrade: billing profile perms
+    ("new_customer", "exact", "/api/admin/consumer"),
+    ("terminate",    "terminate_subpath", "/api/admin/consumer/"),
 )
 
 
@@ -226,6 +232,9 @@ def _employee_permission_for_path(path):
                 return key
         elif kind == "prefix":
             if path.startswith(value):
+                return key
+        elif kind == "terminate_subpath":
+            if path.startswith(value) and path.endswith("/terminate"):
                 return key
     return None
 
@@ -403,7 +412,13 @@ def _before_request_employee_path_guard():
     # below (those whitelists are broad enough to bypass a permission denial).
     _perm_key = _employee_permission_for_path(p)
     if _perm_key:
-        if not _employee_permissions(session.get("admin_id")).get(_perm_key, False):
+        # Step 1 upgrade: new_customer/terminate require BOTH
+        # the permission AND the billing profile (defense in depth).
+        _denied = (
+            (_perm_key in ("new_customer", "terminate") and "billing" not in _emp_profiles)
+            or not _employee_permissions(session.get("admin_id")).get(_perm_key, False)
+        )
+        if _denied:
             _is_api = p.startswith("/api/")
             _wants_html = "text/html" in (request.headers.get("Accept") or "")
             if _is_api or not _wants_html:

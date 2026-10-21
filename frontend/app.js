@@ -163,6 +163,11 @@ function renderAuthTab() {
       drawerBulkSms:  'bulk_sms',
       mpesaTab:       'mpesa',
       drawerMpesa:    'mpesa',
+      // Step 1 upgrade: billing action buttons gated by permission
+      openNewCustomerBtn: 'new_customer',
+      drawerNewCustomer:  'new_customer',
+      openTerminateBtn:   'terminate',
+      drawerTerminate:    'terminate',
     };
     Object.keys(permMap).forEach(function (elId) {
       const el = document.getElementById(elId);
