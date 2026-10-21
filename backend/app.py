@@ -419,6 +419,7 @@ def _before_request_employee_path_guard():
         "/admin/settings",
         "/api/admin/whoami",
         "/api/admin/logout",
+        "/api/admin/profile/switch",
         "/api/admin/settings",
         "/api/admin/settings/username",
         "/api/admin/settings/phone",
