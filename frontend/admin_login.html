@@ -333,10 +333,25 @@ function showProfileChooser(profiles, opts) {
       sBtn.textContent = 'Sign out';
       sBtn.style.cssText = 'display:block;width:100%;margin-top:.5rem;padding:.55rem 1rem;border:1px solid #cfd8dc;border-radius:8px;background:#fff;color:#546e7a;cursor:pointer;font-size:.9rem;';
       sBtn.onclick = async function () {
+        /* Upgrade 3-fix-2: tenant-aware sign-out — preserve the current
+           tenant context. Uses logout response's redirect (authoritative)
+           when available; falls back to URL param / body slug. */
+        var _target = '/admin/login';
         try {
-          await fetch('/api/admin/logout', { method: 'POST', credentials: 'same-origin' });
+          var _r = await fetch('/api/admin/logout', { method: 'POST', credentials: 'same-origin' });
+          var _d = await _r.json();
+          if (_d && typeof _d.redirect === 'string'
+              && _d.redirect.indexOf('/admin/login') === 0) {
+            _target = _d.redirect;
+          }
         } catch (_) {}
-        location.href = '/admin/login';
+        if (_target === '/admin/login') {
+          var _p = new URLSearchParams(location.search);
+          var _t = _p.get('__tenant') || _p.get('__preview')
+                || (document.body && document.body.dataset && document.body.dataset.tenantSlug) || '';
+          if (_t) _target = '/admin/login?__tenant=' + encodeURIComponent(_t);
+        }
+        location.href = _target;
       };
       innerBox.appendChild(sBtn);
     }
