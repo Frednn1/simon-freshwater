@@ -120,6 +120,12 @@ function renderAuthTab() {
   if (settingsTab) {
     settingsTab.classList.toggle('hidden', !AUTH_STATE.authenticated);
   }
+  // Step 6: Team tab — admin only (server blocks employees at /api/admin/team)
+  const teamTab = document.getElementById('teamTab');
+  if (teamTab) {
+    teamTab.classList.toggle('hidden',
+      !AUTH_STATE.authenticated || AUTH_STATE.user_role === 'employee');
+  }
   const mpesaTab = document.getElementById('mpesaTab');
   if (mpesaTab) {
     mpesaTab.classList.toggle('hidden', !AUTH_STATE.authenticated);
@@ -138,6 +144,12 @@ function renderAuthTab() {
     const el = document.getElementById(id);
     if (el) el.classList.toggle('hidden', !AUTH_STATE.authenticated);
   });
+  // Step 6: drawer team mirror — admin only
+  const drawerTeam = document.getElementById('drawerTeam');
+  if (drawerTeam) {
+    drawerTeam.classList.toggle('hidden',
+      !AUTH_STATE.authenticated || AUTH_STATE.user_role === 'employee');
+  }
 
   /* STEP2_HIDE_APPJS */
   if (AUTH_STATE.authenticated && AUTH_STATE.user_role === 'employee' && AUTH_STATE.permissions) {

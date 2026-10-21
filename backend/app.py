@@ -1807,6 +1807,15 @@ def admin_forgot_page():
 def admin_settings_page():
     return _serve_frontend("admin_settings.html")
 
+
+@app.route("/admin/team")
+def admin_team_page():
+    """Admin-only team page (Step 6). Employees are blocked by
+    _before_request_employee_path_guard — /admin/team is not in any
+    employee allowlist."""
+    return _serve_frontend("admin_team.html")
+
+
 @app.route("/admin/mpesa")
 def admin_mpesa_page():
     return _serve_frontend("admin_mpesa.html")

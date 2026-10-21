@@ -79,6 +79,7 @@
       <nav class="header-actions">
         <button id="switchBtn" type="button" class="tab-btn" style="display:none;">Switch to Billing</button>
         <a id="tabAnalyticsDisp" href="/dispense/analytics" class="tab-btn">Analytics</a>
+        <a id="tabTeamDisp" href="/admin/team" class="tab-btn">Team</a>
         <a id="tabSettingsDisp" href="/admin/settings" class="tab-btn">Settings</a>
         <button id="logoutBtn" type="button" class="tab-btn">Logout</button>
       </nav>
@@ -1219,6 +1220,11 @@
           if (a && !d.permissions.analytics) a.style.display = 'none';
           const s = document.getElementById('tabSettingsDisp');
           if (s && !d.permissions.settings) s.style.display = 'none';
+        }
+        // Step 6: Team tab is admin-only — hide for any employee
+        if (d.authenticated && d.user_role === 'employee') {
+          const t = document.getElementById('tabTeamDisp');
+          if (t) t.style.display = 'none';
         }
       } catch (_) { /* no-op */ }
     })();
