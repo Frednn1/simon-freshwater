@@ -295,9 +295,17 @@ def _before_request_employee_path_guard():
     for pre in ALLOWED_PREFIXES:
         if p.startswith(pre):
             return
-    return jsonify({
-        "error": "Forbidden. Employees can only access the dispensing portal."
-    }), 403
+
+    # Differentiate browser navigation from API clients:
+    #   - Browser hits / → 302 → /dispense (no JSON-on-screen)
+    #   - fetch() to /api/* → 403 JSON (so clients see the real reason)
+    is_api = p.startswith("/api/")
+    wants_html = "text/html" in (request.headers.get("Accept") or "")
+    if is_api or not wants_html:
+        return jsonify({
+            "error": "Forbidden. Employees can only access the dispensing portal."
+        }), 403
+    return redirect("/dispense")
 
 
 @app.before_request
@@ -4487,6 +4495,7 @@ def admin_login_route():
             "ok": True,
             "requires_2fa": True,
             "message": send.get("message"),
+            "user_role": _init_role,
         }), 200
 
     # No 2FA — full session immediately (existing behaviour)
@@ -4500,7 +4509,12 @@ def admin_login_route():
     session["active_profile"] = _initial_profile
     session["user_role"] = _init_role
     _audit("login")
-    return jsonify({"ok": True, "username": result["username"]}), 200
+    return jsonify({
+        "ok": True,
+        "username": result["username"],
+        "user_role": _init_role,
+        "redirect_to": "/dispense" if _init_role == "employee" else "/",
+    }), 200
 
 
 @app.route("/api/admin/login/verify-otp", methods=["POST"])
@@ -4529,7 +4543,13 @@ def admin_login_verify_otp():
     session["last_activity"] = datetime.utcnow().isoformat()
     session["login_at"] = datetime.utcnow().isoformat()
     _audit("login_2fa_ok")
-    return jsonify({"ok": True, "username": admin.username}), 200
+    _verify_role = getattr(admin, "user_role", "admin") or "admin"
+    return jsonify({
+        "ok": True,
+        "username": admin.username,
+        "user_role": _verify_role,
+        "redirect_to": "/dispense" if _verify_role == "employee" else "/",
+    }), 200
 
 
 @app.route("/api/admin/login/resend-otp", methods=["POST"])
