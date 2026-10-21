@@ -39,6 +39,7 @@ except Exception:
 from models import (
     db, Consumer, MeterReading, NotificationLog,
     AdminUser, PaymentLog, MpesaLog, SentBillArchive, AdminAuditLog,
+    AdminOTP, PasswordResetToken,
     Tenant, TenantProfile, DispenseRate,
     DispenseMeterReading, DispenseSale, DispensePayment,
 )
@@ -7648,6 +7649,55 @@ def admin_team_reactivate(user_id):
            target_type="tenant", target_id=admin.tenant_id,
            detail=f"username={target.username}")
     return jsonify({"ok": True, "reactivated_id": target.id})
+
+
+@app.route("/api/admin/team/<int:user_id>", methods=["DELETE"])
+def admin_team_delete(user_id):
+    u = _require_team_admin()
+    if u: return u
+    if not _rate_limit("team_delete", 3, 300):
+        return _too_many(300)
+    admin = _current_admin()
+    if not admin or not admin.tenant_id:
+        return jsonify({"error": "Unauthorized."}), 401
+
+    target = AdminUser.query.filter_by(id=user_id, tenant_id=admin.tenant_id).first()
+    if not target:
+        return jsonify({"error": "Team member not found."}), 404
+    if target.id == admin.id:
+        return jsonify({"error": "You cannot delete your own account."}), 400
+    if getattr(target, "is_super", False):
+        return jsonify({"error": "Super-admin accounts cannot be deleted."}), 400
+
+    # Must keep at least one active admin in the tenant
+    if (getattr(target, "user_role", "admin") or "admin") == "admin":
+        active_admins = (AdminUser.query
+                         .filter_by(tenant_id=admin.tenant_id, is_active=True,
+                                    user_role="admin")
+                         .filter(AdminUser.id != target.id)
+                         .count())
+        if active_admins < 1:
+            return jsonify({"error": "Cannot delete the last active admin."}), 400
+
+    uname = target.username
+
+    # FK cleanup — mirrors models.py design intent:
+    #   admin_otp.admin_id              (NOT NULL) → delete rows
+    #   password_reset_tokens.admin_id  (NOT NULL) → delete rows
+    #   admin_audit_log.admin_id        (nullable) → NULL it; denormalized
+    #                                     admin_username survives (by design)
+    AdminOTP.query.filter_by(admin_id=target.id).delete(synchronize_session=False)
+    PasswordResetToken.query.filter_by(admin_id=target.id).delete(synchronize_session=False)
+    AdminAuditLog.query.filter_by(admin_id=target.id).update(
+        {"admin_id": None}, synchronize_session=False)
+
+    db.session.delete(target)
+    db.session.commit()
+
+    _audit("team_member_deleted",
+           target_type="tenant", target_id=admin.tenant_id,
+           detail=f"username={uname}")
+    return jsonify({"ok": True, "deleted_id": user_id})
 
 
 @app.route("/api/admin/dispense/recording_as", methods=["POST"])

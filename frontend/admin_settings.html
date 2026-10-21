@@ -93,17 +93,6 @@
         Each action is attributed to whoever is currently recording.
       </p>
 
-      <div style="background:#f5f5f5;padding:.85rem;border-radius:8px;margin-bottom:1rem;">
-        <div style="font-weight:600;font-size:.85rem;margin-bottom:.35rem;">Share this login URL with your team</div>
-        <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;">
-          <code id="teamLoginUrl" style="background:#fff;padding:.4rem .6rem;border-radius:6px;border:1px solid #e0e0e0;flex:1;min-width:220px;overflow:auto;font-size:.82rem;white-space:nowrap;"></code>
-          <button id="copyTeamUrlBtn" type="button" class="btn-secondary" style="font-size:.82rem;padding:.35rem .75rem;">Copy</button>
-        </div>
-        <div style="font-size:.75rem;color:#888;margin-top:.5rem;">
-          Employees must open this URL (not the tenant root) so they land on the dispensing portal after login.
-        </div>
-      </div>
-
       <div id="teamList">
         <p class="form-hint-small">Loading&hellip;</p>
       </div>
@@ -486,9 +475,11 @@
               } else if (m.is_super) {
                 actions = '<span style="color:#999;font-size:.78rem;">super</span>';
               } else if (m.is_active) {
-                actions = '<button type="button" class="btn-secondary" style="font-size:.78rem;padding:.25rem .6rem;" onclick="deactivateMember(' + m.id + ')">Deactivate</button>';
+                actions = '<button type="button" class="btn-secondary" style="font-size:.78rem;padding:.25rem .6rem;" onclick="deactivateMember(' + m.id + ')">Deactivate</button>' +
+                          '<button type="button" class="btn-secondary" style="font-size:.78rem;padding:.25rem .6rem;margin-left:.35rem;color:#c62828;border-color:#ef9a9a;" onclick="deleteMember(' + m.id + ')">Delete</button>';
               } else {
-                actions = '<button type="button" class="btn-secondary" style="font-size:.78rem;padding:.25rem .6rem;" onclick="reactivateMember(' + m.id + ')">Reactivate</button>';
+                actions = '<button type="button" class="btn-secondary" style="font-size:.78rem;padding:.25rem .6rem;" onclick="reactivateMember(' + m.id + ')">Reactivate</button>' +
+                          '<button type="button" class="btn-secondary" style="font-size:.78rem;padding:.25rem .6rem;margin-left:.35rem;color:#c62828;border-color:#ef9a9a;" onclick="deleteMember(' + m.id + ')">Delete</button>';
               }
               return '<tr style="border-top:1px solid #eee;">' +
                 '<td style="padding:.55rem .5rem;">' + esc(m.username) + '</td>' +
@@ -579,32 +570,20 @@
         } catch { showTeamMsg('error', 'Network error.'); }
       };
 
+      window.deleteMember = async function (id) {
+        if (!confirm('Permanently DELETE this team member? This cannot be undone. All their sessions will be invalidated.')) return;
+        try {
+          const r = await fetch('/api/admin/team/' + id, {
+            method: 'DELETE', credentials: 'same-origin',
+          });
+          const d = await r.json();
+          if (r.ok && d.ok) { showTeamMsg('success', '\u2705 Member permanently deleted.'); await loadTeam(); }
+          else { showTeamMsg('error', d.error || 'Delete failed.'); }
+        } catch { showTeamMsg('error', 'Network error.'); }
+      };
+
       const addBtn = document.getElementById('addTeamBtn');
       if (addBtn) addBtn.addEventListener('click', window.openTeamModal);
-
-      // Login URL sharing (Step 2 / 3b)
-      const teamLoginUrlEl = document.getElementById('teamLoginUrl');
-      const copyTeamUrlBtn  = document.getElementById('copyTeamUrlBtn');
-      if (teamLoginUrlEl) {
-        teamLoginUrlEl.textContent =
-          window.location.origin + '/admin/login?__tenant={{tenant_slug}}';
-      }
-      if (copyTeamUrlBtn && teamLoginUrlEl) {
-        copyTeamUrlBtn.addEventListener('click', async () => {
-          try {
-            await navigator.clipboard.writeText(teamLoginUrlEl.textContent);
-            const orig = copyTeamUrlBtn.textContent;
-            copyTeamUrlBtn.textContent = '\u2713 Copied';
-            setTimeout(() => { copyTeamUrlBtn.textContent = orig; }, 1500);
-          } catch (_) {
-            const range = document.createRange();
-            range.selectNodeContents(teamLoginUrlEl);
-            const sel = window.getSelection();
-            sel.removeAllRanges();
-            sel.addRange(range);
-          }
-        });
-      }
 
       await loadTeam();
     })();
