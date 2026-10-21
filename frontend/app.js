@@ -138,6 +138,27 @@ function renderAuthTab() {
     const el = document.getElementById(id);
     if (el) el.classList.toggle('hidden', !AUTH_STATE.authenticated);
   });
+
+  /* STEP2_HIDE_APPJS */
+  if (AUTH_STATE.authenticated && AUTH_STATE.user_role === 'employee' && AUTH_STATE.permissions) {
+    const p = AUTH_STATE.permissions;
+    const permMap = {
+      settingsTab:    'settings',
+      drawerSettings: 'settings',
+      reportsTab:     'reports',
+      drawerReports:  'reports',
+      bulkSmsTab:     'bulk_sms',
+      drawerBulkSms:  'bulk_sms',
+      mpesaTab:       'mpesa',
+      drawerMpesa:    'mpesa',
+    };
+    Object.keys(permMap).forEach(function (elId) {
+      const el = document.getElementById(elId);
+      if (!el) return;
+      if (!p[permMap[elId]]) el.classList.add('hidden');
+    });
+  }
+
   const dAuthIcon  = document.getElementById('drawerAuthIcon');
   const dAuthLabel = document.getElementById('drawerAuthLabel');
   if (dAuthIcon && dAuthLabel) {

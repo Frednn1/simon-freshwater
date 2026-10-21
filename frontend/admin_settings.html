@@ -177,6 +177,28 @@
       </div>
     </div>
 
+    <!-- STEP2_PERM_MODAL -->
+    <div id="permModal" class="modal-overlay hidden">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Tab Permissions &mdash; <span id="permUsername">&mdash;</span></h3>
+          <button type="button" class="modal-close" onclick="closePermModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="form-hint-small" style="margin:0 0 .85rem;">
+            Choose which tabs this employee can access. Unchecked tabs
+            are hidden from their UI and blocked at the API.
+          </p>
+          <div id="permList"></div>
+          <div id="permMsg" class="alert hidden" style="margin-top:.5rem;"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" onclick="closePermModal()">Cancel</button>
+          <button type="button" class="btn-primary" id="permSaveBtn" onclick="savePermissions()">Save</button>
+        </div>
+      </div>
+    </div>
+
     <div class="settings-back">
       <a href="/?__tenant={{tenant_slug}}">← Back to Home</a>
     </div>
@@ -435,6 +457,10 @@
         if (el) el.classList.add('hidden');
       }
 
+      /* STEP2_HIDE_ADMIN_SETTINGS */
+      let _teamCache = [];
+      let _permTargetId = null;
+
       async function loadTeam() {
         const listEl = document.getElementById('teamList');
         if (!listEl) return;
@@ -446,6 +472,7 @@
             return;
           }
           const team = d.team || [];
+          _teamCache = team;
           if (!team.length) {
             listEl.innerHTML = '<p class="form-hint-small">No team members yet.</p>';
             return;
@@ -475,10 +502,18 @@
               } else if (m.is_super) {
                 actions = '<span style="color:#999;font-size:.78rem;">super</span>';
               } else if (m.is_active) {
-                actions = '<button type="button" class="btn-secondary" style="font-size:.78rem;padding:.25rem .6rem;" onclick="deactivateMember(' + m.id + ')">Deactivate</button>' +
+                actions = '';
+                if (m.user_role === 'employee') {
+                  actions += '<button type="button" class="btn-secondary" style="font-size:.78rem;padding:.25rem .6rem;margin-right:.35rem;" onclick="openPermissions(' + m.id + ')">Permissions</button>';
+                }
+                actions += '<button type="button" class="btn-secondary" style="font-size:.78rem;padding:.25rem .6rem;" onclick="deactivateMember(' + m.id + ')">Deactivate</button>' +
                           '<button type="button" class="btn-secondary" style="font-size:.78rem;padding:.25rem .6rem;margin-left:.35rem;color:#c62828;border-color:#ef9a9a;" onclick="deleteMember(' + m.id + ')">Delete</button>';
               } else {
-                actions = '<button type="button" class="btn-secondary" style="font-size:.78rem;padding:.25rem .6rem;" onclick="reactivateMember(' + m.id + ')">Reactivate</button>' +
+                actions = '';
+                if (m.user_role === 'employee') {
+                  actions += '<button type="button" class="btn-secondary" style="font-size:.78rem;padding:.25rem .6rem;margin-right:.35rem;" onclick="openPermissions(' + m.id + ')">Permissions</button>';
+                }
+                actions += '<button type="button" class="btn-secondary" style="font-size:.78rem;padding:.25rem .6rem;" onclick="reactivateMember(' + m.id + ')">Reactivate</button>' +
                           '<button type="button" class="btn-secondary" style="font-size:.78rem;padding:.25rem .6rem;margin-left:.35rem;color:#c62828;border-color:#ef9a9a;" onclick="deleteMember(' + m.id + ')">Delete</button>';
               }
               return '<tr style="border-top:1px solid #eee;">' +
@@ -580,6 +615,74 @@
           if (r.ok && d.ok) { showTeamMsg('success', '\u2705 Member permanently deleted.'); await loadTeam(); }
           else { showTeamMsg('error', d.error || 'Delete failed.'); }
         } catch { showTeamMsg('error', 'Network error.'); }
+      };
+
+      window.openPermissions = function (id) {
+        const member = _teamCache.find(function (m) { return m.id === id; });
+        if (!member) { showTeamMsg('error', 'Member not found.'); return; }
+        _permTargetId = id;
+        document.getElementById('permUsername').textContent = member.username;
+        const perms = member.permissions || {};
+        const keys = ['settings', 'analytics', 'reports', 'bulk_sms', 'mpesa'];
+        const labels = {
+          settings:  { title: 'Settings',        desc: 'Profile, password, phone' },
+          analytics: { title: 'Analytics',       desc: 'Dispensing analytics' },
+          reports:   { title: 'Monthly Reports', desc: 'Download billing PDF' },
+          bulk_sms:  { title: 'Bulk SMS',        desc: 'Send reminders to consumers' },
+          mpesa:     { title: 'M-Pesa',          desc: 'Payments & callbacks' },
+        };
+        document.getElementById('permList').innerHTML = keys.map(function (k) {
+          const L = labels[k];
+          const checked = perms[k] ? 'checked' : '';
+          return '<label style="display:flex;align-items:center;gap:.65rem;padding:.55rem .75rem;border:1px solid #e0e0e0;border-radius:6px;margin-bottom:.5rem;cursor:pointer;">' +
+            '<input type="checkbox" id="perm_' + k + '" ' + checked + ' style="width:1.05rem;height:1.05rem;cursor:pointer;">' +
+            '<span style="flex:1;">' +
+              '<span style="display:block;font-weight:500;">' + L.title + '</span>' +
+              '<span style="display:block;font-size:.78rem;color:#666;">' + L.desc + '</span>' +
+            '</span>' +
+          '</label>';
+        }).join('');
+        const msg = document.getElementById('permMsg');
+        if (msg) msg.classList.add('hidden');
+        document.getElementById('permModal').classList.remove('hidden');
+      };
+
+      window.closePermModal = function () {
+        document.getElementById('permModal').classList.add('hidden');
+      };
+
+      window.savePermissions = async function () {
+        const btn = document.getElementById('permSaveBtn');
+        const msg = document.getElementById('permMsg');
+        const orig = btn.textContent;
+        btn.disabled = true; btn.textContent = 'Saving\u2026';
+        const id = _permTargetId;
+        if (!id) { btn.disabled = false; btn.textContent = orig; return; }
+        const keys = ['settings', 'analytics', 'reports', 'bulk_sms', 'mpesa'];
+        const permissions = {};
+        keys.forEach(function (k) {
+          const el = document.getElementById('perm_' + k);
+          permissions[k] = !!(el && el.checked);
+        });
+        try {
+          const r = await fetch('/api/admin/team/' + id + '/permissions', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ permissions: permissions }),
+          });
+          const d = await r.json();
+          if (r.ok && d.ok) {
+            showTeamMsg('success', '\u2705 Permissions updated.');
+            window.closePermModal();
+            await loadTeam();
+          } else {
+            if (msg) { msg.className = 'alert alert-error'; msg.textContent = d.error || 'Save failed.'; msg.classList.remove('hidden'); }
+            btn.disabled = false; btn.textContent = orig;
+          }
+        } catch {
+          if (msg) { msg.className = 'alert alert-error'; msg.textContent = 'Network error.'; msg.classList.remove('hidden'); }
+          btn.disabled = false; btn.textContent = orig;
+        }
       };
 
       const addBtn = document.getElementById('addTeamBtn');

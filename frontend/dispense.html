@@ -78,8 +78,8 @@
       </div>
       <nav class="header-actions">
         <button id="switchBtn" type="button" class="tab-btn" style="display:none;">Switch to Billing</button>
-        <a href="/dispense/analytics" class="tab-btn">Analytics</a>
-        <a href="/admin/settings" class="tab-btn">Settings</a>
+        <a id="tabAnalyticsDisp" href="/dispense/analytics" class="tab-btn">Analytics</a>
+        <a id="tabSettingsDisp" href="/admin/settings" class="tab-btn">Settings</a>
         <button id="logoutBtn" type="button" class="tab-btn">Logout</button>
       </nav>
     </div>
@@ -1207,5 +1207,21 @@
     })();
   </script>
 
+
+  <!-- STEP2_HIDE_DISPENSE -->
+  <script>
+    (async function () {
+      try {
+        const r = await fetch('/api/admin/whoami', { credentials: 'same-origin' });
+        const d = await r.json();
+        if (d.authenticated && d.user_role === 'employee' && d.permissions) {
+          const a = document.getElementById('tabAnalyticsDisp');
+          if (a && !d.permissions.analytics) a.style.display = 'none';
+          const s = document.getElementById('tabSettingsDisp');
+          if (s && !d.permissions.settings) s.style.display = 'none';
+        }
+      } catch (_) { /* no-op */ }
+    })();
+  </script>
 </body>
 </html>

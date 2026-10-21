@@ -56,7 +56,7 @@
       <nav class="header-actions">
         <button id="switchBtn" type="button" class="tab-btn" style="display:none;">Switch to Billing</button>
         <a href="/dispense" class="tab-btn">&larr; Dispensing</a>
-        <a href="/admin/settings" class="tab-btn">Settings</a>
+        <a id="tabSettingsDisp" href="/admin/settings" class="tab-btn">Settings</a>
         <button id="logoutBtn" type="button" class="tab-btn">Logout</button>
       </nav>
     </div>
@@ -247,6 +247,22 @@
         location.href = '/dispense/analytics?from=' + encodeURIComponent(f)
                       + '&to=' + encodeURIComponent(tt);
       });
+    })();
+  </script>
+
+  <!-- STEP2_HIDE_ANALYTICS -->
+  <script>
+    (async function () {
+      try {
+        const r = await fetch('/api/admin/whoami', { credentials: 'same-origin' });
+        const d = await r.json();
+        if (d.authenticated && d.user_role === 'employee' && d.permissions) {
+          if (!d.permissions.settings) {
+            const s = document.getElementById('tabSettingsDisp');
+            if (s) s.style.display = 'none';
+          }
+        }
+      } catch (_) { /* no-op */ }
     })();
   </script>
 </body>

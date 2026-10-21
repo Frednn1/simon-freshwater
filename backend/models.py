@@ -125,6 +125,13 @@ class AdminUser(db.Model):
     # restricted by _before_request_employee_path_guard to /dispense and
     # its APIs only.
     user_role = db.Column(db.String(20), nullable=False, default="admin")
+    # Step 2: employee tab permissions.
+    # JSON dict — e.g. {"settings": true, "analytics": true,
+    #                  "reports": false, "bulk_sms": false, "mpesa": false}
+    # NULL -> legacy defaults (settings=True, analytics=True, others=False),
+    # exactly matching the pre-Step-2 guard. Only meaningful for
+    # user_role="employee"; ignored for admins.
+    permissions_json = db.Column(db.Text, nullable=True)
     failed_attempts = db.Column(db.Integer, default=0, nullable=False)
     locked_until = db.Column(db.DateTime)
     last_login_at = db.Column(db.DateTime)

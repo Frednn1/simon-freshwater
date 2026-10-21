@@ -108,6 +108,93 @@ _STATIC_PATH_EXACT = {
 _STATIC_PATH_PREFIXES = ("/images/",)
 
 
+# ═══════════════════════════════════════════════
+#  STEP 2 — Employee tab permissions
+# ═══════════════════════════════════════════════
+# Effective defaults when permissions_json is NULL: matches the
+# pre-Step-2 guard exactly — employees could reach /admin/settings
+# and /dispense/analytics, nothing else. Every existing employee
+# therefore continues to behave identically until the admin
+# explicitly toggles a checkbox.
+_EMPLOYEE_PERMISSION_DEFAULTS = {
+    "settings":  True,
+    "analytics": True,
+    "reports":   False,
+    "bulk_sms":  False,
+    "mpesa":     False,
+}
+
+
+def _employee_permissions(admin_id):
+    """Return the effective permission dict for an employee.
+
+    Safe fallback: NULL, parse error, DB error, or missing user ->
+    legacy defaults (settings=True, analytics=True, others=False) —
+    exactly the pre-Step-2 behaviour. Never raises.
+    """
+    defaults = dict(_EMPLOYEE_PERMISSION_DEFAULTS)
+    if not admin_id:
+        return defaults
+    try:
+        u = AdminUser.query.filter_by(id=admin_id).first()
+    except Exception:
+        return defaults
+    if not u:
+        return defaults
+    raw = getattr(u, "permissions_json", None)
+    if not raw:
+        return defaults
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return defaults
+    if not isinstance(data, dict):
+        return defaults
+    out = dict(defaults)
+    for k in defaults:
+        if k in data:
+            try:
+                out[k] = bool(data[k])
+            except Exception:
+                pass
+    return out
+
+
+# Permission-controlled paths, mapped to the tab that governs them.
+# Ordered; first match wins. Exact vs prefix is explicit so no accidental
+# path capture (e.g. /api/admin/settings-v2 will NOT match).
+_EMPLOYEE_GATED_PATHS = (
+    ("settings",  "exact",  "/admin/settings"),
+    ("settings",  "exact",  "/api/admin/settings"),
+    ("settings",  "prefix", "/api/admin/settings/"),
+    ("analytics", "exact",  "/dispense/analytics"),
+    ("analytics", "exact",  "/api/admin/dispense/analytics"),
+    ("reports",   "exact",  "/admin/reports"),
+    ("reports",   "exact",  "/api/admin/report.pdf"),
+    ("reports",   "exact",  "/api/admin/report/preview"),
+    ("bulk_sms",  "exact",  "/admin/bulk_sms"),
+    ("bulk_sms",  "prefix", "/api/admin/bulk_sms/"),
+    ("mpesa",     "exact",  "/admin/mpesa"),
+    ("mpesa",     "prefix", "/api/admin/mpesa/"),
+)
+
+
+def _employee_permission_for_path(path):
+    """Return the permission key governing `path`, or None if not gated.
+    Never raises."""
+    if not path:
+        return None
+    for key, kind, value in _EMPLOYEE_GATED_PATHS:
+        if kind == "exact":
+            if path == value:
+                return key
+        elif kind == "prefix":
+            if path.startswith(value):
+                return key
+    return None
+
+
+
 def _safe_username_str(raw) -> str:
     """Coerce an arbitrary value to a lowercase username string for
     audit logging. Never raises.
@@ -266,6 +353,21 @@ def _before_request_employee_path_guard():
 
     p = request.path or ""
     if p in _STATIC_PATH_EXACT or p.startswith(_STATIC_PATH_PREFIXES):
+        return
+
+    # Step 2: permission gate — must run BEFORE ALLOWED_EXACT / ALLOWED_PREFIXES
+    # below (those whitelists are broad enough to bypass a permission denial).
+    _perm_key = _employee_permission_for_path(p)
+    if _perm_key:
+        if not _employee_permissions(session.get("admin_id")).get(_perm_key, False):
+            _is_api = p.startswith("/api/")
+            _wants_html = "text/html" in (request.headers.get("Accept") or "")
+            if _is_api or not _wants_html:
+                return jsonify({
+                    "error": "Forbidden. This section is not enabled for your account."
+                }), 403
+            return redirect("/dispense")
+        # Permission granted — allow, bypassing the whitelist below.
         return
 
     ALLOWED_EXACT = {
@@ -1151,6 +1253,8 @@ def _ensure_all_columns():
             a_alters.append(f"ADD COLUMN password_changed_at {TIME_T} NULL")
         if "user_role" not in existing:
             a_alters.append("ADD COLUMN user_role VARCHAR(20) NOT NULL DEFAULT 'admin'")
+        if "permissions_json" not in existing:
+            a_alters.append("ADD COLUMN permissions_json TEXT NULL")
         for alt in a_alters:
             db.session.execute(text(f"ALTER TABLE admin_users {alt}"))
         if a_alters:
@@ -4340,6 +4444,9 @@ def admin_whoami():
             "active_profile": _prof,
             "enabled_profiles": _enabled,
             "recording_as": _dispense_recorded_by(),
+            "permissions": (_employee_permissions(admin.id)
+                            if session.get("user_role", "admin") == "employee"
+                            else None),
         })
     return jsonify({"authenticated": False, "setup_required": setup_required})
 
@@ -7532,6 +7639,7 @@ def admin_team_get():
             "last_login_at": a.last_login_at.isoformat() if a.last_login_at else None,
             "created_at": a.created_at.isoformat() if a.created_at else None,
             "is_self": (a.id == admin.id),
+            "permissions": _employee_permissions(a.id) if role == "employee" else None,
         })
     return jsonify({"ok": True, "team": out, "current_user_id": admin.id})
 
@@ -7551,6 +7659,7 @@ def admin_team_create():
     password = data.get("password") or ""
     phone    = (data.get("phone") or "").strip()
     email    = (data.get("email") or "").strip() or None
+    _raw_perms = data.get("permissions")
 
     if len(username) < 3:
         return jsonify({"error": "Username must be at least 3 characters."}), 400
@@ -7575,6 +7684,16 @@ def admin_team_create():
         is_super=False,
         user_role="employee",
     )
+    if isinstance(_raw_perms, dict):
+        _clean = {}
+        for k in _EMPLOYEE_PERMISSION_DEFAULTS:
+            if k in _raw_perms:
+                try:
+                    _clean[k] = bool(_raw_perms[k])
+                except Exception:
+                    pass
+        if _clean:
+            emp.permissions_json = json.dumps(_clean)
     db.session.add(emp)
     db.session.commit()
 
@@ -7698,6 +7817,48 @@ def admin_team_delete(user_id):
            target_type="tenant", target_id=admin.tenant_id,
            detail=f"username={uname}")
     return jsonify({"ok": True, "deleted_id": user_id})
+
+
+@app.route("/api/admin/team/<int:user_id>/permissions", methods=["POST"])
+def admin_team_permissions(user_id):
+    u = _require_team_admin()
+    if u: return u
+    if not _rate_limit("team_permissions", 30, 60):
+        return _too_many(60)
+    admin = _current_admin()
+    if not admin or not admin.tenant_id:
+        return jsonify({"error": "Unauthorized."}), 401
+
+    target = AdminUser.query.filter_by(id=user_id, tenant_id=admin.tenant_id).first()
+    if not target:
+        return jsonify({"error": "Team member not found."}), 404
+    if target.id == admin.id:
+        return jsonify({"error": "Cannot change your own permissions."}), 400
+    if getattr(target, "is_super", False):
+        return jsonify({"error": "Super-admin permissions cannot be modified here."}), 400
+    if (getattr(target, "user_role", "admin") or "admin") != "employee":
+        return jsonify({"error": "Permissions apply to employees only."}), 400
+
+    data = request.get_json(silent=True) or {}
+    raw = data.get("permissions")
+    if not isinstance(raw, dict):
+        return jsonify({"error": "Body must contain a 'permissions' object."}), 400
+
+    clean = {}
+    for k in _EMPLOYEE_PERMISSION_DEFAULTS:
+        if k in raw:
+            try:
+                clean[k] = bool(raw[k])
+            except Exception:
+                return jsonify({"error": f"Invalid value for permission '{k}'."}), 400
+
+    target.permissions_json = json.dumps(clean) if clean else None
+    db.session.commit()
+
+    _audit("team_member_permissions_changed",
+           target_type="tenant", target_id=admin.tenant_id,
+           detail=f"username={target.username} perms={clean}")
+    return jsonify({"ok": True, "permissions": _employee_permissions(target.id)})
 
 
 @app.route("/api/admin/dispense/recording_as", methods=["POST"])
