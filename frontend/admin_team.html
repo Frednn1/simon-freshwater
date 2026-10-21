@@ -407,6 +407,9 @@
           bulk_sms:  { title: 'Bulk SMS',        desc: 'Send reminders to consumers' },
           mpesa:     { title: 'M-Pesa',          desc: 'Payments & callbacks' },
         };
+        // Step 2 fix: defensive save button reset on every modal open
+        const _saveBtn = document.getElementById('permSaveBtn');
+        if (_saveBtn) { _saveBtn.disabled = false; _saveBtn.textContent = 'Save'; }
         document.getElementById('permList').innerHTML = keys.map(function (k) {
           const L = labels[k];
           const checked = perms[k] ? 'checked' : '';
@@ -464,11 +467,13 @@
             await loadTeam();
           } else {
             if (msg) { msg.className = 'alert alert-error'; msg.textContent = d.error || 'Save failed.'; msg.classList.remove('hidden'); }
-            btn.disabled = false; btn.textContent = orig;
           }
         } catch {
           if (msg) { msg.className = 'alert alert-error'; msg.textContent = 'Network error.'; msg.classList.remove('hidden'); }
-          btn.disabled = false; btn.textContent = orig;
+        } finally {
+          // Step 2 fix: always reset save button state (fixes stall bug)
+          btn.disabled = false;
+          btn.textContent = orig;
         }
       };
 
