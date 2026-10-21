@@ -4700,6 +4700,19 @@ def admin_login_route():
             _requires_choice = True
             _redirect_to = None
 
+    else:
+        # Step 5: admin with both profiles enabled must choose
+        try:
+            _adm_row = AdminUser.query.get(result["admin_id"])
+            if _adm_row and _adm_row.tenant_id:
+                _adm_en = _tenant_profiles_dict(_adm_row.tenant_id)
+                if _adm_en.get("billing") and _adm_en.get("dispensing"):
+                    _emp_profiles = ["billing", "dispensing"]
+                    _requires_choice = True
+                    _redirect_to = None
+        except Exception:
+            pass
+
     _audit("login")
     return jsonify({
         "ok": True,
@@ -4752,6 +4765,17 @@ def admin_login_verify_otp():
             session["active_profile"] = _emp_profiles[0]
             _requires_choice = True
             _redirect_to = None
+
+    else:
+        # Step 5: admin with both profiles enabled must choose
+        try:
+            _adm_en = _tenant_profiles_dict(admin.tenant_id)
+            if _adm_en.get("billing") and _adm_en.get("dispensing"):
+                _emp_profiles = ["billing", "dispensing"]
+                _requires_choice = True
+                _redirect_to = None
+        except Exception:
+            pass
 
     return jsonify({
         "ok": True,
