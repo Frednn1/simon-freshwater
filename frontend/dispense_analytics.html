@@ -41,6 +41,21 @@
       font-variant-numeric: tabular-nums;
     }
     .dtable tbody tr:hover { background: #f5f9fd; }
+
+
+    /* Step 7b mobile fix — dispensing only:
+       1. Hamburger aligned to top of brand content (was vertically centered).
+       2. Solid deep-blue header background — removes the light-blue gradient
+          portion that appeared as a floating block not spanning full width. */
+    @media (max-width: 600px) {
+      .settings-body .site-header .menu-toggle {
+        top: 0;
+        transform: none;
+      }
+      .settings-body .site-header {
+        background: var(--blue-900);
+      }
+    }
   </style>
 </head>
 <body class="settings-body">
