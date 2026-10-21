@@ -393,6 +393,34 @@ def _before_request_employee_path_guard():
     """Restrict employees (user_role="employee") to the dispensing surface only."""
     if not session.get("admin_id"):
         return
+
+    # R5: pending profile choice blocks everything except chooser endpoints
+    if session.get("pending_profile_choice"):
+        _p = request.path or ""
+        # Allow static assets
+        if _p in _STATIC_PATH_EXACT or _p.startswith(_STATIC_PATH_PREFIXES):
+            return
+        if _p.startswith("/tenant/"):
+            return
+        # Allow chooser / self-service / re-auth endpoints
+        _PENDING_ALLOWED = {
+            "/admin/login",
+            "/api/admin/login",
+            "/api/admin/login/verify-otp",
+            "/api/admin/login/resend-otp",
+            "/api/admin/whoami",
+            "/api/admin/logout",
+            "/api/admin/profile/switch",
+            "/tenant-watchdog.js",
+        }
+        if _p in _PENDING_ALLOWED:
+            return
+        _is_api = _p.startswith("/api/")
+        _wants_html = "text/html" in (request.headers.get("Accept") or "")
+        if _is_api or not _wants_html:
+            return jsonify({"error": "Please choose a profile to continue."}), 403
+        return redirect("/admin/login")
+
     if session.get("user_role", "admin") != "employee":
         return
 
@@ -4737,6 +4765,10 @@ def admin_login_route():
         except Exception:
             pass
 
+    # R5: flag pending choice (blocks requests until switch clears it)
+    if _requires_choice:
+        session["pending_profile_choice"] = True
+
     _audit("login")
     return jsonify({
         "ok": True,
@@ -4801,6 +4833,10 @@ def admin_login_verify_otp():
         except Exception:
             pass
 
+    # R5: flag pending choice (blocks requests until switch clears it)
+    if _requires_choice:
+        session["pending_profile_choice"] = True
+
     return jsonify({
         "ok": True,
         "username": admin.username,
@@ -4854,6 +4890,8 @@ def admin_profile_switch():
             return jsonify({"error": "Profile not available for your account."}), 403
     _from = session.get("active_profile") or "?"
     session["active_profile"] = target
+    # R5: clear pending flag on successful profile switch
+    session.pop("pending_profile_choice", None)
     _audit("profile_switched",
            target_type="tenant", target_id=admin.tenant_id,
            detail=f"from={_from}, to={target}")
