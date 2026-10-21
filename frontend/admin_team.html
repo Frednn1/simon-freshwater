@@ -11,6 +11,75 @@
   <link rel="manifest" href="/manifest.webmanifest?__tenant={{tenant_slug}}">
   <meta name="theme-color" content="#0d47a1">
   <link rel="stylesheet" href="/style.css">
+  <style>
+    /* Step 3: Modernized team row action buttons */
+    .team-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: .4rem;
+      flex-wrap: wrap;
+    }
+    .team-action-btn {
+      display: inline-flex;
+      align-items: center;
+      padding: .42rem .85rem;
+      border-radius: 6px;
+      font-size: .78rem;
+      font-weight: 600;
+      font-family: inherit;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all .15s ease;
+      background: #fff;
+      color: #455a64;
+      white-space: nowrap;
+      line-height: 1.2;
+    }
+    .team-action-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 3px 8px rgba(0,0,0,.08);
+    }
+    .team-action-btn:active {
+      transform: translateY(0);
+      box-shadow: none;
+    }
+    .team-action-btn--permissions {
+      color: #1565c0;
+      background: #e3f2fd;
+      border-color: #90caf9;
+    }
+    .team-action-btn--permissions:hover {
+      background: #bbdefb;
+      border-color: #64b5f6;
+    }
+    .team-action-btn--deactivate {
+      color: #e65100;
+      background: #fff3e0;
+      border-color: #ffcc80;
+    }
+    .team-action-btn--deactivate:hover {
+      background: #ffe0b2;
+      border-color: #ffb74d;
+    }
+    .team-action-btn--reactivate {
+      color: #2e7d32;
+      background: #e8f5e9;
+      border-color: #a5d6a7;
+    }
+    .team-action-btn--reactivate:hover {
+      background: #c8e6c9;
+      border-color: #81c784;
+    }
+    .team-action-btn--delete {
+      color: #c62828;
+      background: #ffebee;
+      border-color: #ef9a9a;
+    }
+    .team-action-btn--delete:hover {
+      background: #ffcdd2;
+      border-color: #e57373;
+    }
+  </style>
 </head>
 <body class="settings-body" data-tenant-slug="{{tenant_slug}}">
   <main class="settings-wrap">
@@ -227,19 +296,21 @@
               } else if (m.is_super) {
                 actions = '<span style="color:#999;font-size:.78rem;">super</span>';
               } else if (m.is_active) {
-                actions = '';
+                actions = '<div class="team-actions">';
                 if (m.user_role === 'employee') {
-                  actions += '<button type="button" class="btn-secondary" style="font-size:.78rem;padding:.25rem .6rem;margin-right:.35rem;" onclick="openPermissions(' + m.id + ')">Permissions</button>';
+                  actions += '<button type="button" class="team-action-btn team-action-btn--permissions" onclick="openPermissions(' + m.id + ')">Permissions</button>';
                 }
-                actions += '<button type="button" class="btn-secondary" style="font-size:.78rem;padding:.25rem .6rem;" onclick="deactivateMember(' + m.id + ')">Deactivate</button>' +
-                          '<button type="button" class="btn-secondary" style="font-size:.78rem;padding:.25rem .6rem;margin-left:.35rem;color:#c62828;border-color:#ef9a9a;" onclick="deleteMember(' + m.id + ')">Delete</button>';
+                actions += '<button type="button" class="team-action-btn team-action-btn--deactivate" onclick="deactivateMember(' + m.id + ')">Deactivate</button>' +
+                          '<button type="button" class="team-action-btn team-action-btn--delete" onclick="deleteMember(' + m.id + ')">Delete</button>';
+                actions += '</div>';
               } else {
-                actions = '';
+                actions = '<div class="team-actions">';
                 if (m.user_role === 'employee') {
-                  actions += '<button type="button" class="btn-secondary" style="font-size:.78rem;padding:.25rem .6rem;margin-right:.35rem;" onclick="openPermissions(' + m.id + ')">Permissions</button>';
+                  actions += '<button type="button" class="team-action-btn team-action-btn--permissions" onclick="openPermissions(' + m.id + ')">Permissions</button>';
                 }
-                actions += '<button type="button" class="btn-secondary" style="font-size:.78rem;padding:.25rem .6rem;" onclick="reactivateMember(' + m.id + ')">Reactivate</button>' +
-                          '<button type="button" class="btn-secondary" style="font-size:.78rem;padding:.25rem .6rem;margin-left:.35rem;color:#c62828;border-color:#ef9a9a;" onclick="deleteMember(' + m.id + ')">Delete</button>';
+                actions += '<button type="button" class="team-action-btn team-action-btn--reactivate" onclick="reactivateMember(' + m.id + ')">Reactivate</button>' +
+                          '<button type="button" class="team-action-btn team-action-btn--delete" onclick="deleteMember(' + m.id + ')">Delete</button>';
+                actions += '</div>';
               }
               return '<tr style="border-top:1px solid #eee;">' +
                 '<td style="padding:.55rem .5rem;">' + esc(m.username) + '</td>' +
