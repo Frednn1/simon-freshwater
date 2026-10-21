@@ -198,7 +198,7 @@
         } else if (r.ok && d.ok) {
           // Regular login (no 2FA)
           showMsg('success', '✅ Signed in. Redirecting…');
-          setTimeout(() => { location.href = NEXT + TENANT_QS; }, 500);
+          setTimeout(() => { location.href = (d && d.redirect_to) || (NEXT + TENANT_QS); }, 500);
         } else {
           showMsg('error', d.error || 'Login failed.');
           btn.disabled = false; btn.textContent = 'Sign In';
@@ -224,7 +224,7 @@
         const d = await r.json();
         if (r.ok && d.ok) {
           showMsg('success', '✅ Signed in. Redirecting…');
-          setTimeout(() => { location.href = NEXT + TENANT_QS; }, 500);
+          setTimeout(() => { location.href = (d && d.redirect_to) || (NEXT + TENANT_QS); }, 500);
         } else {
           showMsg('error', d.error || 'Verification failed.');
           btn.disabled = false; btn.textContent = 'Verify & Sign In';
