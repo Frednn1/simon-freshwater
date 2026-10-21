@@ -167,6 +167,21 @@
               <label for="tmEmail">Email (optional)</label>
               <input type="email" id="tmEmail" placeholder="e.g. employee@example.com">
             </div>
+            <!-- STEP4_PROFILES_UI -->
+            <div class="form-row">
+              <label>Profile Assignment * (at least one)</label>
+              <label id="tmProfileBillingRow" style="display:flex;align-items:center;gap:.5rem;padding:.4rem 0;cursor:pointer;">
+                <input type="checkbox" id="tmProfileBilling" style="width:1.05rem;height:1.05rem;cursor:pointer;">
+                <span>Water Billing</span>
+              </label>
+              <label id="tmProfileDispensingRow" style="display:flex;align-items:center;gap:.5rem;padding:.4rem 0;cursor:pointer;">
+                <input type="checkbox" id="tmProfileDispensing" style="width:1.05rem;height:1.05rem;cursor:pointer;">
+                <span>Water Dispensing</span>
+              </label>
+              <div class="form-hint-small" style="font-size:.75rem;color:#888;margin-top:.25rem;">
+                Determines which profile home the employee lands on after login.
+              </div>
+            </div>
           </form>
           <div id="tmMsg" class="alert hidden" style="margin-top:.5rem;"></div>
         </div>
@@ -189,6 +204,22 @@
             Choose which tabs this employee can access. Unchecked tabs
             are hidden from their UI and blocked at the API.
           </p>
+          <div style="font-weight:600;font-size:.9rem;margin:0 0 .5rem;">Profile Assignment</div>
+          <label id="permProfileBillingRow" style="display:flex;align-items:center;gap:.65rem;padding:.55rem .75rem;border:1px solid #e0e0e0;border-radius:6px;margin-bottom:.5rem;cursor:pointer;">
+            <input type="checkbox" id="permProfileBilling" style="width:1.05rem;height:1.05rem;cursor:pointer;">
+            <span style="flex:1;">
+              <span style="display:block;font-weight:500;">Water Billing</span>
+              <span style="display:block;font-size:.78rem;color:#666;">Billing dashboard &amp; search</span>
+            </span>
+          </label>
+          <label id="permProfileDispensingRow" style="display:flex;align-items:center;gap:.65rem;padding:.55rem .75rem;border:1px solid #e0e0e0;border-radius:6px;margin-bottom:.75rem;cursor:pointer;">
+            <input type="checkbox" id="permProfileDispensing" style="width:1.05rem;height:1.05rem;cursor:pointer;">
+            <span style="flex:1;">
+              <span style="display:block;font-weight:500;">Water Dispensing</span>
+              <span style="display:block;font-size:.78rem;color:#666;">Dispensing counter &amp; analytics</span>
+            </span>
+          </label>
+          <div style="font-weight:600;font-size:.9rem;margin:0 0 .5rem;">Tab Permissions</div>
           <div id="permList"></div>
           <div id="permMsg" class="alert hidden" style="margin-top:.5rem;"></div>
         </div>
@@ -534,7 +565,33 @@
           const el = document.getElementById(id); if (el) el.value = '';
         });
         clearTmMsg();
+        // Step 4: reset profile checkboxes to legacy-safe default
+        const _pb = document.getElementById('tmProfileBilling');
+        const _pd = document.getElementById('tmProfileDispensing');
+        const _pbRow = document.getElementById('tmProfileBillingRow');
+        const _pdRow = document.getElementById('tmProfileDispensingRow');
+        if (_pb) _pb.checked = false;
+        if (_pd) _pd.checked = true;
+        if (_pbRow) _pbRow.style.display = '';
+        if (_pdRow) _pdRow.style.display = '';
         document.getElementById('teamModal').classList.remove('hidden');
+        // Async: refine visibility/defaults from tenant's enabled profiles
+        (async () => {
+          try {
+            const r = await fetch('/api/admin/whoami', { credentials: 'same-origin' });
+            const d = await r.json();
+            const enabled = (d && d.enabled_profiles) || {};
+            if (_pb) _pb.checked = !!enabled.billing;
+            if (_pd) _pd.checked = !!enabled.dispensing;
+            if (_pbRow) _pbRow.style.display = enabled.billing ? '' : 'none';
+            if (_pdRow) _pdRow.style.display = enabled.dispensing ? '' : 'none';
+            // Safety: ensure at least one is checked
+            if (_pb && _pd && !_pb.checked && !_pd.checked) {
+              if (enabled.dispensing) _pd.checked = true;
+              else if (enabled.billing) _pb.checked = true;
+            }
+          } catch (_) { /* keep legacy default */ }
+        })();
         const u = document.getElementById('tmUsername');
         if (u) u.focus();
       };
@@ -559,12 +616,19 @@
         if (password.length < 8) return fail('Password must be at least 8 characters.');
         if (password !== confirm) return fail('Passwords do not match.');
         if (!phone) return fail('Phone is required.');
+        // Step 4: collect profiles
+        const profiles = [];
+        const _pb = document.getElementById('tmProfileBilling');
+        const _pd = document.getElementById('tmProfileDispensing');
+        if (_pb && _pb.checked) profiles.push('billing');
+        if (_pd && _pd.checked) profiles.push('dispensing');
+        if (!profiles.length) return fail('Select at least one profile (Billing or Dispensing).');
 
         try {
           const r = await fetch('/api/admin/team', {
             method: 'POST', credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password, phone, email: email || null }),
+            body: JSON.stringify({ username, password, phone, email: email || null, profiles: profiles }),
           });
           const d = await r.json();
           if (r.ok && d.ok) {
@@ -622,6 +686,24 @@
         if (!member) { showTeamMsg('error', 'Member not found.'); return; }
         _permTargetId = id;
         document.getElementById('permUsername').textContent = member.username;
+        // Step 4: populate profile checkboxes from member.profiles
+        const _profs = member.profiles || ['dispensing'];
+        const _pb = document.getElementById('permProfileBilling');
+        const _pd = document.getElementById('permProfileDispensing');
+        if (_pb) _pb.checked = _profs.indexOf('billing') >= 0;
+        if (_pd) _pd.checked = _profs.indexOf('dispensing') >= 0;
+        // Hide rows for profiles the tenant hasn't enabled
+        (async () => {
+          try {
+            const r = await fetch('/api/admin/whoami', { credentials: 'same-origin' });
+            const d = await r.json();
+            const enabled = (d && d.enabled_profiles) || {};
+            const _pbRow = document.getElementById('permProfileBillingRow');
+            const _pdRow = document.getElementById('permProfileDispensingRow');
+            if (_pbRow) _pbRow.style.display = enabled.billing ? '' : 'none';
+            if (_pdRow) _pdRow.style.display = enabled.dispensing ? '' : 'none';
+          } catch (_) { /* leave as-is */ }
+        })();
         const perms = member.permissions || {};
         const keys = ['settings', 'analytics', 'reports', 'bulk_sms', 'mpesa'];
         const labels = {
@@ -664,11 +746,22 @@
           const el = document.getElementById('perm_' + k);
           permissions[k] = !!(el && el.checked);
         });
+        // Step 4: collect profiles
+        const profiles = [];
+        const _pb = document.getElementById('permProfileBilling');
+        const _pd = document.getElementById('permProfileDispensing');
+        if (_pb && _pb.checked) profiles.push('billing');
+        if (_pd && _pd.checked) profiles.push('dispensing');
+        if (!profiles.length) {
+          if (msg) { msg.className = 'alert alert-error'; msg.textContent = 'Select at least one profile.'; msg.classList.remove('hidden'); }
+          btn.disabled = false; btn.textContent = orig;
+          return;
+        }
         try {
           const r = await fetch('/api/admin/team/' + id + '/permissions', {
             method: 'POST', credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ permissions: permissions }),
+            body: JSON.stringify({ permissions: permissions, profiles: profiles }),
           });
           const d = await r.json();
           if (r.ok && d.ok) {

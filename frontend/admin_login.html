@@ -198,6 +198,10 @@
         } else if (r.ok && d.ok) {
           // Regular login (no 2FA)
           showMsg('success', '✅ Signed in. Redirecting…');
+          if (d.requires_profile_choice && d.profiles && d.profiles.length > 1) {
+            showProfileChooser(d.profiles);
+            return;
+          }
           setTimeout(() => { location.href = (d && d.redirect_to) || (NEXT + TENANT_QS); }, 500);
         } else {
           showMsg('error', d.error || 'Login failed.');
@@ -224,6 +228,10 @@
         const d = await r.json();
         if (r.ok && d.ok) {
           showMsg('success', '✅ Signed in. Redirecting…');
+          if (d.requires_profile_choice && d.profiles && d.profiles.length > 1) {
+            showProfileChooser(d.profiles);
+            return;
+          }
           setTimeout(() => { location.href = (d && d.redirect_to) || (NEXT + TENANT_QS); }, 500);
         } else {
           showMsg('error', d.error || 'Verification failed.');
@@ -264,5 +272,57 @@
       btn.disabled = false; btn.textContent = 'Sign In';
     });
   </script>
+
+<!-- STEP4_PROFILE_CHOOSER -->
+<script>
+function showProfileChooser(profiles) {
+  var labels = { billing: 'Water Billing', dispensing: 'Water Dispensing' };
+  var icons  = { billing: '\uD83D\uDCA7', dispensing: '\uD83D\uDEB0' };
+  var html = '<div id="__profileChooser" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1rem;">' +
+    '<div style="background:#fff;border-radius:12px;padding:1.5rem;max-width:420px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.2);">' +
+      '<h3 style="margin:0 0 .5rem;font-size:1.15rem;">Choose Profile</h3>' +
+      '<p style="margin:0 0 1rem;color:#666;font-size:.9rem;">Your account has access to both profiles. Pick one to continue:</p>' +
+      profiles.map(function(p) {
+        return '<button type="button" class="profile-choice" data-profile="' + p + '" ' +
+          'style="display:block;width:100%;padding:.85rem 1rem;margin-bottom:.5rem;border:1px solid #e0e0e0;border-radius:8px;background:#fafafa;cursor:pointer;font-size:1rem;text-align:left;">' +
+          icons[p] + ' <strong>' + labels[p] + '</strong>' +
+        '</button>';
+      }).join('') +
+    '</div>' +
+  '</div>';
+  var wrap = document.createElement('div');
+  wrap.innerHTML = html;
+  document.body.appendChild(wrap.firstChild);
+  var buttons = document.querySelectorAll('.profile-choice');
+  for (var i = 0; i < buttons.length; i++) {
+    (function(btn) {
+      btn.addEventListener('click', async function() {
+        var target = btn.getAttribute('data-profile');
+        btn.disabled = true;
+        btn.textContent = 'Switching\u2026';
+        try {
+          var r = await fetch('/api/admin/profile/switch', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ to: target })
+          });
+          var d = await r.json();
+          if (r.ok && d.ok && d.redirect) {
+            location.href = d.redirect;
+          } else {
+            alert('\u274C ' + (d.error || 'Profile switch failed.'));
+            btn.disabled = false;
+            btn.textContent = icons[target] + ' ' + labels[target];
+          }
+        } catch (_) {
+          alert('\u274C Network error.');
+          btn.disabled = false;
+          btn.textContent = icons[target] + ' ' + labels[target];
+        }
+      });
+    })(buttons[i]);
+  }
+}
+</script>
 </body>
 </html>

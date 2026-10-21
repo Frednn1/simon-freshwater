@@ -132,6 +132,12 @@ class AdminUser(db.Model):
     # exactly matching the pre-Step-2 guard. Only meaningful for
     # user_role="employee"; ignored for admins.
     permissions_json = db.Column(db.Text, nullable=True)
+    # Step 4: employee profile assignment.
+    # JSON array — e.g. ["dispensing"], ["billing"], ["billing","dispensing"].
+    # NULL or missing -> legacy default ["dispensing"], matching pre-Step-4
+    # behaviour where every employee was hardcoded to /dispense.
+    # Only meaningful for user_role="employee"; ignored for admins.
+    profiles_json = db.Column(db.Text, nullable=True)
     failed_attempts = db.Column(db.Integer, default=0, nullable=False)
     locked_until = db.Column(db.DateTime)
     last_login_at = db.Column(db.DateTime)

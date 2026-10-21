@@ -160,6 +160,42 @@ def _employee_permissions(admin_id):
     return out
 
 
+# Step 4: employee profile defaults — matches pre-Step-4 behaviour where
+# every employee was hardcoded to /dispense.
+_EMPLOYEE_PROFILE_DEFAULTS = ["dispensing"]
+_ALLOWED_PROFILE_NAMES = ("billing", "dispensing")
+
+
+def _employee_profiles(admin_id):
+    """Return the profile list for an employee. Always non-empty.
+    Falls back to ["dispensing"] on any error / NULL / bad payload —
+    exactly the pre-Step-4 behaviour."""
+    default = list(_EMPLOYEE_PROFILE_DEFAULTS)
+    if not admin_id:
+        return default
+    try:
+        u = AdminUser.query.filter_by(id=admin_id).first()
+    except Exception:
+        return default
+    if not u:
+        return default
+    raw = getattr(u, "profiles_json", None)
+    if not raw:
+        return default
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return default
+    if not isinstance(data, list):
+        return default
+    clean = []
+    for name in data:
+        if (isinstance(name, str) and name in _ALLOWED_PROFILE_NAMES
+                and name not in clean):
+            clean.append(name)
+    return clean or default
+
+
 # Permission-controlled paths, mapped to the tab that governs them.
 # Ordered; first match wins. Exact vs prefix is explicit so no accidental
 # path capture (e.g. /api/admin/settings-v2 will NOT match).
@@ -355,6 +391,14 @@ def _before_request_employee_path_guard():
     if p in _STATIC_PATH_EXACT or p.startswith(_STATIC_PATH_PREFIXES):
         return
 
+    # Step 4: profile-scoped home + billing-employee allowlist.
+    # Billing-profile employees may reach the billing home and its search
+    # API; dispensing-only employees keep the pre-Step-4 restriction.
+    _emp_profiles = _employee_profiles(session.get("admin_id"))
+    _home = "/" if "billing" in _emp_profiles else "/dispense"
+    if "billing" in _emp_profiles and p in ("/", "/api/search"):
+        return
+
     # Step 2: permission gate — must run BEFORE ALLOWED_EXACT / ALLOWED_PREFIXES
     # below (those whitelists are broad enough to bypass a permission denial).
     _perm_key = _employee_permission_for_path(p)
@@ -366,7 +410,7 @@ def _before_request_employee_path_guard():
                 return jsonify({
                     "error": "Forbidden. This section is not enabled for your account."
                 }), 403
-            return redirect("/dispense")
+            return redirect(_home)
         # Permission granted — allow, bypassing the whitelist below.
         return
 
@@ -408,7 +452,7 @@ def _before_request_employee_path_guard():
         return jsonify({
             "error": "Forbidden. Employees can only access the dispensing portal."
         }), 403
-    return redirect("/dispense")
+    return redirect(_home)
 
 
 @app.before_request
@@ -1255,11 +1299,34 @@ def _ensure_all_columns():
             a_alters.append("ADD COLUMN user_role VARCHAR(20) NOT NULL DEFAULT 'admin'")
         if "permissions_json" not in existing:
             a_alters.append("ADD COLUMN permissions_json TEXT NULL")
+        if "profiles_json" not in existing:
+            a_alters.append("ADD COLUMN profiles_json TEXT NULL")
         for alt in a_alters:
             db.session.execute(text(f"ALTER TABLE admin_users {alt}"))
         if a_alters:
             db.session.commit()
             app.logger.info(f"[Migration] Applied {len(a_alters)} column(s) to admin_users")
+
+    # Step 4: backfill employees to ["dispensing"] on first run.
+    # Matches pre-Step-4 behaviour — every existing employee was
+    # hardcoded to /dispense by the guard. Idempotent: only touches NULL.
+    if "admin_users" in tables:
+        try:
+            _bf = db.session.execute(text(
+                "UPDATE admin_users SET profiles_json = :p "
+                "WHERE user_role = 'employee' AND profiles_json IS NULL"
+            ), {"p": '["dispensing"]'})
+            if getattr(_bf, "rowcount", 0) and _bf.rowcount > 0:
+                db.session.commit()
+                app.logger.info(
+                    f"[Migration] Backfilled profiles_json for {_bf.rowcount} employee(s)"
+                )
+        except Exception as e:
+            try:
+                app.logger.warning(f"[Migration] profiles_json backfill skipped: {e}")
+                db.session.rollback()
+            except Exception:
+                pass
 
     if "payment_log" in tables:
         existing = {c["name"] for c in insp.get_columns("payment_log")}
@@ -4616,12 +4683,30 @@ def admin_login_route():
     session["__tenant_slug"] = _admin_slug
     session["active_profile"] = _initial_profile
     session["user_role"] = _init_role
+
+    # Step 4: employee profile-aware redirect
+    _emp_profiles = []
+    _requires_choice = False
+    _redirect_to = "/"
+    if _init_role == "employee":
+        _emp_profiles = _employee_profiles(result["admin_id"])
+        if len(_emp_profiles) == 1:
+            session["active_profile"] = _emp_profiles[0]
+            _redirect_to = "/" if _emp_profiles[0] == "billing" else "/dispense"
+        else:
+            # Both profiles — client must choose before continuing
+            session["active_profile"] = _emp_profiles[0]
+            _requires_choice = True
+            _redirect_to = None
+
     _audit("login")
     return jsonify({
         "ok": True,
         "username": result["username"],
         "user_role": _init_role,
-        "redirect_to": "/dispense" if _init_role == "employee" else "/",
+        "redirect_to": _redirect_to,
+        "requires_profile_choice": _requires_choice,
+        "profiles": _emp_profiles,
     }), 200
 
 
@@ -4652,11 +4737,28 @@ def admin_login_verify_otp():
     session["login_at"] = datetime.utcnow().isoformat()
     _audit("login_2fa_ok")
     _verify_role = getattr(admin, "user_role", "admin") or "admin"
+
+    # Step 4: employee profile-aware redirect
+    _emp_profiles = []
+    _requires_choice = False
+    _redirect_to = "/"
+    if _verify_role == "employee":
+        _emp_profiles = _employee_profiles(admin.id)
+        if len(_emp_profiles) == 1:
+            session["active_profile"] = _emp_profiles[0]
+            _redirect_to = "/" if _emp_profiles[0] == "billing" else "/dispense"
+        else:
+            session["active_profile"] = _emp_profiles[0]
+            _requires_choice = True
+            _redirect_to = None
+
     return jsonify({
         "ok": True,
         "username": admin.username,
         "user_role": _verify_role,
-        "redirect_to": "/dispense" if _verify_role == "employee" else "/",
+        "redirect_to": _redirect_to,
+        "requires_profile_choice": _requires_choice,
+        "profiles": _emp_profiles,
     }), 200
 
 
@@ -4697,6 +4799,10 @@ def admin_profile_switch():
     if not enabled.get(target):
         # Neutral 403 — never reveal what profiles exist for this tenant.
         return jsonify({"error": "Profile not available for this tenant."}), 403
+    # Step 4: employee must be assigned to this profile
+    if (session.get("user_role") or "admin") == "employee":
+        if target not in _employee_profiles(admin.id):
+            return jsonify({"error": "Profile not available for your account."}), 403
     _from = session.get("active_profile") or "?"
     session["active_profile"] = target
     _audit("profile_switched",
@@ -7640,6 +7746,7 @@ def admin_team_get():
             "created_at": a.created_at.isoformat() if a.created_at else None,
             "is_self": (a.id == admin.id),
             "permissions": _employee_permissions(a.id) if role == "employee" else None,
+            "profiles": _employee_profiles(a.id) if role == "employee" else None,
         })
     return jsonify({"ok": True, "team": out, "current_user_id": admin.id})
 
@@ -7660,6 +7767,7 @@ def admin_team_create():
     phone    = (data.get("phone") or "").strip()
     email    = (data.get("email") or "").strip() or None
     _raw_perms = data.get("permissions")
+    _raw_profiles = data.get("profiles")
 
     if len(username) < 3:
         return jsonify({"error": "Username must be at least 3 characters."}), 400
@@ -7694,6 +7802,26 @@ def admin_team_create():
                     pass
         if _clean:
             emp.permissions_json = json.dumps(_clean)
+    # Step 4: profiles (validated against tenant's enabled profiles)
+    _tenant_enabled = _tenant_profiles_dict(admin.tenant_id)
+    if isinstance(_raw_profiles, list) and _raw_profiles:
+        _clean_p = []
+        for _p in _raw_profiles:
+            if not isinstance(_p, str) or _p not in _ALLOWED_PROFILE_NAMES:
+                return jsonify({"error": f"Invalid profile '{_p}'."}), 400
+            if not _tenant_enabled.get(_p):
+                return jsonify({"error": f"Profile '{_p}' is not enabled for this tenant."}), 400
+            if _p not in _clean_p:
+                _clean_p.append(_p)
+        if not _clean_p:
+            return jsonify({"error": "At least one profile is required."}), 400
+        emp.profiles_json = json.dumps(_clean_p)
+    else:
+        # No explicit profiles — fall back to tenant's primary (safe default)
+        if _tenant_enabled.get("billing"):
+            emp.profiles_json = json.dumps(["billing"])
+        elif _tenant_enabled.get("dispensing"):
+            emp.profiles_json = json.dumps(["dispensing"])
     db.session.add(emp)
     db.session.commit()
 
@@ -7840,25 +7968,57 @@ def admin_team_permissions(user_id):
         return jsonify({"error": "Permissions apply to employees only."}), 400
 
     data = request.get_json(silent=True) or {}
-    raw = data.get("permissions")
-    if not isinstance(raw, dict):
-        return jsonify({"error": "Body must contain a 'permissions' object."}), 400
 
-    clean = {}
-    for k in _EMPLOYEE_PERMISSION_DEFAULTS:
-        if k in raw:
-            try:
-                clean[k] = bool(raw[k])
-            except Exception:
-                return jsonify({"error": f"Invalid value for permission '{k}'."}), 400
+    # Step 4: accept permissions and/or profiles; only update fields present
+    _has_perms    = isinstance(data.get("permissions"), dict)
+    _has_profiles = "profiles" in data
+    if not _has_perms and not _has_profiles:
+        return jsonify({"error": "Body must contain 'permissions' and/or 'profiles'."}), 400
 
-    target.permissions_json = json.dumps(clean) if clean else None
+    _perms_clean    = None
+    _profiles_clean = None
+
+    if _has_profiles:
+        raw_p = data.get("profiles")
+        if not isinstance(raw_p, list) or not raw_p:
+            return jsonify({"error": "'profiles' must be a non-empty array."}), 400
+        _enabled = _tenant_profiles_dict(admin.tenant_id)
+        _p = []
+        for _pname in raw_p:
+            if not isinstance(_pname, str) or _pname not in _ALLOWED_PROFILE_NAMES:
+                return jsonify({"error": f"Invalid profile '{_pname}'."}), 400
+            if not _enabled.get(_pname):
+                return jsonify({"error": f"Profile '{_pname}' is not enabled for this tenant."}), 400
+            if _pname not in _p:
+                _p.append(_pname)
+        _profiles_clean = _p
+
+    if _has_perms:
+        _perms_clean = {}
+        for k in _EMPLOYEE_PERMISSION_DEFAULTS:
+            if k in data["permissions"]:
+                try:
+                    _perms_clean[k] = bool(data["permissions"][k])
+                except Exception:
+                    return jsonify({"error": f"Invalid value for permission '{k}'."}), 400
+
+    if _has_profiles:
+        target.profiles_json = json.dumps(_profiles_clean)
+    if _has_perms:
+        target.permissions_json = json.dumps(_perms_clean) if _perms_clean else None
+
     db.session.commit()
 
     _audit("team_member_permissions_changed",
            target_type="tenant", target_id=admin.tenant_id,
-           detail=f"username={target.username} perms={clean}")
-    return jsonify({"ok": True, "permissions": _employee_permissions(target.id)})
+           detail=f"username={target.username} "
+                  f"perms={_perms_clean if _has_perms else '-'} "
+                  f"profiles={_profiles_clean if _has_profiles else '-'}")
+    return jsonify({
+        "ok": True,
+        "permissions": _employee_permissions(target.id),
+        "profiles": _employee_profiles(target.id),
+    })
 
 
 @app.route("/api/admin/dispense/recording_as", methods=["POST"])
