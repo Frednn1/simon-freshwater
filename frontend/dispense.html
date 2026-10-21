@@ -69,22 +69,62 @@
 <body class="settings-body">
   <header class="site-header">
     <div class="header-inner">
-      <div class="brand">
+      <a href="/?__tenant={{tenant_slug}}" class="brand-link" aria-label="Go to home"><div class="brand">
         <img class="brand-logo" src="{{brand_logo_url}}" alt="{{brand_name}}">
         <div>
           <h1>{{brand_name}}</h1>
           <p class="tagline">Water Dispensing &middot; {{brand_address}}</p>
         </div>
-      </div>
-      <nav class="header-actions">
+      </div></a>
+      <nav class="header-actions desktop-only">
         <button id="switchBtn" type="button" class="tab-btn" style="display:none;">Switch to Billing</button>
         <a id="tabAnalyticsDisp" href="/dispense/analytics" class="tab-btn">Analytics</a>
         <a id="tabTeamDisp" href="/admin/team" class="tab-btn">Team</a>
         <a id="tabSettingsDisp" href="/admin/settings" class="tab-btn">Settings</a>
         <button id="logoutBtn" type="button" class="tab-btn">Logout</button>
       </nav>
+      <button class="menu-toggle mobile-only" id="menuToggle" type="button" aria-label="Open menu" aria-controls="mobileDrawer" aria-expanded="false">
+        <span class="menu-toggle-icon">☰</span>
+      </button>
     </div>
   </header>
+
+  <!-- ═══ Mobile Drawer ═══ -->
+  <div class="drawer-backdrop" id="drawerBackdrop" aria-hidden="true"></div>
+  <aside class="drawer" id="mobileDrawer" aria-hidden="true" aria-label="Main menu">
+    <div class="drawer-header">
+      <a href="/?__tenant={{tenant_slug}}" class="brand-link" aria-label="Go to home"><div class="drawer-brand">
+        <img class="brand-logo" src="{{brand_logo_url}}" alt="{{brand_name}}">
+        <div>
+          <h2>{{brand_name}}</h2>
+          <p>{{brand_address}}</p>
+        </div>
+      </div></a>
+      <button class="drawer-close" id="drawerClose" type="button" aria-label="Close menu">×</button>
+    </div>
+    <nav class="drawer-nav">
+      <button class="drawer-item" id="drawerSwitchBtn" type="button" style="display:none;">
+        <span class="drawer-item-icon">↔</span>
+        <span class="drawer-item-label">Switch to Billing</span>
+      </button>
+      <a class="drawer-item" id="drawerAnalyticsDisp" href="/dispense/analytics">
+        <span class="drawer-item-icon">📊</span>
+        <span class="drawer-item-label">Analytics</span>
+      </a>
+      <a class="drawer-item" id="drawerTeamDisp" href="/admin/team">
+        <span class="drawer-item-icon">👥</span>
+        <span class="drawer-item-label">Team</span>
+      </a>
+      <a class="drawer-item" id="drawerSettingsDisp" href="/admin/settings">
+        <span class="drawer-item-icon">⚙️</span>
+        <span class="drawer-item-label">Settings</span>
+      </a>
+      <button class="drawer-item drawer-item-auth" id="drawerLogoutBtn" type="button">
+        <span class="drawer-item-icon">🚪</span>
+        <span class="drawer-item-label">Logout</span>
+      </button>
+    </nav>
+  </aside>
 
   <main class="settings-wrap" style="max-width:900px;">
 
@@ -1228,6 +1268,81 @@
         }
       } catch (_) { /* no-op */ }
     })();
+  </script>
+
+  <!-- Step 7: Mobile drawer -->
+  <script>
+  (function () {
+    var toggle = document.getElementById('menuToggle');
+    var backdrop = document.getElementById('drawerBackdrop');
+    var closeBtn = document.getElementById('drawerClose');
+    var drawer = document.getElementById('mobileDrawer');
+    if (!toggle || !backdrop || !drawer) return;
+    function openDrawer() {
+      drawer.classList.add('open');
+      backdrop.classList.add('visible');
+      backdrop.setAttribute('aria-hidden', 'false');
+      drawer.setAttribute('aria-hidden', 'false');
+      toggle.setAttribute('aria-expanded', 'true');
+      document.body.classList.add('drawer-open');
+    }
+    function closeDrawer() {
+      drawer.classList.remove('open');
+      backdrop.classList.remove('visible');
+      backdrop.setAttribute('aria-hidden', 'true');
+      drawer.setAttribute('aria-hidden', 'true');
+      toggle.setAttribute('aria-expanded', 'false');
+      document.body.classList.remove('drawer-open');
+    }
+    toggle.addEventListener('click', openDrawer);
+    backdrop.addEventListener('click', closeDrawer);
+    if (closeBtn) closeBtn.addEventListener('click', closeDrawer);
+    drawer.querySelectorAll('a.drawer-item').forEach(function (a) {
+      a.addEventListener('click', function () { closeDrawer(); });
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closeDrawer();
+    });
+    var dSwitch = document.getElementById('drawerSwitchBtn');
+    if (dSwitch) {
+      dSwitch.addEventListener('click', function () {
+        closeDrawer();
+        var hdr = document.getElementById('switchBtn');
+        if (hdr && hdr.style.display !== 'none') hdr.click();
+      });
+    }
+    var dLogout = document.getElementById('drawerLogoutBtn');
+    if (dLogout) {
+      dLogout.addEventListener('click', function () {
+        closeDrawer();
+        var hdr = document.getElementById('logoutBtn');
+        if (hdr) hdr.click();
+      });
+    }
+    (async function () {
+      try {
+        var r = await fetch('/api/admin/whoami', { credentials: 'same-origin' });
+        var data = await r.json();
+        if (data.authenticated && data.user_role === 'employee' && data.permissions) {
+          if (!data.permissions.analytics) {
+            var ae = document.getElementById('drawerAnalyticsDisp');
+            if (ae) ae.style.display = 'none';
+          }
+          if (!data.permissions.settings) {
+            var se = document.getElementById('drawerSettingsDisp');
+            if (se) se.style.display = 'none';
+          }
+        }
+        if (data.authenticated && data.user_role === 'employee') {
+          var te = document.getElementById('drawerTeamDisp');
+          if (te) te.style.display = 'none';
+        }
+        if (data.enabled_profiles && data.enabled_profiles.billing && dSwitch) {
+          dSwitch.style.display = '';
+        }
+      } catch (_) {}
+    })();
+  })();
   </script>
 </body>
 </html>
