@@ -275,7 +275,7 @@
 
 <!-- STEP4_PROFILE_CHOOSER -->
 <script>
-function showProfileChooser(profiles) {
+function showProfileChooser(profiles, opts) {
   var labels = { billing: 'Water Billing', dispensing: 'Water Dispensing' };
   var icons  = { billing: '\uD83D\uDCA7', dispensing: '\uD83D\uDEB0' };
   var html = '<div id="__profileChooser" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:1rem;">' +
@@ -322,7 +322,41 @@ function showProfileChooser(profiles) {
       });
     })(buttons[i]);
   }
+
+  /* Upgrade 3: optional "Sign out" escape when shown by auto-chooser
+     (only when opts.showSignOut is true — login-success path unaffected) */
+  if (opts && opts.showSignOut) {
+    var innerBox = document.querySelector('#__profileChooser > div');
+    if (innerBox) {
+      var sBtn = document.createElement('button');
+      sBtn.type = 'button';
+      sBtn.textContent = 'Sign out';
+      sBtn.style.cssText = 'display:block;width:100%;margin-top:.5rem;padding:.55rem 1rem;border:1px solid #cfd8dc;border-radius:8px;background:#fff;color:#546e7a;cursor:pointer;font-size:.9rem;';
+      sBtn.onclick = async function () {
+        try {
+          await fetch('/api/admin/logout', { method: 'POST', credentials: 'same-origin' });
+        } catch (_) {}
+        location.href = '/admin/login';
+      };
+      innerBox.appendChild(sBtn);
+    }
+  }
 }
+
+/* Upgrade 3: Auto-chooser: show pending chooser on load (Option A).
+   Only fires when authenticated AND pending_profile_choice is true —
+   i.e., a both-profile session that failed to complete the chooser. */
+(async function () {
+  try {
+    var r = await fetch('/api/admin/whoami', { credentials: 'same-origin' });
+    var d = await r.json();
+    if (d && d.authenticated && d.pending_profile_choice
+        && Array.isArray(d.pending_profiles) && d.pending_profiles.length > 1
+        && typeof showProfileChooser === 'function') {
+      showProfileChooser(d.pending_profiles, { showSignOut: true });
+    }
+  } catch (_) { /* never block page load */ }
+})();
 </script>
 </body>
 </html>

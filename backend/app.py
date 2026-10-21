@@ -4556,6 +4556,16 @@ def admin_whoami():
     if admin:
         _prof = _current_active_profile()
         _enabled = _tenant_profiles_dict(admin.tenant_id) if admin.tenant_id else {"billing": True, "dispensing": False}
+        # Upgrade 3: derive pending chooser state (no new DB writes, read-only)
+        _pending = bool(session.get("pending_profile_choice"))
+        _pending_profiles = None
+        if _pending:
+            _role_chk = session.get("user_role", "admin")
+            if _role_chk == "employee":
+                _pending_profiles = _employee_profiles(admin.id)
+            else:
+                _pending_profiles = [p for p in ("billing", "dispensing")
+                                     if _enabled.get(p)]
         return jsonify({
             "authenticated": True,
             "username": admin.username,
@@ -4567,8 +4577,17 @@ def admin_whoami():
             "permissions": (_employee_permissions(admin.id)
                             if session.get("user_role", "admin") == "employee"
                             else None),
+            # Upgrade 3 (strict pending choice) — additive fields:
+            # present for every whoami response; null/false when not pending.
+            "pending_profile_choice": _pending,
+            "pending_profiles": _pending_profiles,
         })
-    return jsonify({"authenticated": False, "setup_required": setup_required})
+    return jsonify({
+        "authenticated": False,
+        "setup_required": setup_required,
+        "pending_profile_choice": False,
+        "pending_profiles": None,
+    })
 
 
 @app.route("/api/admin/setup", methods=["POST"])
