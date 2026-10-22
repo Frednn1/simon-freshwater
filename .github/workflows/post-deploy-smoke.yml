@@ -22,8 +22,10 @@ on:
 
 jobs:
   smoke:
-    # Only run if upstream tests passed, or if manually triggered
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    # Run for push (temp verification), manual, or workflow_run success.
+    # When the temp push trigger is removed, the push clause is a no-op
+    # (push events no longer reach this workflow) so it's safe to leave in.
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
