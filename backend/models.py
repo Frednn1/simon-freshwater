@@ -342,6 +342,11 @@ class DispensePayment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     tenant_id = db.Column(db.Integer, nullable=False, index=True)
     payment_date = db.Column(db.Date, nullable=False, index=True)
+    # Step 1 (this batch): which day's sales this payment offsets.
+    # NULL = legacy row (pre-migration); backfill sets = payment_date.
+    # When set to a PAST day, this is a credit offset — the target day's
+    # paid_kes increases, but the day was recorded when payment arrived.
+    sale_date = db.Column(db.Date, nullable=True, index=True)
     amount_kes = db.Column(db.Float, nullable=False)
     method = db.Column(db.String(20), nullable=False)  # cash | mpesa_c2b | manual
     reference = db.Column(db.String(80), index=True)

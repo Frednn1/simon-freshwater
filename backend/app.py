@@ -1409,6 +1409,29 @@ def _ensure_all_columns():
                 except Exception:
                     pass
 
+    if "dispense_payments" in tables:
+        existing_pay = {c["name"] for c in insp.get_columns("dispense_payments")}
+        if "sale_date" not in existing_pay:
+            db.session.execute(text(
+                "ALTER TABLE dispense_payments ADD COLUMN sale_date DATE NULL"
+            ))
+            db.session.commit()
+            app.logger.info("[Migration] Added sale_date to dispense_payments")
+            try:
+                _bfp = db.session.execute(text(
+                    "UPDATE dispense_payments SET sale_date = payment_date "
+                    "WHERE sale_date IS NULL"
+                ))
+                db.session.commit()
+                if _bfp.rowcount:
+                    app.logger.info(f"[Migration] Backfilled sale_date on {_bfp.rowcount} payment(s)")
+            except Exception as e:
+                try:
+                    app.logger.warning(f"[Migration] sale_date backfill skipped: {e}")
+                    db.session.rollback()
+                except Exception:
+                    pass
+
     if "dispense_sales" in tables:
         existing = {c["name"] for c in insp.get_columns("dispense_sales")}
         ds_alters = []
@@ -4988,6 +5011,14 @@ def _dispense_tenant_or_error():
     return admin.tenant_id, None
 
 
+def _dispense_is_closed(tenant_id, target_date):
+    """True iff a reading exists for target_date AND is_closed=True."""
+    r = DispenseMeterReading.query.filter_by(
+        tenant_id=tenant_id, reading_date=target_date
+    ).first()
+    return bool(r and r.is_closed)
+
+
 def _dispense_window_stats(tenant_id, dates):
     """Bulk-compute dispensing metrics for a list of date objects.
     Returns {iso_date: stats_dict}. Three queries total regardless of window size."""
@@ -5005,23 +5036,35 @@ def _dispense_window_stats(tenant_id, dates):
                         DispenseSale.voided == False)  # noqa: E712
                 .all()):
         sales_by_date.setdefault(row.sale_date.isoformat(), []).append(row)
+    # Fetch payments that either arrive on these dates OR target these dates.
+    # Second clause catches credit offsets: payment arrives on day 10 for a
+    # sale on day 5 — payment_date=day10, sale_date=day5. Both lists updated.
+    payments_raw = (DispensePayment.query
+                    .filter(DispensePayment.tenant_id == tenant_id,
+                            DispensePayment.voided == False,  # noqa: E712
+                            db.or_(
+                                DispensePayment.payment_date.in_(dates),
+                                DispensePayment.sale_date.in_(dates),
+                            ))
+                    .all())
     payments_by_date = {}
-    for row in (DispensePayment.query
-                .filter(DispensePayment.tenant_id == tenant_id,
-                        DispensePayment.payment_date.in_(dates),
-                        DispensePayment.voided == False)  # noqa: E712
-                .all()):
+    payments_by_sale_date = {}
+    for row in payments_raw:
         payments_by_date.setdefault(row.payment_date.isoformat(), []).append(row)
+        if row.sale_date:
+            payments_by_sale_date.setdefault(row.sale_date.isoformat(), []).append(row)
 
     out = {}
     for d in dates:
         iso = d.isoformat()
         reading = readings.get(iso)
         sales = sales_by_date.get(iso, [])
-        payments = payments_by_date.get(iso, [])
         sales_kes = round(sum(float(r.total_kes or 0) for r in sales), 2)
         sold_l = sum(int(r.container_size_L or 0) * int(r.quantity or 0) for r in sales)
-        paid_kes = round(sum(float(p.amount_kes or 0) for p in payments), 2)
+        payments_received_today = payments_by_date.get(iso, [])
+        payments_targeting_today = payments_by_sale_date.get(iso, [])
+        paid_kes = round(sum(float(p.amount_kes or 0) for p in payments_targeting_today), 2)
+        cash_received_kes = round(sum(float(p.amount_kes or 0) for p in payments_received_today), 2)
         consumption_m3 = round(float(reading.consumption_m3 or 0), 4) if reading else 0.0
         consumption_l = int(round(consumption_m3 * 1000))
         out[iso] = {
@@ -5031,6 +5074,7 @@ def _dispense_window_stats(tenant_id, dates):
             "sold_l": sold_l,
             "sales_kes": sales_kes,
             "paid_kes": paid_kes,
+            "cash_received_kes": cash_received_kes,
             "outstanding_kes": round(sales_kes - paid_kes, 2),
             "variance_l": consumption_l - sold_l,
             "has_reading": reading is not None,
@@ -5239,6 +5283,7 @@ def admin_dispense_today():
         "sold_l": tstats["sold_l"],
         "sales_kes": tstats["sales_kes"],
         "paid_kes": tstats["paid_kes"],
+        "cash_received_kes": tstats.get("cash_received_kes", 0),
         "outstanding_kes": tstats["outstanding_kes"],
         "variance_l": tstats["variance_l"],
         "has_reading": tstats["has_reading"],
@@ -5560,9 +5605,34 @@ def admin_dispense_payments_post():
             }), 409
 
     today = _nairobi_today()
+
+    # Step 1 (this batch): optional sale_date for credit offsets.
+    _target_raw = (data.get("sale_date") or "").strip()
+    if _target_raw:
+        try:
+            _target_sale_date = datetime.strptime(_target_raw, "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            return jsonify({
+                "error": "Invalid sale_date (expected YYYY-MM-DD)."
+            }), 400
+    else:
+        _target_sale_date = today
+
+    _target_has_sales = (DispenseSale.query
+        .filter(DispenseSale.tenant_id == tenant_id,
+                DispenseSale.sale_date == _target_sale_date,
+                DispenseSale.voided == False)  # noqa: E712
+        .count())
+    if _target_has_sales == 0:
+        return jsonify({
+            "error": f"No sales recorded on {_target_sale_date.isoformat()}. "
+                     f"Pick a day with outstanding sales."
+        }), 400
+
     row = DispensePayment(
         tenant_id=tenant_id,
         payment_date=today,
+        sale_date=_target_sale_date,
         amount_kes=amount,
         method=method,
         reference=reference,
@@ -5741,6 +5811,15 @@ def admin_dispense_sales_post():
     admin_username = _dispense_recorded_by()
 
     today = _nairobi_today()
+
+    # Step 1 (this batch): day-close lock — no new sales after close.
+    if _dispense_is_closed(tenant_id, today):
+        return jsonify({
+            "error": "Today is closed. Sales cannot be recorded after day close. "
+                     "Record this sale under tomorrow's activity — the opening "
+                     "reading will reflect the extra water."
+        }), 409
+
     row = DispenseSale(
         tenant_id=tenant_id,
         sale_date=today,
@@ -5796,6 +5875,12 @@ def admin_dispense_sale_void(sale_id):
         return jsonify({"error": "Sale not found."}), 404
     if row.voided:
         return jsonify({"error": "Sale is already voided."}), 400
+
+    # Step 1 (this batch): closed day = immutable sales.
+    if _dispense_is_closed(tenant_id, row.sale_date):
+        return jsonify({
+            "error": "That day is closed. Voiding sales is not allowed after day close."
+        }), 409
 
     row.voided = True
     row.voided_at = datetime.utcnow()
@@ -6051,9 +6136,11 @@ def admin_dispense_window():
             "sold_l": st["sold_l"],
             "sales_kes": st["sales_kes"],
             "paid_kes": st["paid_kes"],
+            "cash_received_kes": st.get("cash_received_kes", 0),
             "outstanding_kes": st["outstanding_kes"],
             "variance_l": st["variance_l"],
             "has_reading": st["has_reading"],
+            "is_closed": st.get("is_closed", False),
             "status": _dispense_status(st),
         })
 
