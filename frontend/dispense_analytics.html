@@ -198,7 +198,9 @@
         if (!m.authenticated) { location.href = '/admin/login'; return; }
         const profiles = m.enabled_profiles || {};
         const switchBtn = document.getElementById('switchBtn');
-        if (profiles.billing && switchBtn) {
+        // Step 4: switch must respect employee assignment (can_switch_to_billing
+        // = tenant-enabled AND employee-assigned). Backend enforces independently.
+        if (m.can_switch_to_billing && switchBtn) {
           switchBtn.style.display = 'inline-flex';
           switchBtn.addEventListener('click', async function () {
             switchBtn.disabled = true;

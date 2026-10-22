@@ -281,3 +281,54 @@ def test_consumer_reactivate_tenant_scoped(client):
         assert Consumer.query.get(t2_cid).is_active is False, (
             "SECURITY: cross-tenant consumer was reactivated!"
         )
+
+# ══════════════════════════════════════════════════════════════════════
+# Step 4 upgrade — cross-profile switch enforcement
+#
+# Backend enforcement of employee profile assignment is in
+# admin_profile_switch (target not in _employee_profiles -> 403).
+# These tests prove it holds AND that whoami exposes the right flags
+# so the frontend never shows an unusable switch button.
+# ══════════════════════════════════════════════════════════════════════
+
+def test_whoami_both_profile_employee_can_switch_both(client):
+    """Both-profile employee: effective = both, can_switch_to_* both true."""
+    make_admin("emp_both_sw", role="employee", profiles='["billing","dispensing"]')
+    login(client, "emp_both_sw")  # pending chooser fires
+    d = client.get("/api/admin/whoami").get_json()
+    assert d["can_switch_to_billing"] is True
+    assert d["can_switch_to_dispensing"] is True
+    assert sorted(d["effective_profiles"]) == ["billing", "dispensing"]
+
+
+def test_whoami_dispensing_only_employee_cannot_switch_to_billing(client):
+    """Dispensing-only employee: effective = [dispensing], can_switch_to_billing false."""
+    make_admin("emp_disp_sw", role="employee", profiles='["dispensing"]')
+    login(client, "emp_disp_sw")
+    d = client.get("/api/admin/whoami").get_json()
+    assert d["can_switch_to_billing"] is False
+    assert d["can_switch_to_dispensing"] is True
+    assert d["effective_profiles"] == ["dispensing"]
+
+
+def test_switch_api_employee_unassigned_profile_403(client):
+    """Dispensing-only employee POST switch to billing -> 403 (backend enforcement)."""
+    make_admin("emp_disp_403", role="employee", profiles='["dispensing"]')
+    login(client, "emp_disp_403")
+    r = client.post("/api/admin/profile/switch", json={"to": "billing"})
+    assert r.status_code == 403, (
+        f"SECURITY: dispensing-only employee switched to billing! "
+        f"status={r.status_code} body={r.get_json()}"
+    )
+    assert "not available for your account" in (r.get_json().get("error") or "").lower()
+
+
+def test_switch_api_both_profile_employee_to_billing_200(client):
+    """Both-profile employee POST switch to billing -> 200 (allowed)."""
+    make_admin("emp_both_200", role="employee", profiles='["billing","dispensing"]')
+    login(client, "emp_both_200")  # pending fires
+    r = client.post("/api/admin/profile/switch", json={"to": "billing"})
+    assert r.status_code == 200
+    assert r.get_json().get("ok") is True
+    assert r.get_json().get("active_profile") == "billing"
+

@@ -34,9 +34,10 @@
         const profiles = d.enabled_profiles || {};
         const profLabel = d.active_profile === 'dispensing' ? 'Dispensing' : 'Billing';
         text.textContent = 'Signed in as ' + d.username + ' \u00b7 ' + profLabel + ' profile';
-        const bothOn = !!(profiles.billing && profiles.dispensing);
-        if (bothOn && switchSpan && switchLink) {
-          const target = d.active_profile === 'dispensing' ? 'billing' : 'dispensing';
+        const target = d.active_profile === 'dispensing' ? 'billing' : 'dispensing';
+        // Step 4: switch must be based on EMPLOYEE ASSIGNMENT, not tenant-enabled
+        const canSwitch = (target === 'billing') ? !!d.can_switch_to_billing : !!d.can_switch_to_dispensing;
+        if (canSwitch && switchSpan && switchLink) {
           const targetLabel = target === 'billing' ? 'Billing' : 'Dispensing';
           switchSpan.style.display = 'inline';
           switchLink.textContent = 'Switch to ' + targetLabel;

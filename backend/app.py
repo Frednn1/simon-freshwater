@@ -4560,6 +4560,18 @@ def admin_whoami():
     if admin:
         _prof = _current_active_profile()
         _enabled = _tenant_profiles_dict(admin.tenant_id) if admin.tenant_id else {"billing": True, "dispensing": False}
+        # Step 4 upgrade: effective_profiles = intersection of
+        # (a) tenant-enabled profiles, and
+        # (b) employee-assigned profiles (admins: all tenant-enabled).
+        # Used by frontend to hide switch buttons the user can't use.
+        # Backend switch endpoint still enforces assignment independently.
+        _eff_role = session.get("user_role", "admin")
+        if _eff_role == "employee":
+            _assigned = _employee_profiles(admin.id)
+            _effective = [p for p in _assigned if _enabled.get(p)]
+        else:
+            _effective = [p for p in ("billing", "dispensing") if _enabled.get(p)]
+
         # Upgrade 3: derive pending chooser state (no new DB writes, read-only)
         _pending = bool(session.get("pending_profile_choice"))
         _pending_profiles = None
@@ -4581,6 +4593,10 @@ def admin_whoami():
             "permissions": (_employee_permissions(admin.id)
                             if session.get("user_role", "admin") == "employee"
                             else None),
+            # Step 4 upgrade: frontend uses these to hide invalid switch buttons
+            "effective_profiles": _effective,
+            "can_switch_to_billing": "billing" in _effective,
+            "can_switch_to_dispensing": "dispensing" in _effective,
             # Upgrade 3 (strict pending choice) — additive fields:
             # present for every whoami response; null/false when not pending.
             "pending_profile_choice": _pending,
