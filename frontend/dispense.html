@@ -190,6 +190,7 @@
 
     <!-- Reading entry form -->
     <div id="dFormCard" class="settings-card" style="display:none;">
+      <div id="dFormWarn" class="alert hidden" style="background:#fff3e0;border-left:4px solid #f57c00;margin-bottom:.75rem;color:#6d4c00;font-size:.88rem;line-height:1.4;"></div>
       <h2 id="dFormTitle">Record Today's Reading</h2>
       <form id="dReadingForm" autocomplete="off">
         <div class="form-row" id="dOpenRow" style="display:none;">
@@ -205,6 +206,7 @@
           <input type="text" id="dReasonInput" placeholder="e.g. Meter reading typo">
         </div>
         <button type="submit" id="dSubmitBtn" class="btn-primary btn-fit">Save Reading</button>
+        <button type="button" id="dNoActivityBtn" class="btn-secondary btn-fit" style="display:none;margin-top:.5rem;">Mark as No Activity</button>
         <div id="dFormMsg" class="alert hidden" style="margin-top:.5rem;"></div>
       </form>
     </div>
@@ -216,6 +218,7 @@
         <div id="dSaleNoRates" class="alert alert-error hidden" style="margin-bottom:.75rem;">
           No dispensing rates configured. Set them up in the dev portal before recording sales.
         </div>
+        <div id="dSaleClosedBanner" class="alert hidden" style="display:none;background:#eceff1;border-left:4px solid #607d8b;margin-bottom:.75rem;color:#455a64;font-size:.88rem;line-height:1.4;">Day closed. Sales cannot be recorded. Record additional sales under tomorrow&#39;s activity.</div>
         <div class="form-row">
           <label for="dSaleContainer">Container Size *</label>
           <select id="dSaleContainer" required>
@@ -270,6 +273,13 @@
     <div class="settings-card">
       <h2>Record Payment</h2>
       <form id="dPayForm" autocomplete="off">
+        <div class="form-row">
+          <label for="dPaySaleDate">Apply to which day&#39;s sales? (leave blank for today)</label>
+          <input type="date" id="dPaySaleDate">
+          <div class="form-hint-small" style="font-size:.75rem;color:#888;margin-top:.25rem;">
+            Pick a past day to record a credit payment against that day&#39;s sales.
+          </div>
+        </div>
         <div class="form-row">
           <label for="dPayAmount">Amount (KES) *</label>
           <input type="number" id="dPayAmount" step="0.01" min="0.01" placeholder="e.g. 500.00" required>
@@ -500,6 +510,59 @@
 
           card.style.display = 'block';
           if (msg) msg.className = 'alert hidden';
+
+          // Phase A2: warning banner + no-activity button
+          var warnEl = document.getElementById('dFormWarn');
+          var noActBtn = document.getElementById('dNoActivityBtn');
+          if (warnEl) {
+            var wMsg = '';
+            if (d.is_first_day) {
+              wMsg = 'First day of dispensing \u2014 record the opening reading to begin.';
+            } else if (d.prev_day_missing) {
+              wMsg = "Previous day's closing reading is missing \u2014 enter the opening reading manually.";
+            } else if (!d.has_reading && ((d.sales_kes || 0) > 0 || (d.paid_kes || 0) > 0)) {
+              wMsg = 'Sales or payments exist for today but no closing reading is recorded. Close the day to lock activity.';
+            }
+            if (wMsg) {
+              warnEl.textContent = wMsg;
+              warnEl.classList.remove('hidden');
+            } else {
+              warnEl.classList.add('hidden');
+            }
+          }
+          if (noActBtn) {
+            var showNoAct = (!d.has_reading && !d.is_first_day && !d.prev_day_missing
+                             && (d.sales_kes || 0) === 0 && (d.paid_kes || 0) === 0);
+            noActBtn.style.display = showNoAct ? 'inline-flex' : 'none';
+            noActBtn.onclick = null;
+            if (showNoAct) {
+              noActBtn.onclick = async function () {
+                if (!confirm('Mark this day as no activity? This records a zero-consumption closed reading.')) return;
+                try {
+                  var rr = await fetch('/api/admin/dispense/today', {credentials: 'same-origin'});
+                  var dd = await rr.json();
+                  if (!dd.ok || dd.suggested_opening_m3 == null) {
+                    alert('\u274c Cannot mark no activity \u2014 opening reading not available. Record opening first, then close.');
+                    return;
+                  }
+                  var r2 = await fetch('/api/admin/dispense/reading', {
+                    method: 'POST', credentials: 'same-origin',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({closing_reading_m3: dd.suggested_opening_m3})
+                  });
+                  var j2 = await r2.json();
+                  if (r2.ok && j2.ok) {
+                    alert('\u2705 No-activity day recorded (0 L consumption).');
+                    location.reload();
+                  } else {
+                    alert('\u274c ' + (j2.error || 'Failed.'));
+                  }
+                } catch (err) {
+                  alert('\u274c ' + (err.message || 'Network error.'));
+                }
+              };
+            }
+          }
 
           if (d.has_reading && d.is_closed) {
             title.textContent = "Correct Today's Reading";
@@ -733,6 +796,10 @@
             method: method,
             notes: document.getElementById('dPayNotes').value.trim(),
           };
+          var _sdEl = document.getElementById('dPaySaleDate');
+          if (_sdEl && _sdEl.value) {
+            body.sale_date = _sdEl.value;
+          }
           if (method === 'mpesa_c2b') {
             const ref = refInput.value.trim();
             if (!ref) throw new Error('Reference is required for M-Pesa.');
@@ -754,6 +821,8 @@
             document.getElementById('dPayAmount').value = '';
             document.getElementById('dPayNotes').value = '';
             refInput.value = '';
+            var _sdReset = document.getElementById('dPaySaleDate');
+            if (_sdReset) _sdReset.value = '';
             await loadPayments();
             await new Promise(r => setTimeout(r, 1200));
             location.reload();
@@ -935,6 +1004,22 @@
       });
 
       await loadSales();
+
+      // Phase A2: if today is closed, show banner + disable sale submit
+      try {
+        var _tr = await fetch('/api/admin/dispense/today', {credentials: 'same-origin'});
+        var _td = await _tr.json();
+        if (_td && _td.ok && _td.is_closed) {
+          var _banner = document.getElementById('dSaleClosedBanner');
+          var _submit = document.getElementById('dSaleSubmitBtn');
+          if (_banner) { _banner.classList.remove('hidden'); _banner.style.display = 'block'; }
+          if (_submit) {
+            _submit.disabled = true;
+            _submit.textContent = 'Day Closed';
+            _submit.title = 'Sales cannot be recorded after day close';
+          }
+        }
+      } catch (_) {}
     })();
   </script>
 
