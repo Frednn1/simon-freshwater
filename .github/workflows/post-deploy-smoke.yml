@@ -6,6 +6,9 @@ name: post-deploy-smoke
 # allows progressive adoption without breaking CI.
 
 on:
+  # TEMP: push trigger for staging-only verification (remove before merge to main)
+  push:
+    branches: [staging]
   workflow_run:
     workflows: ["tests"]
     types: [completed]
