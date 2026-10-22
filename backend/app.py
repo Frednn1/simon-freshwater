@@ -1380,6 +1380,35 @@ def _ensure_all_columns():
             app.logger.info("[Migration] Added receipt_json to payment_log")
 
     # Phase F.5: add void columns to dispense_sales.
+    if "dispense_meter_readings" in tables:
+        existing_cols = {c["name"] for c in insp.get_columns("dispense_meter_readings")}
+        dmr_alters = []
+        if "is_closed" not in existing_cols:
+            if dialect == "sqlite":
+                dmr_alters.append("ADD COLUMN is_closed INTEGER NOT NULL DEFAULT 0")
+            else:
+                dmr_alters.append("ADD COLUMN is_closed BOOLEAN NOT NULL DEFAULT FALSE")
+        for alt in dmr_alters:
+            db.session.execute(text(f"ALTER TABLE dispense_meter_readings {alt}"))
+        if dmr_alters:
+            db.session.commit()
+            app.logger.info(f"[Migration] Applied {len(dmr_alters)} column(s) to dispense_meter_readings")
+            # Backfill: every existing row was created under the old flow
+            # (both opening + closing required) — they are semantically CLOSED.
+            try:
+                _bf = db.session.execute(text(
+                    "UPDATE dispense_meter_readings SET is_closed = 1"
+                ))
+                db.session.commit()
+                if _bf.rowcount:
+                    app.logger.info(f"[Migration] Backfilled is_closed=1 on {_bf.rowcount} existing reading(s)")
+            except Exception as e:
+                try:
+                    app.logger.warning(f"[Migration] is_closed backfill skipped: {e}")
+                    db.session.rollback()
+                except Exception:
+                    pass
+
     if "dispense_sales" in tables:
         existing = {c["name"] for c in insp.get_columns("dispense_sales")}
         ds_alters = []
@@ -5005,6 +5034,7 @@ def _dispense_window_stats(tenant_id, dates):
             "outstanding_kes": round(sales_kes - paid_kes, 2),
             "variance_l": consumption_l - sold_l,
             "has_reading": reading is not None,
+            "is_closed": (reading.is_closed if reading else False),
         }
     return out
 
@@ -5202,7 +5232,8 @@ def admin_dispense_today():
         "opening_reading_m3": (float(tstats["reading"].opening_reading_m3)
                                if tstats["reading"] else None),
         "closing_reading_m3": (float(tstats["reading"].closing_reading_m3)
-                               if tstats["reading"] else None),
+                               if tstats["reading"] and tstats["reading"].is_closed
+                               else None),
         "consumption_m3": tstats["consumption_m3"],
         "consumption_l": tstats["consumption_l"],
         "sold_l": tstats["sold_l"],
@@ -5211,6 +5242,7 @@ def admin_dispense_today():
         "outstanding_kes": tstats["outstanding_kes"],
         "variance_l": tstats["variance_l"],
         "has_reading": tstats["has_reading"],
+        "is_closed": tstats.get("is_closed", False),
         "is_first_day": is_first_day,
         "prev_day_missing": prev_day_missing,
         "manual_opening_required": manual_opening_required,
@@ -5256,13 +5288,17 @@ def admin_dispense_reading_post():
                      "Past-day corrections arrive in a follow-up."
         }), 400
 
-    # ── 2. Parse closing_reading_m3 ──
-    try:
-        closing = float(data.get("closing_reading_m3"))
-    except (ValueError, TypeError):
-        return jsonify({"error": "closing_reading_m3 must be a number."}), 400
-    if closing < 0 or closing > 10_000_000:
-        return jsonify({"error": "Closing reading is out of range."}), 400
+    # ── 2. Parse closing_reading_m3 (OPTIONAL — opening-only save is allowed) ──
+    closing_raw = data.get("closing_reading_m3")
+    has_closing = (closing_raw is not None and closing_raw != "")
+    closing = None
+    if has_closing:
+        try:
+            closing = float(closing_raw)
+        except (ValueError, TypeError):
+            return jsonify({"error": "closing_reading_m3 must be a number."}), 400
+        if closing < 0 or closing > 10_000_000:
+            return jsonify({"error": "Closing reading is out of range."}), 400
 
     # ── 3. Check for existing reading today ──
     existing = (DispenseMeterReading.query
@@ -5271,30 +5307,53 @@ def admin_dispense_reading_post():
     force  = bool(data.get("force"))
     reason = (data.get("reason") or "").strip()
 
+    # ── 4. Determine operation type ──
     if existing is not None:
-        if not force:
+        if existing.is_closed:
+            if not has_closing:
+                return jsonify({
+                    "error": "closing_reading_m3 is required when correcting a closed reading."
+                }), 400
+            if not force:
+                return jsonify({
+                    "error": "Today's reading is already closed. "
+                             "Set force=true with a reason to correct it.",
+                    "existing_reading_id": existing.id,
+                }), 409
+            if not reason:
+                return jsonify({
+                    "error": "A reason is required when correcting a closed reading."
+                }), 400
+            op = "correction"
+        else:
+            if not has_closing:
+                return jsonify({
+                    "error": "closing_reading_m3 is required to close today's reading."
+                }), 400
+            op = "close"
+    else:
+        yesterday_guard = requested - timedelta(days=1)
+        yesterday_guard_row = (DispenseMeterReading.query
+                               .filter_by(tenant_id=tenant_id, reading_date=yesterday_guard)
+                               .first())
+        if yesterday_guard_row is not None and not yesterday_guard_row.is_closed:
             return jsonify({
-                "error": "Reading already exists for today. "
-                         "Set force=true with a reason to correct it.",
-                "existing_reading_id": existing.id,
-            }), 409
-        if not reason:
-            return jsonify({
-                "error": "A reason is required when correcting an existing reading."
+                "error": "Yesterday's reading is still open. "
+                         "Close yesterday before recording today."
             }), 400
+        op = "create_closed" if has_closing else "open_only"
 
-    # ── 4. Determine whether opening must be supplied manually ──
+    # ── 5. Determine whether opening must be supplied manually ──
+    any_reading_ever = (DispenseMeterReading.query
+                        .filter_by(tenant_id=tenant_id)
+                        .first())
+    bootstrap_required = (any_reading_ever is None) and (existing is None)
+
     previous = (DispenseMeterReading.query
                 .filter(DispenseMeterReading.tenant_id == tenant_id,
                         DispenseMeterReading.reading_date < requested)
                 .order_by(DispenseMeterReading.reading_date.desc())
                 .first())
-    any_reading_ever = (DispenseMeterReading.query
-                        .filter_by(tenant_id=tenant_id)
-                        .first())
-
-    bootstrap_required = (any_reading_ever is None) and (existing is None)
-
     yesterday = requested - timedelta(days=1)
     has_yesterday = (DispenseMeterReading.query
                      .filter_by(tenant_id=tenant_id, reading_date=yesterday)
@@ -5307,8 +5366,10 @@ def admin_dispense_reading_post():
     )
     manual_opening_required = bootstrap_required or previous_day_missing
 
-    # ── 5. Resolve opening ──
-    if manual_opening_required:
+    # ── 6. Resolve opening ──
+    if op in ("correction", "close"):
+        opening = float(existing.opening_reading_m3)
+    elif manual_opening_required:
         try:
             opening = float(data.get("opening_reading_m3"))
         except (ValueError, TypeError):
@@ -5318,24 +5379,22 @@ def admin_dispense_reading_post():
             }), 400
         if opening < 0 or opening > 10_000_000:
             return jsonify({"error": "Opening reading is out of range."}), 400
-    elif existing is not None:
-        # Correction: the STORED opening is the source of truth. Never
-        # recompute — that would risk drifting from the historical capture
-        # (design §5.5) and would also break the closing >= opening check.
-        opening = float(existing.opening_reading_m3)
     else:
-        # New reading for a day where yesterday's reading exists: compute
-        # opening from previous day's closing.
         opening = float(previous.closing_reading_m3) if previous else 0.0
 
-    if closing < opening:
-        return jsonify({
-            "error": f"Closing reading ({closing:g}) must be >= opening reading ({opening:g})."
-        }), 400
+    # ── 7. Resolve closing / consumption / is_closed ──
+    is_closed_final = (op in ("create_closed", "close", "correction"))
+    if is_closed_final:
+        if closing < opening:
+            return jsonify({
+                "error": f"Closing reading ({closing:g}) must be >= opening reading ({opening:g})."
+            }), 400
+        consumption = round(closing - opening, 4)
+    else:
+        closing = opening
+        consumption = 0.0
 
-    consumption = round(closing - opening, 4)
-
-    # ── 6. Write or update ──
+    # ── 8. Write or update ──
     if existing is None:
         row = DispenseMeterReading(
             tenant_id=tenant_id,
@@ -5344,31 +5403,45 @@ def admin_dispense_reading_post():
             closing_reading_m3=closing,
             consumption_m3=consumption,
             recorded_by=_dispense_recorded_by(),
+            is_closed=is_closed_final,
         )
         db.session.add(row)
         db.session.commit()
-        _audit("dispense_reading_recorded",
-               target_type="tenant", target_id=tenant_id,
-               detail=(f"date={requested.isoformat()} "
-                       f"opening={opening:g} closing={closing:g} consumption={consumption:g}"))
-        action = "created"
+        if op == "open_only":
+            _audit("dispense_reading_opened",
+                   target_type="tenant", target_id=tenant_id,
+                   detail=f"date={requested.isoformat()} opening={opening:g}")
+            action = "opened"
+        else:
+            _audit("dispense_reading_recorded",
+                   target_type="tenant", target_id=tenant_id,
+                   detail=(f"date={requested.isoformat()} "
+                           f"opening={opening:g} closing={closing:g} consumption={consumption:g}"))
+            action = "created"
         rid = row.id
     else:
-        # Opening is NEVER modified on update (design §5.5).
         old_closing = float(existing.closing_reading_m3)
         existing.closing_reading_m3 = closing
         existing.consumption_m3 = consumption
         existing.recorded_by = _dispense_recorded_by()
+        existing.is_closed = is_closed_final
         db.session.commit()
-        _audit("dispense_reading_corrected",
-               target_type="tenant", target_id=tenant_id,
-               detail=(f"date={requested.isoformat()} "
-                       f"old_closing={old_closing:g} new_closing={closing:g} "
-                       f"reason={reason[:100]}"))
-        action = "corrected"
+        if op == "close":
+            _audit("dispense_reading_closed",
+                   target_type="tenant", target_id=tenant_id,
+                   detail=(f"date={requested.isoformat()} closing={closing:g} "
+                           f"consumption={consumption:g}"))
+            action = "closed"
+        else:
+            _audit("dispense_reading_corrected",
+                   target_type="tenant", target_id=tenant_id,
+                   detail=(f"date={requested.isoformat()} "
+                           f"old_closing={old_closing:g} new_closing={closing:g} "
+                           f"reason={reason[:100]}"))
+            action = "corrected"
         rid = existing.id
 
-    # ── 7. Reload fresh stats for the response ──
+    # ── 9. Reload fresh stats for the response ──
     stats_map = _dispense_window_stats(tenant_id, [requested])
     st = stats_map[requested.isoformat()]
 
@@ -5378,7 +5451,7 @@ def admin_dispense_reading_post():
         "reading_id": rid,
         "date_iso": requested.isoformat(),
         "opening_reading_m3": opening,
-        "closing_reading_m3": closing,
+        "closing_reading_m3": (closing if is_closed_final else None),
         "consumption_m3": consumption,
         "consumption_l": st["consumption_l"],
         "sold_l": st["sold_l"],
@@ -5387,6 +5460,7 @@ def admin_dispense_reading_post():
         "outstanding_kes": st["outstanding_kes"],
         "variance_l": st["variance_l"],
         "has_reading": True,
+        "is_closed": is_closed_final,
     })
 
 

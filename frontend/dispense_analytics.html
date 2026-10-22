@@ -396,7 +396,7 @@
           var te = document.getElementById('drawerTeamDisp');
           if (te) te.style.display = 'none';
         }
-        if (data.enabled_profiles && data.enabled_profiles.billing && dSwitch) {
+        if (data.can_switch_to_billing && dSwitch) {
           dSwitch.style.display = '';
         }
       } catch (_) {}

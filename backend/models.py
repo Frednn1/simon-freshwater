@@ -302,6 +302,11 @@ class DispenseMeterReading(db.Model):
     closing_reading_m3 = db.Column(db.Float, nullable=False)
     consumption_m3 = db.Column(db.Float, nullable=False)
     recorded_by = db.Column(db.String(60))
+    # Step 2+3: is_closed distinguishes "opened only" from "closed".
+    # When is_closed=False, closing_reading_m3 is a SENTINEL equal to
+    # opening_reading_m3 (SQLite cannot ALTER COLUMN to allow NULL).
+    # Frontend MUST trust is_closed, never the sentinel value.
+    is_closed = db.Column(db.Boolean, nullable=False, default=False, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow,
                            onupdate=datetime.utcnow)

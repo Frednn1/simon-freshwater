@@ -501,38 +501,51 @@
           card.style.display = 'block';
           if (msg) msg.className = 'alert hidden';
 
-          if (d.has_reading) {
+          if (d.has_reading && d.is_closed) {
             title.textContent = "Correct Today's Reading";
             openRow.style.display = 'none';
             openInput.value = '';
             closeInput.value = d.closing_reading_m3 != null ? String(d.closing_reading_m3) : '';
+            closeInput.required = true;
             reasonRow.style.display = 'block';
             reasonInp.value = '';
             submitBtn.textContent = 'Save Correction';
+          } else if (d.has_reading && !d.is_closed) {
+            title.textContent = "Close Today's Reading";
+            openRow.style.display = 'none';
+            openInput.value = '';
+            closeInput.value = '';
+            closeInput.required = true;
+            reasonRow.style.display = 'none';
+            reasonInp.value = '';
+            submitBtn.textContent = 'Close Day';
           } else if (d.is_first_day) {
             title.textContent = 'First Day Setup';
             openRow.style.display = 'block';
             openInput.value = '';
             closeInput.value = '';
+            closeInput.required = false;
             reasonRow.style.display = 'none';
             reasonInp.value = '';
-            submitBtn.textContent = 'Save First Reading';
+            submitBtn.textContent = 'Save Opening';
           } else if (d.prev_day_missing) {
             title.textContent = 'Previous Reading Missing';
             openRow.style.display = 'block';
             openInput.value = '';
             closeInput.value = '';
+            closeInput.required = false;
             reasonRow.style.display = 'none';
             reasonInp.value = '';
-            submitBtn.textContent = 'Save Reading';
+            submitBtn.textContent = 'Save Opening';
           } else {
-            title.textContent = "Record Today's Reading";
+            title.textContent = "Close Today's Reading";
             openRow.style.display = 'none';
             openInput.value = '';
             closeInput.value = '';
+            closeInput.required = true;
             reasonRow.style.display = 'none';
             reasonInp.value = '';
-            submitBtn.textContent = 'Save Reading';
+            submitBtn.textContent = 'Close Day';
           }
         } catch (_) {}
       }
@@ -551,15 +564,30 @@
 
           const body = {
             reading_date: ctx.date_iso,
-            closing_reading_m3: parseFloat(document.getElementById('dCloseInput').value),
           };
 
           const openRow = document.getElementById('dOpenRow');
           if (openRow.style.display !== 'none') {
-            body.opening_reading_m3 = parseFloat(document.getElementById('dOpenInput').value);
+            const openVal = parseFloat(document.getElementById('dOpenInput').value);
+            if (Number.isFinite(openVal)) {
+              body.opening_reading_m3 = openVal;
+            } else if (ctx.is_first_day || ctx.prev_day_missing) {
+              if (msg) { msg.className = 'alert alert-error'; msg.textContent = '\u274c Opening reading is required.'; }
+              btn.disabled = false; btn.textContent = orig;
+              return;
+            }
           }
 
-          if (ctx.has_reading) {
+          const closeVal = parseFloat(document.getElementById('dCloseInput').value);
+          if (Number.isFinite(closeVal)) {
+            body.closing_reading_m3 = closeVal;
+          } else if (ctx.has_reading || (!ctx.is_first_day && !ctx.prev_day_missing)) {
+            if (msg) { msg.className = 'alert alert-error'; msg.textContent = '\u274c Closing reading is required.'; }
+            btn.disabled = false; btn.textContent = orig;
+            return;
+          }
+
+          if (ctx.has_reading && ctx.is_closed) {
             body.force = true;
             body.reason = document.getElementById('dReasonInput').value.trim();
             if (!body.reason) {
@@ -1354,7 +1382,7 @@
           var te = document.getElementById('drawerTeamDisp');
           if (te) te.style.display = 'none';
         }
-        if (data.enabled_profiles && data.enabled_profiles.billing && dSwitch) {
+        if (data.can_switch_to_billing && dSwitch) {
           dSwitch.style.display = '';
         }
       } catch (_) {}
