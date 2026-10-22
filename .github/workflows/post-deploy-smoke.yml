@@ -1,0 +1,122 @@
+name: post-deploy-smoke
+
+# Fires after the `tests` workflow completes successfully.
+# Polls the deployed service and fails if it's not healthy.
+# Skips (with ::notice) if the required URL secret isn't set —
+# allows progressive adoption without breaking CI.
+
+on:
+  workflow_run:
+    workflows: ["tests"]
+    types: [completed]
+    branches: [staging, main]
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: "URL to smoke test (overrides STAGING_URL secret)"
+        required: false
+        type: string
+
+jobs:
+  smoke:
+    # Only run if upstream tests passed, or if manually triggered
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Resolve target URL
+        id: target
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL }}
+          PRODUCTION_URL: ${{ secrets.PRODUCTION_URL }}
+          MANUAL_TARGET: ${{ inputs.target_url }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          if [ -n "$MANUAL_TARGET" ]; then
+            URL="$MANUAL_TARGET"
+            echo "Target: manual override"
+          elif [ "$BRANCH" = "main" ]; then
+            if [ -z "$PRODUCTION_URL" ]; then
+              echo "::notice::PRODUCTION_URL secret not set — skipping production smoke. Add it in Settings → Secrets and variables → Actions to enable."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            URL="$PRODUCTION_URL"
+            echo "Target: production (main branch)"
+          else
+            if [ -z "$STAGING_URL" ]; then
+              echo "::notice::STAGING_URL secret not set — skipping staging smoke. Add it in Settings → Secrets and variables → Actions to enable."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            URL="$STAGING_URL"
+            echo "Target: staging (staging branch)"
+          fi
+          URL="${URL%/}"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Smoke testing: $URL"
+
+      - name: Poll /api/admin/whoami (up to 10 min)
+        if: steps.target.outputs.skip != 'true'
+        env:
+          URL: ${{ steps.target.outputs.url }}
+        run: |
+          for i in $(seq 1 20); do
+            code=$(curl -s -o /tmp/whoami.json -w "%{http_code}" "$URL/api/admin/whoami" 2>/dev/null || echo "000")
+            if [ "$code" = "200" ] && grep -q '"authenticated": *false' /tmp/whoami.json 2>/dev/null; then
+              echo "✅ whoami healthy (attempt $i/20)"
+              exit 0
+            fi
+            echo "attempt $i/20: code=$code — retrying in 30s"
+            sleep 30
+          done
+          echo "::error::/api/admin/whoami not healthy after 10 min (last code=$code)"
+          echo "--- last body ---"
+          cat /tmp/whoami.json 2>/dev/null || true
+          exit 1
+
+      - name: Check /api/public/config
+        if: steps.target.outputs.skip != 'true'
+        env:
+          URL: ${{ steps.target.outputs.url }}
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL/api/public/config" 2>/dev/null || echo "000")
+          if [ "$code" != "200" ]; then
+            echo "::error::/api/public/config returned $code"
+            exit 1
+          fi
+          echo "✅ /api/public/config: 200"
+
+      - name: Check /admin/login
+        if: steps.target.outputs.skip != 'true'
+        env:
+          URL: ${{ steps.target.outputs.url }}
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL/admin/login" 2>/dev/null || echo "000")
+          if [ "$code" != "200" ]; then
+            echo "::error::/admin/login returned $code"
+            exit 1
+          fi
+          echo "✅ /admin/login: 200"
+
+      - name: Check /style.css
+        if: steps.target.outputs.skip != 'true'
+        env:
+          URL: ${{ steps.target.outputs.url }}
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" "$URL/style.css" 2>/dev/null || echo "000")
+          if [ "$code" != "200" ]; then
+            echo "::error::/style.css returned $code"
+            exit 1
+          fi
+          echo "✅ /style.css: 200"
+
+      - name: Summary
+        if: steps.target.outputs.skip != 'true'
+        run: |
+          echo "════════════════════════════════════════"
+          echo " ✅ Post-deploy smoke test PASSED"
+          echo "════════════════════════════════════════"
+          echo " Target: ${{ steps.target.outputs.url }}"
