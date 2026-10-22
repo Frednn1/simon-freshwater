@@ -176,3 +176,108 @@ def test_login_tenant_mismatch_rejected(client):
     assert r.status_code == 200, (
         f"tenant-agnostic login rejected: {r.get_json()}"
     )
+
+# ══════════════════════════════════════════════════════════════════════
+# Step 2 — Consumer CRUD cross-tenant isolation
+#
+# Every consumer endpoint filters via _tenant_query(Consumer).filter_by(id=).
+# These tests prove a tenant-1 admin cannot reach a tenant-2 consumer via
+# any of these endpoints — the 404 (not 403-leak, not 200) is the proof.
+# ══════════════════════════════════════════════════════════════════════
+
+def _make_t2_consumer(tag):
+    """Create a minimal consumer row on tenant 2. Returns the id."""
+    import app as _a
+    from models import Consumer
+    from datetime import date
+    with _a.app.app_context():
+        c = Consumer(
+            tenant_id=2,
+            cust_name=f"T2 {tag} {_u8()}",
+            acc_name=f"T2 Account {_u8()}",           # required — no default
+            meter_acc_no=f"MTR-T2-{_u8()}",
+            contact="0700000000",                       # field is "contact", not "phone"
+            is_active=True,
+        )
+        db.session.add(c)
+        db.session.commit()
+        return c.id
+
+
+def test_consumer_update_tenant_scoped(client):
+    _admin_login(client, "cu")
+    t2_cid = _make_t2_consumer("upd")
+    r = client.post(f"/api/admin/consumer/{t2_cid}/update",
+                    json={"cust_name": "HACKED"})
+    assert r.status_code == 404, (
+        f"SECURITY: cross-tenant consumer update returned "
+        f"{r.status_code}. Body: {r.get_json()}"
+    )
+    with app_module.app.app_context():
+        from models import Consumer
+        c = Consumer.query.get(t2_cid)
+        assert c.cust_name != "HACKED", (
+            "SECURITY: cross-tenant consumer UPDATE succeeded!"
+        )
+
+
+def test_consumer_payment_tenant_scoped(client):
+    _admin_login(client, "cp")
+    t2_cid = _make_t2_consumer("pay")
+    r = client.post(f"/api/admin/consumer/{t2_cid}/payment",
+                    json={"amount": 999, "method": "cash"})
+    assert r.status_code == 404, (
+        f"SECURITY: cross-tenant consumer payment returned "
+        f"{r.status_code}. Body: {r.get_json()}"
+    )
+
+
+def test_consumer_terminate_tenant_scoped(client):
+    _admin_login(client, "ct")
+    t2_cid = _make_t2_consumer("term")
+    r = client.post(f"/api/admin/consumer/{t2_cid}/terminate")
+    assert r.status_code == 404, (
+        f"SECURITY: cross-tenant terminate returned {r.status_code}. "
+        f"Body: {r.get_json()}"
+    )
+    with app_module.app.app_context():
+        from models import Consumer
+        assert Consumer.query.get(t2_cid).is_active, (
+            "SECURITY: cross-tenant consumer was terminated!"
+        )
+
+
+def test_consumer_delete_tenant_scoped(client):
+    _admin_login(client, "cd")
+    t2_cid = _make_t2_consumer("del")
+    r = client.delete(f"/api/admin/consumer/{t2_cid}")
+    assert r.status_code == 404, (
+        f"SECURITY: cross-tenant consumer delete returned "
+        f"{r.status_code}. Body: {r.get_json()}"
+    )
+    with app_module.app.app_context():
+        from models import Consumer
+        assert Consumer.query.get(t2_cid) is not None, (
+            "SECURITY: cross-tenant consumer was DELETED!"
+        )
+
+
+def test_consumer_reactivate_tenant_scoped(client):
+    """Tenant-2 consumer is terminated; tenant-1 admin must not reactivate."""
+    _admin_login(client, "cr")
+    t2_cid = _make_t2_consumer("react")
+    with app_module.app.app_context():
+        from models import Consumer
+        c = Consumer.query.get(t2_cid)
+        c.is_active = False
+        db.session.commit()
+    r = client.post(f"/api/admin/consumer/{t2_cid}/reactivate")
+    assert r.status_code == 404, (
+        f"SECURITY: cross-tenant reactivate returned {r.status_code}. "
+        f"Body: {r.get_json()}"
+    )
+    with app_module.app.app_context():
+        from models import Consumer
+        assert Consumer.query.get(t2_cid).is_active is False, (
+            "SECURITY: cross-tenant consumer was reactivated!"
+        )
