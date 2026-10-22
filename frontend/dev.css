@@ -41,6 +41,9 @@
   margin-bottom: 1.5rem;
   border-bottom: 1px solid var(--dev-border);
 }
+
+/* Upgrade: Logout button flushed to the far right of the dev header row. */
+.dev-header > #devLogoutBtn { margin-left: auto; }
 .dev-header .dev-mark {
   width: 40px; height: 40px; border-radius: 10px;
   background: linear-gradient(135deg, var(--blue-700, #0d47a1), var(--blue-500, #1976d2));
