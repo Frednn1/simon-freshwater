@@ -32,3 +32,29 @@ def test_dispense_has_payment_sale_date_picker():
 def test_dispense_has_reading_warning_banner():
     html = _read('dispense.html')
     assert 'id="dFormWarn"' in html
+
+# ══════════════════════════════════════════════════════════════════════
+# Phase A3b — past-day view + read-only mode
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_has_view_date_banner():
+    html = _read('dispense.html')
+    assert 'id="viewDateBanner"' in html
+    assert 'id="viewDateText"' in html
+    assert 'Back to Today' in html
+
+
+def test_dispense_uses_url_date_param():
+    html = _read('dispense.html')
+    assert "URLSearchParams(location.search).get('date')" in html
+
+
+def test_dispense_rows_have_data_date():
+    html = _read('dispense.html')
+    assert 'data-date="' in html
+
+
+def test_dispense_has_close_past_day_mode():
+    html = _read('dispense.html')
+    assert 'Close Past Day' in html
+

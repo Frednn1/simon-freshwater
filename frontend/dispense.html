@@ -143,6 +143,34 @@
 
   <main class="settings-wrap" style="max-width:900px;">
 
+    <!-- A3b: past-day view banner -->
+    <div id="viewDateBanner" class="settings-card" style="display:none;margin-bottom:1rem;padding:.85rem 1rem;background:#e3f2fd;border-left:4px solid #1976d2;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap;">
+        <span id="viewDateText" style="font-weight:600;color:#0d47a1;"></span>
+        <a href="/dispense" class="btn-secondary" style="font-size:.85rem;padding:.4rem .85rem;text-decoration:none;">← Back to Today</a>
+      </div>
+    </div>
+    <script>
+    (function(){
+      try {
+        var _v = new URLSearchParams(location.search).get('date') || '';
+        if (!_v) return;
+        var b = document.getElementById('viewDateBanner');
+        var t = document.getElementById('viewDateText');
+        if (b && t) {
+          try {
+            var _d = new Date(_v + 'T00:00:00Z');
+            var _fmt = _d.toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric', timeZone: 'Africa/Nairobi'});
+            t.textContent = 'Viewing ' + _fmt + ' \u2014 read-only except payments';
+          } catch (_) {
+            t.textContent = 'Viewing ' + _v + ' \u2014 read-only except payments';
+          }
+          b.style.display = 'block';
+        }
+      } catch (_) {}
+    })();
+    </script>
+
     <!-- Step 2: Recording As banner -->
     <div id="recordingBanner" class="settings-card" style="display:none; margin-bottom:1rem; padding:.85rem 1rem;">
       <div style="display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap;">
@@ -406,7 +434,9 @@
       const fmtK = (v) => 'KES ' + Number(v || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
       try {
-        const r = await fetch('/api/admin/dispense/today', {credentials: 'same-origin'});
+        const _vDate = new URLSearchParams(location.search).get('date') || '';
+        const _dateQS = _vDate ? ('?date=' + encodeURIComponent(_vDate)) : '';
+        const r = await fetch('/api/admin/dispense/today' + _dateQS, {credentials: 'same-origin'});
         if (!r.ok) return;
         const d = await r.json();
         if (!d.ok) return;
@@ -469,7 +499,7 @@
           const reportCell = showReport
             ? '<button type="button" style="padding:.2rem .55rem;font-size:.72rem;border:1px solid #1976d2;color:#1976d2;background:transparent;border-radius:5px;cursor:pointer;font-weight:600;" onclick="sendReconReport(\'' + row.date_iso + '\')">Send</button>'
             : '<span style="opacity:.35;">\u2014</span>';
-          return '<tr>'
+          return '<tr data-date="' + row.date_iso + '" style="cursor:pointer;">'
             + '<td>' + row.date + '</td>'
             + '<td class="num">' + meter + '</td>'
             + '<td class="num">' + fmtL(row.sold_l) + '</td>'
@@ -482,6 +512,18 @@
             + '</tr>';
         }).join('');
       } catch (_) {}
+
+      // A3b: row click -> navigate to ?date=
+      var _wb = document.getElementById('windowBody');
+      if (_wb && !_wb.dataset.clickBound) {
+        _wb.dataset.clickBound = '1';
+        _wb.addEventListener('click', function(e) {
+          var tr = e.target.closest('tr');
+          if (!tr || !tr.dataset || !tr.dataset.date) return;
+          if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+          location.href = '/dispense?date=' + encodeURIComponent(tr.dataset.date);
+        });
+      }
     })();
   </script>
 
@@ -494,7 +536,9 @@
 
       async function loadContext() {
         try {
-          const r = await fetch('/api/admin/dispense/today', {credentials: 'same-origin'});
+          const _vDate = new URLSearchParams(location.search).get('date') || '';
+          const _dateQS = _vDate ? ('?date=' + encodeURIComponent(_vDate)) : '';
+          const r = await fetch('/api/admin/dispense/today' + _dateQS, {credentials: 'same-origin'});
           if (!r.ok) return;
           const d = await r.json();
           if (!d.ok) return;
@@ -562,6 +606,23 @@
                 }
               };
             }
+          }
+
+          // A3b: past-day read-only handling
+          if (!d.is_today) {
+            if (noActBtn) noActBtn.style.display = 'none';
+            if (warnEl) warnEl.classList.add('hidden');
+            if (!d.has_reading) { card.style.display = 'none'; return; }
+            if (d.is_closed) { card.style.display = 'none'; return; }
+            title.textContent = 'Close Past Day';
+            openRow.style.display = 'none';
+            openInput.value = '';
+            closeInput.value = '';
+            closeInput.required = true;
+            reasonRow.style.display = 'block';
+            reasonInp.value = '';
+            submitBtn.textContent = 'Close Past Day';
+            return;
           }
 
           if (d.has_reading && d.is_closed) {
@@ -655,7 +716,7 @@
             return;
           }
 
-          if (ctx.has_reading && ctx.is_closed) {
+          if ((ctx.has_reading && ctx.is_closed) || !ctx.is_today) {
             body.force = true;
             body.reason = document.getElementById('dReasonInput').value.trim();
             if (!body.reason) {
@@ -718,7 +779,9 @@
 
       async function loadPayments() {
         try {
-          const r = await fetch('/api/admin/dispense/payments', {credentials: 'same-origin'});
+          const _vDate = new URLSearchParams(location.search).get('date') || '';
+          const _dateQS = _vDate ? ('?date=' + encodeURIComponent(_vDate)) : '';
+          const r = await fetch('/api/admin/dispense/payments' + _dateQS, {credentials: 'same-origin'});
           if (!r.ok) return;
           const d = await r.json();
           if (!d.ok) return;
@@ -838,6 +901,15 @@
 
       await loadPayments();
       syncMethodUI();
+
+      // A3b: pre-fill sale_date picker when viewing a past day
+      try {
+        var _vd = new URLSearchParams(location.search).get('date') || '';
+        if (_vd) {
+          var _sd = document.getElementById('dPaySaleDate');
+          if (_sd && !_sd.value) _sd.value = _vd;
+        }
+      } catch (_) {}
     })();
   </script>
 
@@ -891,7 +963,9 @@
 
       async function loadSales() {
         try {
-          const r = await fetch('/api/admin/dispense/sales', {credentials: 'same-origin'});
+          const _vDate = new URLSearchParams(location.search).get('date') || '';
+          const _dateQS = _vDate ? ('?date=' + encodeURIComponent(_vDate)) : '';
+          const r = await fetch('/api/admin/dispense/sales' + _dateQS, {credentials: 'same-origin'});
           if (!r.ok) return;
           const d = await r.json();
           if (!d.ok) return;
@@ -1005,18 +1079,30 @@
 
       await loadSales();
 
-      // Phase A2: if today is closed, show banner + disable sale submit
+      // Phase A2 + A3b: disable sale submit on closed day OR past day
       try {
-        var _tr = await fetch('/api/admin/dispense/today', {credentials: 'same-origin'});
+        const _vDate = new URLSearchParams(location.search).get('date') || '';
+        const _dateQS = _vDate ? ('?date=' + encodeURIComponent(_vDate)) : '';
+        var _tr = await fetch('/api/admin/dispense/today' + _dateQS, {credentials: 'same-origin'});
         var _td = await _tr.json();
-        if (_td && _td.ok && _td.is_closed) {
-          var _banner = document.getElementById('dSaleClosedBanner');
-          var _submit = document.getElementById('dSaleSubmitBtn');
-          if (_banner) { _banner.classList.remove('hidden'); _banner.style.display = 'block'; }
-          if (_submit) {
-            _submit.disabled = true;
-            _submit.textContent = 'Day Closed';
-            _submit.title = 'Sales cannot be recorded after day close';
+        if (_td && _td.ok) {
+          const _isPast = !_td.is_today;
+          const _isClosed = _td.is_closed;
+          if (_isPast || _isClosed) {
+            var _banner = document.getElementById('dSaleClosedBanner');
+            var _submit = document.getElementById('dSaleSubmitBtn');
+            if (_banner) {
+              _banner.textContent = _isPast
+                ? 'Viewing a past day \u2014 sales are read-only. Record additional sales under today.'
+                : "Day closed. Sales cannot be recorded. Record additional sales under tomorrow's activity.";
+              _banner.classList.remove('hidden');
+              _banner.style.display = 'block';
+            }
+            if (_submit) {
+              _submit.disabled = true;
+              _submit.textContent = _isPast ? 'Read Only' : 'Day Closed';
+              _submit.title = _isPast ? 'Past days are read-only' : 'Sales cannot be recorded after day close';
+            }
           }
         }
       } catch (_) {}
