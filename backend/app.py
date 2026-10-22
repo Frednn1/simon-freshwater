@@ -6016,6 +6016,15 @@ def admin_dispense_sales_bulk_import():
             })
             continue
 
+        # Step 1 (this batch): day-close lock applies per-row.
+        # Bulk import must not bypass the single-sale lock.
+        if _dispense_is_closed(tenant_id, sale_date):
+            errors.append({
+                "line": lineno,
+                "error": f"date {sale_date.isoformat()} is closed \u2014 cannot import sales"
+            })
+            continue
+
         price = rates[size]
         total = round(price * qty, 2)
         notes = (" ".join(notes_parts)).strip()[:500] or None

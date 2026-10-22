@@ -196,3 +196,44 @@ def test_credit_offset_on_closed_past_day_still_allowed(client):
                     json={"amount_kes": 100.0, "method": "cash",
                           "sale_date": past.isoformat()})
     assert r.status_code == 200, f"credit offset blocked: {r.get_json()}"
+
+def test_bulk_import_blocked_when_target_day_closed(client):
+    """Bulk import must respect day-close lock — the exact bug reported."""
+    _enable_dispensing(); _ensure_rate(); _wipe_dispense_activity()
+    _admin_login(client, "bic")
+    past = _seed_past_sale(days_ago=2, price=50.0, qty=1)
+    with app_module.app.app_context():
+        db.session.add(DispenseMeterReading(
+            tenant_id=1, reading_date=past,
+            opening_reading_m3=0.0, closing_reading_m3=100.0,
+            consumption_m3=100.0, is_closed=True, recorded_by="test",
+        ))
+        db.session.commit()
+    csv_text = f"20,3,{past.isoformat()},import-test"
+    r = client.post("/api/admin/dispense/sales/bulk_import",
+                    json={"csv": csv_text, "dry_run": False})
+    assert r.status_code == 400, f"body={r.get_json()}"
+    body = r.get_json()
+    assert body["ok"] is False
+    assert any("closed" in (e.get("error") or "").lower() for e in body["errors"])
+
+
+def test_bulk_import_dry_run_also_rejects_closed_day(client):
+    """dry_run=true must validate the closed-day lock too (no bypass)."""
+    _enable_dispensing(); _ensure_rate(); _wipe_dispense_activity()
+    _admin_login(client, "bid")
+    past = _seed_past_sale(days_ago=2, price=50.0, qty=1)
+    with app_module.app.app_context():
+        db.session.add(DispenseMeterReading(
+            tenant_id=1, reading_date=past,
+            opening_reading_m3=0.0, closing_reading_m3=100.0,
+            consumption_m3=100.0, is_closed=True, recorded_by="test",
+        ))
+        db.session.commit()
+    csv_text = f"20,3,{past.isoformat()},import-dry"
+    r = client.post("/api/admin/dispense/sales/bulk_import",
+                    json={"csv": csv_text, "dry_run": True})
+    assert r.status_code == 400
+    assert any("closed" in (e.get("error") or "").lower()
+               for e in r.get_json()["errors"])
+
