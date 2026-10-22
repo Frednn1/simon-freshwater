@@ -580,6 +580,11 @@
 
           const closeVal = parseFloat(document.getElementById('dCloseInput').value);
           if (Number.isFinite(closeVal)) {
+            if (closeVal < 0) {
+              if (msg) { msg.className = 'alert alert-error'; msg.textContent = '\u274c Closing reading must be non-negative.'; }
+              btn.disabled = false; btn.textContent = orig;
+              return;
+            }
             body.closing_reading_m3 = closeVal;
           } else if (ctx.has_reading || (!ctx.is_first_day && !ctx.prev_day_missing)) {
             if (msg) { msg.className = 'alert alert-error'; msg.textContent = '\u274c Closing reading is required.'; }
@@ -595,12 +600,6 @@
               btn.disabled = false; btn.textContent = orig;
               return;
             }
-          }
-
-          if (!Number.isFinite(body.closing_reading_m3) || body.closing_reading_m3 < 0) {
-            if (msg) { msg.className = 'alert alert-error'; msg.textContent = '❌ Closing reading must be a non-negative number.'; }
-            btn.disabled = false; btn.textContent = orig;
-            return;
           }
 
           const r = await fetch('/api/admin/dispense/reading', {
