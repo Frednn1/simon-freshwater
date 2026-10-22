@@ -5233,9 +5233,23 @@ def admin_dispense_today():
     if err: return err
 
     today = _nairobi_today()
-    yesterday = today - timedelta(days=1)
-    stats_map = _dispense_window_stats(tenant_id, [today, yesterday])
-    tstats = stats_map[today.isoformat()]
+    _date_arg = (request.args.get("date") or "").strip()
+    if _date_arg:
+        try:
+            requested = datetime.strptime(_date_arg, "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid date (expected YYYY-MM-DD)."}), 400
+    else:
+        requested = today
+
+    if requested > today:
+        return jsonify({"error": "Date cannot be in the future."}), 400
+    if requested < today - timedelta(days=30):
+        return jsonify({"error": "Past-day view limited to 30 days."}), 400
+
+    yesterday = requested - timedelta(days=1)
+    stats_map = _dispense_window_stats(tenant_id, [requested, yesterday])
+    tstats = stats_map[requested.isoformat()]
     ystats = stats_map[yesterday.isoformat()]
 
     any_reading_ever = (DispenseMeterReading.query
@@ -5250,17 +5264,13 @@ def admin_dispense_today():
     prev_day_missing = (not ystats["has_reading"]
                         and any_before_yesterday is not None)
 
-    # Determine whether the admin must supply the opening reading manually.
-    # Both "first day of dispensing" and "yesterday's reading missing" require it.
     manual_opening_required = is_first_day or prev_day_missing
 
-    # For the normal case, expose the auto-computed opening (previous day's
-    # closing, or the most recent prior reading's closing).
     suggested_opening = None
     if not manual_opening_required and not tstats["has_reading"]:
         prev_reading = (DispenseMeterReading.query
                         .filter(DispenseMeterReading.tenant_id == tenant_id,
-                                DispenseMeterReading.reading_date < today)
+                                DispenseMeterReading.reading_date < requested)
                         .order_by(DispenseMeterReading.reading_date.desc())
                         .first())
         if prev_reading:
@@ -5270,8 +5280,9 @@ def admin_dispense_today():
 
     return jsonify({
         "ok": True,
-        "date": today.strftime("%d %b %Y"),
-        "date_iso": today.isoformat(),
+        "date": requested.strftime("%d %b %Y"),
+        "date_iso": requested.isoformat(),
+        "is_today": requested == today,
         "reading_id": reading_id,
         "opening_reading_m3": (float(tstats["reading"].opening_reading_m3)
                                if tstats["reading"] else None),
@@ -5325,13 +5336,30 @@ def admin_dispense_reading_post():
         requested = _nairobi_today()
 
     today = _nairobi_today()
+    force  = bool(data.get("force"))
+    reason = (data.get("reason") or "").strip()
+
     if requested > today:
         return jsonify({"error": "Reading date cannot be in the future."}), 400
+
     if requested != today:
-        return jsonify({
-            "error": "Only today's reading can be recorded in Phase E. "
-                     "Past-day corrections arrive in a follow-up."
-        }), 400
+        # Phase A3: past-day changes require force + reason.
+        if not force or not reason:
+            return jsonify({
+                "error": "Past-day changes require force=true and reason."
+            }), 400
+        if requested < today - timedelta(days=30):
+            return jsonify({
+                "error": "Past-day changes limited to 30 days."
+            }), 400
+        _past_existing = (DispenseMeterReading.query
+                          .filter_by(tenant_id=tenant_id, reading_date=requested)
+                          .first())
+        if not _past_existing:
+            return jsonify({
+                "error": "Cannot create a new reading for a past day. "
+                         "Only close an existing open day or correct a closed one."
+            }), 400
 
     # ── 2. Parse closing_reading_m3 (OPTIONAL — opening-only save is allowed) ──
     closing_raw = data.get("closing_reading_m3")
@@ -5522,6 +5550,7 @@ def admin_dispense_payments_get():
     tenant_id, err = _dispense_tenant_or_error()
     if err: return err
 
+    today = _nairobi_today()
     date_str = (request.args.get("date") or "").strip()
     if date_str:
         try:
@@ -5529,21 +5558,42 @@ def admin_dispense_payments_get():
         except (ValueError, TypeError):
             return jsonify({"error": "Invalid date (expected YYYY-MM-DD)."}), 400
     else:
-        target_date = _nairobi_today()
+        target_date = today
+
+    if target_date > today:
+        return jsonify({"error": "Date cannot be in the future."}), 400
+    if target_date < today - timedelta(days=30):
+        return jsonify({"error": "Past-day view limited to 30 days."}), 400
 
     rows = (DispensePayment.query
-            .filter_by(tenant_id=tenant_id, payment_date=target_date)
+            .filter(DispensePayment.tenant_id == tenant_id,
+                    db.or_(DispensePayment.payment_date == target_date,
+                           DispensePayment.sale_date == target_date))
             .order_by(DispensePayment.created_at.desc(),
                       DispensePayment.id.desc())
             .all())
 
-    total_paid = round(sum(float(r.amount_kes or 0) for r in rows if not r.voided), 2)
+    total_received = round(sum(float(r.amount_kes or 0) for r in rows
+                               if not r.voided and r.payment_date == target_date), 2)
+    total_targeting = round(sum(float(r.amount_kes or 0) for r in rows
+                                if not r.voided and r.sale_date == target_date), 2)
+
+    def _direction(r):
+        _p = (r.payment_date == target_date)
+        _s = (r.sale_date == target_date) if r.sale_date else False
+        if _p and _s: return "both"
+        if _p: return "received"
+        if _s: return "targeting"
+        return "unknown"
 
     return jsonify({
         "ok": True,
         "date": target_date.strftime("%d %b %Y"),
         "date_iso": target_date.isoformat(),
-        "total_paid_kes": total_paid,
+        "is_today": target_date == today,
+        "total_paid_kes": total_received,
+        "total_received_kes": total_received,
+        "total_targeting_kes": total_targeting,
         "payments": [{
             "id": r.id,
             "amount_kes": float(r.amount_kes),
@@ -5555,6 +5605,9 @@ def admin_dispense_payments_get():
             "voided_by": r.voided_by,
             "recorded_by": r.recorded_by,
             "created_at": r.created_at.isoformat() if r.created_at else None,
+            "payment_date_iso": r.payment_date.isoformat() if r.payment_date else None,
+            "sale_date_iso": r.sale_date.isoformat() if r.sale_date else None,
+            "direction": _direction(r),
         } for r in rows],
     })
 
@@ -5730,6 +5783,7 @@ def admin_dispense_sales_get():
     tenant_id, err = _dispense_tenant_or_error()
     if err: return err
 
+    today = _nairobi_today()
     date_str = (request.args.get("date") or "").strip()
     if date_str:
         try:
@@ -5737,7 +5791,12 @@ def admin_dispense_sales_get():
         except (ValueError, TypeError):
             return jsonify({"error": "Invalid date (expected YYYY-MM-DD)."}), 400
     else:
-        target_date = _nairobi_today()
+        target_date = today
+
+    if target_date > today:
+        return jsonify({"error": "Date cannot be in the future."}), 400
+    if target_date < today - timedelta(days=30):
+        return jsonify({"error": "Past-day view limited to 30 days."}), 400
 
     rows = (DispenseSale.query
             .filter_by(tenant_id=tenant_id, sale_date=target_date)
@@ -5756,6 +5815,7 @@ def admin_dispense_sales_get():
         "ok": True,
         "date": target_date.strftime("%d %b %Y"),
         "date_iso": target_date.isoformat(),
+        "is_today": target_date == today,
         "total_sales_kes": total_sales_kes,
         "total_sold_l": total_sold_l,
         "rates": rates,
