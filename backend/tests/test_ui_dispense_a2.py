@@ -58,3 +58,21 @@ def test_dispense_has_close_past_day_mode():
     html = _read('dispense.html')
     assert 'Close Past Day' in html
 
+# ══════════════════════════════════════════════════════════════════════
+# Upgrade Step 1 — modern professional reminder banner
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_has_modern_reminder_banner():
+    html = _read('dispense.html')
+    assert 'id="dFormWarn"' in html                       # ID preserved
+    assert 'class="dispense-warn hidden"' in html
+    assert 'id="dFormWarnText"' in html
+    assert 'dispense-warn-close' in html                  # dismiss button
+    assert '.dispense-warn {' in html                     # CSS block
+
+
+def test_dispense_reminder_copy_reworded():
+    html = _read('dispense.html')
+    assert 'Remember to enter the closing reading' in html
+    assert 'Close the day to lock activity' not in html
+

@@ -79,6 +79,53 @@
         background: var(--blue-900);
       }
     }
+    /* Upgrade Step 1: modern professional reminder banner */
+    .dispense-warn {
+      display: flex;
+      align-items: flex-start;
+      gap: .7rem;
+      padding: .85rem 1rem;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #fff8e1 0%, #fff3e0 100%);
+      border: 1px solid #ffcc80;
+      border-left: 4px solid #f57c00;
+      color: #6d4c00;
+      font-size: .88rem;
+      line-height: 1.45;
+      box-shadow: 0 1px 3px rgba(245,124,0,.08);
+      margin-bottom: .75rem;
+    }
+    .dispense-warn-icon {
+      font-size: 1.1rem;
+      line-height: 1.25;
+      flex-shrink: 0;
+    }
+    .dispense-warn-text {
+      flex: 1;
+      min-width: 0;
+    }
+    .dispense-warn-text a {
+      color: #c62828;
+      font-weight: 600;
+      text-decoration: underline;
+    }
+    .dispense-warn-close {
+      background: transparent;
+      border: none;
+      color: #a16900;
+      cursor: pointer;
+      font-size: 1.3rem;
+      line-height: 1;
+      padding: 0 .3rem;
+      margin-left: .25rem;
+      border-radius: 4px;
+      transition: background .15s, color .15s;
+      flex-shrink: 0;
+    }
+    .dispense-warn-close:hover {
+      background: rgba(245,124,0,.18);
+      color: #6d4c00;
+    }
   </style>
 </head>
 <body class="settings-body">
@@ -218,7 +265,11 @@
 
     <!-- Reading entry form -->
     <div id="dFormCard" class="settings-card" style="display:none;">
-      <div id="dFormWarn" class="alert hidden" style="background:#fff3e0;border-left:4px solid #f57c00;margin-bottom:.75rem;color:#6d4c00;font-size:.88rem;line-height:1.4;"></div>
+      <div id="dFormWarn" class="dispense-warn hidden">
+        <span class="dispense-warn-icon" aria-hidden="true">⏰</span>
+        <span class="dispense-warn-text" id="dFormWarnText"></span>
+        <button type="button" class="dispense-warn-close" aria-label="Dismiss reminder" onclick="document.getElementById('dFormWarn').classList.add('hidden');this.parentElement.style.display='none';">&times;</button>
+      </div>
       <h2 id="dFormTitle">Record Today's Reading</h2>
       <form id="dReadingForm" autocomplete="off">
         <div class="form-row" id="dOpenRow" style="display:none;">
@@ -557,29 +608,32 @@
 
           // Phase A2: warning banner + no-activity button
           var warnEl = document.getElementById('dFormWarn');
+          var warnTextEl = document.getElementById('dFormWarnText');
           var noActBtn = document.getElementById('dNoActivityBtn');
-          if (warnEl) {
+          if (warnEl && warnTextEl) {
             var wMsg = '';
             var wIsHtml = false;
             if (d.yesterday_open) {
               // Q2: must close yesterday before recording today
-              wMsg = '\u26a0\ufe0f Yesterday\u2019s reading is still open. Close yesterday before recording today. '
-                   + '<a href="/dispense?date=' + d.yesterday_iso + '" '
-                   + 'style="color:#c62828;font-weight:600;text-decoration:underline;">Close yesterday \u2192</a>';
+              wMsg = 'Yesterday\u2019s reading is still open. Close yesterday before recording today. '
+                   + '<a href="/dispense?date=' + d.yesterday_iso + '">Close yesterday &rarr;</a>';
               wIsHtml = true;
             } else if (d.is_first_day) {
               wMsg = 'First day of dispensing \u2014 record the opening reading to begin.';
             } else if (d.prev_day_missing) {
               wMsg = "Previous day's closing reading is missing \u2014 enter the opening reading manually.";
             } else if (!d.has_reading && ((d.sales_kes || 0) > 0 || (d.paid_kes || 0) > 0)) {
-              wMsg = 'Sales or payments exist for today but no closing reading is recorded. Close the day to lock activity.';
+              // Step 1: gentle reminder (not a warning) — eventful day, no close yet
+              wMsg = 'You have sales or payments recorded today. Remember to enter the closing reading at the end of the day to lock today\u2019s activity.';
             }
             if (wMsg) {
-              if (wIsHtml) warnEl.innerHTML = wMsg;
-              else warnEl.textContent = wMsg;
+              if (wIsHtml) warnTextEl.innerHTML = wMsg;
+              else warnTextEl.textContent = wMsg;
               warnEl.classList.remove('hidden');
+              warnEl.style.display = 'flex';
             } else {
               warnEl.classList.add('hidden');
+              warnEl.style.display = 'none';
             }
           }
           // Q2: lock the reading form when yesterday is open
