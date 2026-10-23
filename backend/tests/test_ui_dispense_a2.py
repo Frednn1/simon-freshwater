@@ -189,3 +189,18 @@ def test_header_explicit_full_width_rule():
         assert 'html {' in html and 'overflow-x: hidden;' in html
         assert 'background: var(--blue-900);' in html, f'{fn}: html bg missing'
 
+# ══════════════════════════════════════════════════════════════════════
+# Solid deep-blue background — no secondary blue-700 gradient
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_solid_blue900_background():
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        # Body override present
+        assert 'body.settings-body {' in html, f'{fn}: body override missing'
+        assert 'body.settings-body .site-header {' in html, f'{fn}: header override missing'
+        # Both use blue-900 (not blue-700 gradient)
+        # Confirm no blue-700 gradient remains in inline styles
+        assert 'linear-gradient(135deg, var(--blue-900), var(--blue-700))' not in html, \
+            f'{fn}: blue-700 gradient still in inline styles'
+

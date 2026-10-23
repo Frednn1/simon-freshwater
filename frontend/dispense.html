@@ -310,6 +310,17 @@
       overflow-x: hidden;
       background: var(--blue-900);
     }
+
+    /* Remove secondary blue-700 gradient — solid deep blue everywhere.
+       Specificity: body.settings-body (0,0,1,1) > .settings-body (0,0,1,0);
+       body.settings-body .site-header (0,0,2,1) > .site-header (0,0,1,0)
+       AND > Step 7b's .settings-body .site-header (0,0,2,0). */
+    body.settings-body {
+      background: var(--blue-900);
+    }
+    body.settings-body .site-header {
+      background: var(--blue-900);
+    }
   </style>
 </head>
 <body class="settings-body">
