@@ -66,6 +66,7 @@ from bulk_sms import send_bulk_sms, BULK_SMS_MAX_BATCH
 from mpesa import (
     get_mpesa_config, register_c2b_urls, simulate_c2b_payment,
     credentials_for_tenant, register_c2b_urls_for,
+    credentials_for_tenant_dispensing, get_mpesa_config_dispensing,
 )
 import archive
 import backup
@@ -214,6 +215,7 @@ _EMPLOYEE_GATED_PATHS = (
     ("bulk_sms",  "exact",  "/admin/bulk_sms"),
     ("bulk_sms",  "prefix", "/api/admin/bulk_sms/"),
     ("mpesa",     "exact",  "/admin/mpesa"),
+    ("mpesa",     "exact",  "/admin/mpesa/dispensing"),
     ("mpesa",     "prefix", "/api/admin/mpesa/"),
     # Step 1 upgrade: billing profile perms
     ("new_customer", "exact", "/api/admin/consumer"),
@@ -1918,6 +1920,12 @@ def admin_team_page():
 @app.route("/admin/mpesa")
 def admin_mpesa_page():
     return _serve_frontend("admin_mpesa.html")
+
+
+@app.route("/admin/mpesa/dispensing")
+def admin_mpesa_dispensing_page():
+    return _serve_frontend("admin_mpesa_dispensing.html")
+
 
 @app.route("/admin/reports")
 def admin_reports_page():
@@ -7881,6 +7889,67 @@ def admin_mpesa_register():
         "confirmation_url": conf,
         "validation_url": val,
         "shortcode": creds.get("shortcode"),
+        "env": creds.get("env"),
+        "response": result.get("response"),
+    })
+
+
+@app.route("/api/admin/mpesa/dispensing/config", methods=["GET"])
+def admin_mpesa_dispensing_config():
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("mpesa_disp_config", 30, 60):
+        return _too_many(60)
+    t = getattr(g, "tenant", None)
+    return jsonify(get_mpesa_config_dispensing(t))
+
+
+@app.route("/api/admin/mpesa/dispensing/register", methods=["POST"])
+def admin_mpesa_dispensing_register():
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("mpesa_disp_register", 5, 60):
+        return _too_many(60)
+
+    t = getattr(g, "tenant", None)
+    if t is None:
+        return jsonify({"error": "Tenant not resolved."}), 400
+    if not t.dispensing_paybill:
+        return jsonify({
+            "error": "Dispensing paybill is not set for this tenant. "
+                     "Ask the dev operator to set it on the tenant record."
+        }), 400
+
+    creds = credentials_for_tenant_dispensing(t.slug)
+    if not creds.get("configured"):
+        slug_upper = t.slug.upper().replace("-", "_")
+        return jsonify({
+            "error": f"Dispensing M-Pesa credentials not configured. "
+                     f"Set MPESA_{slug_upper}_DISPENSING_CONSUMER_KEY and "
+                     f"MPESA_{slug_upper}_DISPENSING_CONSUMER_SECRET env vars."
+        }), 400
+
+    creds["shortcode"] = t.dispensing_paybill
+
+    base = request.host_url.rstrip("/")
+    conf = f"{base}/api/pay/c2b/confirmation"
+    val  = f"{base}/api/pay/c2b/validation"
+
+    result = register_c2b_urls_for(creds, conf, val)
+    if not result.get("ok"):
+        _audit("register_mpesa_dispensing",
+               detail=f"FAILED (tenant={t.slug}): {result.get('error')}")
+        return jsonify({"ok": False, "error": result.get("error")}), 502
+
+    _audit("register_mpesa_dispensing",
+           target_type="tenant", target_id=t.id,
+           detail=f"tenant={t.slug}, shortcode={t.dispensing_paybill}, "
+                  f"env={creds.get('env')}")
+    return jsonify({
+        "ok": True,
+        "confirmation_url": conf,
+        "validation_url": val,
+        "shortcode": t.dispensing_paybill,
         "env": creds.get("env"),
         "response": result.get("response"),
     })

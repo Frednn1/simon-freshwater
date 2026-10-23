@@ -252,6 +252,48 @@ def get_access_token_for(creds: dict, force: bool = False) -> dict:
             return {"ok": False, "error": str(e)}
 
 
+def credentials_for_tenant_dispensing(slug: str = None) -> dict:
+    """Return the DISPENSING M-Pesa credentials for a tenant.
+
+    Reads env vars MPESA_<SLUG_UPPER>_DISPENSING_CONSUMER_KEY / _SECRET.
+    Deliberately does NOT fall back to billing credentials — the two
+    accounts are separate by design. Returns {'configured': False} if
+    dispensing credentials are not configured.
+    """
+    if not slug:
+        return {"configured": False}
+    p = _slug_prefix(slug)
+    key = os.environ.get(f"MPESA_{p}_DISPENSING_CONSUMER_KEY", "").strip()
+    sec = os.environ.get(f"MPESA_{p}_DISPENSING_CONSUMER_SECRET", "").strip()
+    if not (key and sec):
+        return {"configured": False}
+    env_ = os.environ.get(f"MPESA_{p}_ENV", "").strip().lower()
+    if env_ not in ("sandbox", "production"):
+        env_ = MPESA_ENV
+    base = ("https://api.safaricom.co.ke" if env_ == "production"
+            else "https://sandbox.safaricom.co.ke")
+    return {
+        "configured": True,
+        "env": env_,
+        "consumer_key": key,
+        "consumer_secret": sec,
+        "base_url": base,
+        # shortcode is resolved by caller from tenant.dispensing_paybill
+    }
+
+
+def get_mpesa_config_dispensing(tenant) -> dict:
+    """Non-secret dispensing M-Pesa config for admin display."""
+    if tenant is None:
+        return {"configured": False, "paybill": None, "env": None}
+    creds = credentials_for_tenant_dispensing(tenant.slug)
+    return {
+        "configured": creds.get("configured", False),
+        "paybill": tenant.dispensing_paybill,
+        "env": creds.get("env"),
+    }
+
+
 def register_c2b_urls_for(creds: dict,
                           confirmation_url: str,
                           validation_url: str) -> dict:

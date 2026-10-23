@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dispensing M-Pesa &mdash; {{brand_name}}</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="{{brand_favicon_url}}?v={{tenant_slug}}">
+  <link rel="icon" type="image/png" sizes="192x192" href="{{brand_favicon_url}}?size=192&v={{tenant_slug}}">
+  <link rel="shortcut icon" href="{{brand_favicon_url}}?v={{tenant_slug}}">
+  <link rel="apple-touch-icon" href="{{brand_favicon_url}}?size=192&v={{tenant_slug}}">
+  <link rel="manifest" href="/manifest.webmanifest?__tenant={{tenant_slug}}">
+  <meta name="theme-color" content="#0a2540">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="settings-body" data-tenant-slug="{{tenant_slug}}">
+  <main class="settings-wrap" style="max-width: 780px;">
+
+    <a href="/dispense" class="brand-link" aria-label="Back to dispensing">
+      <div class="settings-header">
+        <img class="brand-logo" src="{{brand_logo_url}}" alt="{{brand_name}}">
+        <div class="settings-brand-text">
+          <h1>{{brand_name}}</h1>
+          <p>M-Pesa &mdash; Dispensing Paybill</p>
+        </div>
+      </div>
+    </a>
+
+    <!-- Config -->
+    <div class="settings-card">
+      <h2>&#x2699;&#xFE0F; Dispensing M-Pesa Configuration</h2>
+      <div class="current-value" id="dispConfig">Loading&hellip;</div>
+      <p class="form-hint-small" style="margin-top:.5rem;">
+        Configured entirely by env vars on Render:
+        <code>MPESA_&lt;SLUG&gt;_DISPENSING_CONSUMER_KEY</code> and
+        <code>MPESA_&lt;SLUG&gt;_DISPENSING_CONSUMER_SECRET</code>.
+        The dispensing paybill is set on the tenant record (dev portal).
+      </p>
+    </div>
+
+    <!-- Register URLs -->
+    <div class="settings-card">
+      <h2>&#x1F517; Register Dispensing Callback URLs</h2>
+      <p class="form-hint-small" style="margin-bottom:.75rem;">
+        Tells Safaricom where to POST dispensing payment notifications.
+        Run this once per environment &mdash; safe to run again.
+      </p>
+      <button id="registerDispBtn" class="btn-primary" type="button">Register Dispensing URLs</button>
+      <div id="registerDispMsg" class="alert hidden"></div>
+      <div id="registerDispResult" class="current-value hidden" style="margin-top:.75rem;"></div>
+    </div>
+
+    <div class="settings-back">
+      <a href="/dispense">&#x2190; Back to Dispensing</a>
+    </div>
+  </main>
+
+  <script>
+    function show(el, kind, text) {
+      el.className = 'alert alert-' + kind;
+      el.textContent = text;
+      el.classList.remove('hidden');
+    }
+    function hide(el) { el.classList.add('hidden'); }
+    function esc(s) {
+      const d = document.createElement('div');
+      d.textContent = s == null ? '' : String(s);
+      return d.innerHTML;
+    }
+
+    async function loadConfig() {
+      try {
+        const r = await fetch('/api/admin/mpesa/dispensing/config', { credentials: 'same-origin' });
+        if (r.status === 401) {
+          location.href = (window.adminLoginUrl && window.adminLoginUrl('/admin/mpesa/dispensing'))
+                        || '/admin/login?next=/admin/mpesa/dispensing';
+          return;
+        }
+        const d = await r.json();
+        document.getElementById('dispConfig').innerHTML =
+          'Paybill: <strong>' + esc(d.paybill || '\u2014') + '</strong> &middot; ' +
+          'Env: <strong>' + esc(d.env || '\u2014') + '</strong> &middot; ' +
+          'Configured: <strong>' + (d.configured ? '\u2705 Yes' : '\u274c No') + '</strong>';
+      } catch {
+        document.getElementById('dispConfig').textContent = 'Failed to load config.';
+      }
+    }
+
+    document.getElementById('registerDispBtn').addEventListener('click', async () => {
+      const btn = document.getElementById('registerDispBtn');
+      const msg = document.getElementById('registerDispMsg');
+      const res = document.getElementById('registerDispResult');
+      btn.disabled = true; btn.textContent = 'Registering\u2026';
+      hide(msg); res.classList.add('hidden');
+      try {
+        const r = await fetch('/api/admin/mpesa/dispensing/register', {
+          method: 'POST', credentials: 'same-origin',
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) {
+          show(msg, 'success', '\u2705 Dispensing URLs registered with Safaricom.');
+          res.innerHTML =
+            'Confirmation: <strong>' + esc(d.confirmation_url) + '</strong><br>' +
+            'Validation: <strong>' + esc(d.validation_url) + '</strong><br>' +
+            'Shortcode: <strong>' + esc(d.shortcode) + '</strong> &middot; ' +
+            'Env: <strong>' + esc(d.env) + '</strong>';
+          res.classList.remove('hidden');
+        } else {
+          show(msg, 'error', '\u274c ' + (d.error || 'Registration failed.'));
+        }
+      } catch { show(msg, 'error', '\u274c Network error.'); }
+      finally { btn.disabled = false; btn.textContent = 'Register Dispensing URLs'; }
+    });
+
+    loadConfig();
+  </script>
+  <script src="/tenant-watchdog.js"></script>
+</body>
+</html>

@@ -229,3 +229,20 @@ def test_brand_left_aligned_mobile():
         assert '.settings-body .site-header .brand {' in html
         assert 'padding: 0 0 0 60px;' in html, f'{fn}: left padding missing'
 
+# ══════════════════════════════════════════════════════════════════════
+# Dispensing M-Pesa tab
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_has_mpesa_tab():
+    html = _read('dispense.html')
+    assert 'id="tabMpesaDisp"' in html
+    assert 'href="/admin/mpesa/dispensing"' in html
+    assert 'id="drawerMpesaDisp"' in html
+
+
+def test_dispense_analytics_has_mpesa_tab():
+    html = _read('dispense_analytics.html')
+    assert 'id="tabMpesaDisp"' in html
+    assert 'href="/admin/mpesa/dispensing"' in html
+    assert 'id="drawerMpesaDisp"' in html
+
