@@ -180,5 +180,7 @@ def test_header_explicit_full_width_rule():
         html = _read(fn)
         assert 'width: calc(100% + 2rem);' in html, f'{fn}: width calc missing'
         assert 'max-width: calc(100% + 2rem);' in html, f'{fn}: max-width calc missing'
+        assert 'min-width: calc(100% + 2rem);' in html, f'{fn}: min-width calc missing'
+        assert 'flex-shrink: 0;' in html, f'{fn}: flex-shrink missing'
         assert 'box-sizing: border-box;' in html, f'{fn}: box-sizing missing'
 

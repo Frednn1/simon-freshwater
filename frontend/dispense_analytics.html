@@ -72,6 +72,11 @@
          includes padding — content stays at 2.2rem from viewport edge. */
       width: calc(100% + 2rem);
       max-width: calc(100% + 2rem);
+      /* Force minimum: browsers sometimes shrink flex items with
+         negative margins even when width math says no shrink is needed. */
+      min-width: calc(100% + 2rem);
+      /* Never allow flexbox to shrink this item. */
+      flex-shrink: 0;
       box-sizing: border-box;
     }
   </style>
