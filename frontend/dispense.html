@@ -560,7 +560,14 @@
           var noActBtn = document.getElementById('dNoActivityBtn');
           if (warnEl) {
             var wMsg = '';
-            if (d.is_first_day) {
+            var wIsHtml = false;
+            if (d.yesterday_open) {
+              // Q2: must close yesterday before recording today
+              wMsg = '\u26a0\ufe0f Yesterday\u2019s reading is still open. Close yesterday before recording today. '
+                   + '<a href="/dispense?date=' + d.yesterday_iso + '" '
+                   + 'style="color:#c62828;font-weight:600;text-decoration:underline;">Close yesterday \u2192</a>';
+              wIsHtml = true;
+            } else if (d.is_first_day) {
               wMsg = 'First day of dispensing \u2014 record the opening reading to begin.';
             } else if (d.prev_day_missing) {
               wMsg = "Previous day's closing reading is missing \u2014 enter the opening reading manually.";
@@ -568,11 +575,25 @@
               wMsg = 'Sales or payments exist for today but no closing reading is recorded. Close the day to lock activity.';
             }
             if (wMsg) {
-              warnEl.textContent = wMsg;
+              if (wIsHtml) warnEl.innerHTML = wMsg;
+              else warnEl.textContent = wMsg;
               warnEl.classList.remove('hidden');
             } else {
               warnEl.classList.add('hidden');
             }
+          }
+          // Q2: lock the reading form when yesterday is open
+          if (d.yesterday_open && d.is_today) {
+            title.textContent = 'Reading Locked';
+            openRow.style.display = 'none';
+            closeInput.value = '';
+            closeInput.required = false;
+            closeInput.disabled = true;
+            reasonRow.style.display = 'none';
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Close Yesterday First';
+            if (noActBtn) noActBtn.style.display = 'none';
+            return;
           }
           if (noActBtn) {
             var showNoAct = (!d.has_reading && !d.is_first_day && !d.prev_day_missing
@@ -805,14 +826,22 @@
             const amt = Number(p.amount_kes || 0).toLocaleString(undefined,
               {minimumFractionDigits: 2, maximumFractionDigits: 2});
             const strike = p.voided ? 'text-decoration:line-through;opacity:.55;' : '';
+            const _sd = p.sale_date_iso || '';
+            const _allocNote = (p.method === 'mpesa_c2b' && _sd)
+              ? '<div style="font-size:.7rem;color:#666;margin-top:.2rem;">Allocated: ' + _sd + '</div>'
+              : '';
+            const _canRealloc = p.can_reallocate;
             const actionBtn = p.voided
               ? '<span class="status-pill status-no-reading">Voided</span>'
-              : `<button class="dev-btn dev-btn--danger" type="button" onclick="voidPay(${p.id})">Void</button>`;
+              : (_canRealloc
+                  ? `<button class="dev-btn dev-btn--ghost" type="button" style="margin-right:.35rem;" onclick="reallocatePay(${p.id}, '${_sd}')">Allocate</button>`
+                  : '')
+                + `<button class="dev-btn dev-btn--danger" type="button" onclick="voidPay(${p.id})">Void</button>`;
             return '<tr style="' + strike + '">'
               + '<td>' + fmtTime(p.created_at) + '</td>'
               + '<td class="num">' + amt + '</td>'
               + '<td>' + (p.method || '') + '</td>'
-              + '<td>' + (p.reference || '\u2014') + '</td>'
+              + '<td>' + (p.reference || '\u2014') + _allocNote + '</td>'
               + '<td>' + (p.recorded_by || '\u2014') + '</td>'
               + '<td>' + actionBtn + '</td>'
               + '</tr>';
@@ -836,6 +865,29 @@
             location.reload();
           } else {
             alert('\u274c ' + (d.error || 'Void failed.'));
+          }
+        } catch (_) {
+          alert('\u274c Network error.');
+        }
+      };
+
+      window.reallocatePay = async (id, currentDate) => {
+        const target = prompt('Allocate this payment to which day? (YYYY-MM-DD)',
+                              currentDate || '');
+        if (!target || !target.trim()) return;
+        try {
+          const r = await fetch(`/api/admin/dispense/payments/${id}/reallocate`, {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({sale_date: target.trim()})
+          });
+          const d = await r.json();
+          if (r.ok && d.ok) {
+            await loadPayments();
+            await new Promise(r => setTimeout(r, 800));
+            location.reload();
+          } else {
+            alert('\u274c ' + (d.error || 'Reallocate failed.'));
           }
         } catch (_) {
           alert('\u274c Network error.');

@@ -5264,6 +5264,12 @@ def admin_dispense_today():
     prev_day_missing = (not ystats["has_reading"]
                         and any_before_yesterday is not None)
 
+    # Q2: yesterday has an open (unclosed) reading — blocks today's close
+    _yesterday_row = (DispenseMeterReading.query
+                      .filter_by(tenant_id=tenant_id, reading_date=yesterday)
+                      .first())
+    yesterday_open = bool(_yesterday_row and not _yesterday_row.is_closed)
+
     manual_opening_required = is_first_day or prev_day_missing
 
     suggested_opening = None
@@ -5301,6 +5307,8 @@ def admin_dispense_today():
         "is_closed": tstats.get("is_closed", False),
         "is_first_day": is_first_day,
         "prev_day_missing": prev_day_missing,
+        "yesterday_open": yesterday_open,
+        "yesterday_iso": yesterday.isoformat(),
         "manual_opening_required": manual_opening_required,
         "suggested_opening_m3": suggested_opening,
     })
@@ -5608,6 +5616,7 @@ def admin_dispense_payments_get():
             "payment_date_iso": r.payment_date.isoformat() if r.payment_date else None,
             "sale_date_iso": r.sale_date.isoformat() if r.sale_date else None,
             "direction": _direction(r),
+            "can_reallocate": not r.voided,
         } for r in rows],
     })
 
@@ -5759,6 +5768,76 @@ def admin_dispense_payment_void(payment_id):
         "voided_by": row.voided_by,
         "today_paid_kes": st["paid_kes"],
         "today_outstanding_kes": st["outstanding_kes"],
+    })
+
+
+@app.route("/api/admin/dispense/payments/<int:payment_id>/reallocate", methods=["POST"])
+def admin_dispense_payment_reallocate(payment_id):
+    """Reallocate a payment to a different day's sales.
+
+    Use case: M-Pesa auto-recorded payments default to today's sales.
+    If a customer actually paid for a past day's credit, the admin
+    reallocates the payment here — the target day's paid_kes clears,
+    and today's paid_kes drops.
+    """
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("dispense_payment_reallocate", 30, 60):
+        return _too_many(60)
+    tenant_id, err = _dispense_tenant_or_error()
+    if err: return err
+
+    data = request.get_json(silent=True) or {}
+    target_raw = (data.get("sale_date") or "").strip()
+    if not target_raw:
+        return jsonify({"error": "sale_date is required."}), 400
+    try:
+        target_date = datetime.strptime(target_raw, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid sale_date (expected YYYY-MM-DD)."}), 400
+
+    today = _nairobi_today()
+    if target_date > today:
+        return jsonify({"error": "Cannot allocate to a future date."}), 400
+    if target_date < today - timedelta(days=30):
+        return jsonify({"error": "Allocation limited to last 30 days."}), 400
+
+    row = DispensePayment.query.filter_by(
+        id=payment_id, tenant_id=tenant_id).first()
+    if not row:
+        return jsonify({"error": "Payment not found."}), 404
+    if row.voided:
+        return jsonify({"error": "Voided payments cannot be reallocated."}), 400
+
+    _has_sales = (DispenseSale.query
+                  .filter(DispenseSale.tenant_id == tenant_id,
+                          DispenseSale.sale_date == target_date,
+                          DispenseSale.voided == False)  # noqa: E712
+                  .count())
+    if _has_sales == 0:
+        return jsonify({
+            "error": f"No sales recorded on {target_date.isoformat()}. "
+                     f"Pick a day with sales."
+        }), 400
+
+    _old = row.sale_date
+    row.sale_date = target_date
+    db.session.commit()
+
+    _audit("dispense_payment_reallocated",
+           target_type="tenant", target_id=tenant_id,
+           detail=(f"payment_id={row.id} "
+                   f"old_sale_date={_old.isoformat() if _old else 'null'} "
+                   f"new_sale_date={target_date.isoformat()}"))
+
+    stats = _dispense_window_stats(tenant_id, [target_date])
+    st = stats[target_date.isoformat()]
+
+    return jsonify({
+        "ok": True,
+        "payment_id": row.id,
+        "new_sale_date": target_date.isoformat(),
+        "target_outstanding_kes": st["outstanding_kes"],
     })
 
 
@@ -7671,6 +7750,10 @@ def mpesa_c2b_confirmation():
             _pay = DispensePayment(
                 tenant_id=_dispensing_tenant.id,
                 payment_date=_nairobi_today(),
+                # Q1 default: auto-recorded M-Pesa allocates to TODAY's sales.
+                # Admin can reallocate to a past day via /payments/<id>/reallocate
+                # if this was a credit-offset payment for an earlier day.
+                sale_date=_nairobi_today(),
                 amount_kes=amount,
                 method="mpesa_c2b",
                 reference=trans_id,
