@@ -157,13 +157,10 @@ def test_dispense_tabs_single_row_layout():
 def test_header_full_width_background():
     for fn in ('dispense.html', 'dispense_analytics.html'):
         html = _read(fn)
-        # New design (100vw): margin-left pulls to viewport edge;
-        # margin-right:0 because width:100vw already reaches right edge.
-        assert 'margin-left: -1rem' in html, f'{fn}: margin-left missing'
-        assert 'margin-right: 0;' in html, f'{fn}: margin-right should be 0 (100vw design)'
-        assert 'padding-left: 2.2rem' in html, f'{fn}: padding-left missing'
-        assert 'padding-right: 2.2rem' in html, f'{fn}: padding-right missing'
-        # Selector scoped correctly
+        # New design (position: fixed): header anchored to visual viewport
+        assert 'position: fixed;' in html, f'{fn}: header must be position:fixed'
+        assert 'top: 0;' in html and 'left: 0;' in html and 'right: 0;' in html, \
+            f'{fn}: fixed inset missing'
         assert '.settings-body .site-header {' in html, f'{fn}: selector missing'
 
 
@@ -180,18 +177,19 @@ def test_header_step7b_mobile_fix_preserved():
 def test_header_explicit_full_width_rule():
     for fn in ('dispense.html', 'dispense_analytics.html'):
         html = _read(fn)
-        assert 'width: 100vw;' in html, f'{fn}: width 100vw missing'
-        assert 'min-width: 100vw;' in html, f'{fn}: min-width 100vw missing'
-        assert 'max-width: 100vw;' in html, f'{fn}: max-width 100vw missing'
-        assert 'flex-shrink: 0;' in html, f'{fn}: flex-shrink missing'
-        assert 'box-sizing: border-box;' in html, f'{fn}: box-sizing missing'
-        # html background paints overscroll region (zoom-out visible area)
-        assert 'html {' in html and 'overflow-x: hidden;' in html
+        # New design: fixed positioning anchored to visual viewport
+        assert 'position: fixed;' in html, f'{fn}: header must be position:fixed'
+        assert 'top: 0;' in html and 'left: 0;' in html and 'right: 0;' in html, \
+            f'{fn}: fixed inset missing'
+        assert 'z-index: 100;' in html, f'{fn}: z-index missing'
+        # Body reserves space so fixed header does not overlap content
+        assert 'padding-top: 92px;' in html, f'{fn}: body padding-top missing'
+        # html preserves existing hidden overflow + blue-900 background
+        assert 'html {' in html and 'overflow-x: hidden;' in html, \
+            f'{fn}: html overflow-x hidden missing'
         assert 'background: var(--blue-900);' in html, f'{fn}: html bg missing'
 
-# ══════════════════════════════════════════════════════════════════════
-# Solid deep-blue background — no secondary blue-700 gradient
-# ══════════════════════════════════════════════════════════════════════
+
 
 def test_dispense_solid_blue900_background():
     for fn in ('dispense.html', 'dispense_analytics.html'):
