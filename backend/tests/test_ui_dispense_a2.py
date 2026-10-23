@@ -150,3 +150,24 @@ def test_dispense_tabs_single_row_layout():
     assert 'max-width: 640px' in html
     assert 'max-width: 420px' in html
 
+# ══════════════════════════════════════════════════════════════════════
+# Header full-width background fix
+# ══════════════════════════════════════════════════════════════════════
+
+def test_header_full_width_background():
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        assert 'margin-left: -1rem' in html, f'{fn}: margin-left missing'
+        assert 'margin-right: -1rem' in html, f'{fn}: margin-right missing'
+        assert 'padding-left: 2.2rem' in html, f'{fn}: padding-left missing'
+        assert 'padding-right: 2.2rem' in html, f'{fn}: padding-right missing'
+        # Selector scoped correctly
+        assert '.settings-body .site-header {' in html, f'{fn}: selector missing'
+
+
+def test_header_step7b_mobile_fix_preserved():
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        assert 'Step 7b mobile fix' in html, f'{fn}: Step 7b comment missing'
+        assert 'background: var(--blue-900);' in html, f'{fn}: Step 7b override missing'
+

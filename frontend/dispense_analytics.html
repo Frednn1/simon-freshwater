@@ -56,6 +56,17 @@
         background: var(--blue-900);
       }
     }
+
+    /* Upgrade: header deep blue background spans full viewport width.
+       Negative margin cancels .settings-body's 1rem horizontal padding;
+       padding compensated by +1rem to keep content at same visual position.
+       Applies both mobile + desktop (outside any media query). */
+    .settings-body .site-header {
+      margin-left: -1rem;
+      margin-right: -1rem;
+      padding-left: 2.2rem;
+      padding-right: 2.2rem;
+    }
   </style>
 </head>
 <body class="settings-body">
