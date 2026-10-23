@@ -457,5 +457,95 @@
     })();
   })();
   </script>
+
+  <!-- TEMP DIAGNOSTIC OVERLAY — REMOVE AFTER USE -->
+  <script>
+  (function(){
+    var btn = document.createElement('button');
+    btn.textContent = '🔍';
+    btn.setAttribute('aria-label', 'Show widest elements');
+    btn.style.cssText = 'position:fixed;bottom:80px;right:12px;z-index:99999;width:44px;height:44px;border-radius:50%;background:#c62828;color:#fff;border:2px solid #fff;font-size:20px;box-shadow:0 4px 12px rgba(0,0,0,.3);cursor:pointer;';
+
+    var overlay = null;
+
+    function findWideElements() {
+      var vw = window.innerWidth;
+      var docW = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth);
+      var all = document.querySelectorAll('body *');
+      var results = [];
+      for (var i = 0; i < all.length; i++) {
+        var el = all[i];
+        // Skip our own diagnostic UI
+        if (el === btn || (overlay && overlay.contains(el))) continue;
+        var r = el.getBoundingClientRect();
+        if (r.width === 0) continue;
+        // Flag if element's right edge exceeds viewport OR element is wider than viewport
+        if (r.right > vw + 1 || r.width > vw + 1) {
+          var cls = (typeof el.className === 'string' ? el.className : '') || '';
+          results.push({
+            tag: el.tagName.toLowerCase(),
+            id: el.id || '',
+            cls: cls.split(' ').slice(0, 3).join(' '),
+            width: Math.round(r.width),
+            right: Math.round(r.right),
+            scrollW: el.scrollWidth,
+            overflowX: getComputedStyle(el).overflowX
+          });
+        }
+      }
+      results.sort(function(a, b) {
+        return (b.right - a.right) || (b.width - a.width);
+      });
+      return { vw: vw, docW: docW, results: results.slice(0, 10), total: results.length };
+    }
+
+    function showOverlay() {
+      if (overlay) { overlay.remove(); overlay = null; return; }
+      var info = findWideElements();
+      var lines = [];
+      lines.push('Viewport: ' + info.vw + 'px');
+      lines.push('Page scrollWidth: ' + info.docW + 'px');
+      lines.push('Overflow: ' + (info.docW > info.vw ? 'YES (by ' + (info.docW - info.vw) + 'px)' : 'no'));
+      lines.push('Wide elements found: ' + info.total);
+      lines.push('');
+      if (info.results.length === 0) {
+        lines.push('(none — page fits viewport)');
+      } else {
+        for (var i = 0; i < info.results.length; i++) {
+          var r = info.results[i];
+          lines.push(
+            (i+1) + '. <' + r.tag + '>' +
+            (r.id ? '#' + r.id : '') +
+            (r.cls ? '.' + r.cls.replace(/ /g, '.') : '') +
+            '\n   width=' + r.width + ' right=' + r.right +
+            ' scrollW=' + r.scrollW +
+            ' overflowX=' + r.overflowX
+          );
+        }
+      }
+      overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:8px;z-index:100000;background:rgba(0,0,0,.92);color:#0f0;font-family:monospace;font-size:12px;padding:12px;overflow:auto;border-radius:10px;border:2px solid #0f0;line-height:1.5;white-space:pre-wrap;word-break:break-all;';
+      var content = document.createElement('div');
+      content.textContent = lines.join('\n');
+      var closeBar = document.createElement('div');
+      closeBar.style.cssText = 'position:sticky;top:-12px;margin:-12px -12px 8px -12px;padding:8px 12px;background:#000;border-bottom:1px solid #0f0;display:flex;justify-content:space-between;align-items:center;';
+      var title = document.createElement('span');
+      title.textContent = 'DIAGNOSTIC — tap X to close';
+      title.style.color = '#fff';
+      var xBtn = document.createElement('button');
+      xBtn.textContent = 'X';
+      xBtn.style.cssText = 'background:#0f0;color:#000;border:none;padding:4px 12px;font-weight:bold;border-radius:4px;font-size:14px;';
+      xBtn.onclick = function() { overlay.remove(); overlay = null; };
+      closeBar.appendChild(title);
+      closeBar.appendChild(xBtn);
+      overlay.appendChild(closeBar);
+      overlay.appendChild(content);
+      document.body.appendChild(overlay);
+    }
+
+    btn.onclick = showOverlay;
+    document.body.appendChild(btn);
+  })();
+  </script>
 </body>
 </html>
