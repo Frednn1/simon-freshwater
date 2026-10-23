@@ -76,9 +76,14 @@
           return;
         }
         const d = await r.json();
+        var _envLabel = (d.env || '\u2014');
+        if (d.env_source) {
+          var _srcBadge = { explicit: 'explicit', tenant: 'tenant', global: 'global fallback' }[d.env_source] || d.env_source;
+          _envLabel += ' (' + _srcBadge + ')';
+        }
         document.getElementById('dispConfig').innerHTML =
           'Paybill: <strong>' + esc(d.paybill || '\u2014') + '</strong> &middot; ' +
-          'Env: <strong>' + esc(d.env || '\u2014') + '</strong> &middot; ' +
+          'Env: <strong>' + esc(_envLabel) + '</strong> &middot; ' +
           'Configured: <strong>' + (d.configured ? '\u2705 Yes' : '\u274c No') + '</strong>';
       } catch {
         document.getElementById('dispConfig').textContent = 'Failed to load config.';

@@ -267,14 +267,29 @@ def credentials_for_tenant_dispensing(slug: str = None) -> dict:
     sec = os.environ.get(f"MPESA_{p}_DISPENSING_CONSUMER_SECRET", "").strip()
     if not (key and sec):
         return {"configured": False}
-    env_ = os.environ.get(f"MPESA_{p}_ENV", "").strip().lower()
-    if env_ not in ("sandbox", "production"):
-        env_ = MPESA_ENV
+    # Priority chain for env resolution:
+    #   1. MPESA_{SLUG}_DISPENSING_ENV  -> explicit dispensing env (recommended)
+    #   2. MPESA_{SLUG}_ENV             -> tenant-level env (shared with billing)
+    #   3. MPESA_ENV                    -> global env
+    #   4. "sandbox"                    -> hardcoded default (never reached in practice)
+    env_explicit = os.environ.get(f"MPESA_{p}_DISPENSING_ENV", "").strip().lower()
+    if env_explicit in ("sandbox", "production"):
+        env_ = env_explicit
+        env_source = "explicit"
+    else:
+        env_tenant = os.environ.get(f"MPESA_{p}_ENV", "").strip().lower()
+        if env_tenant in ("sandbox", "production"):
+            env_ = env_tenant
+            env_source = "tenant"
+        else:
+            env_ = MPESA_ENV
+            env_source = "global"
     base = ("https://api.safaricom.co.ke" if env_ == "production"
             else "https://sandbox.safaricom.co.ke")
     return {
         "configured": True,
         "env": env_,
+        "env_source": env_source,
         "consumer_key": key,
         "consumer_secret": sec,
         "base_url": base,
@@ -291,6 +306,7 @@ def get_mpesa_config_dispensing(tenant) -> dict:
         "configured": creds.get("configured", False),
         "paybill": tenant.dispensing_paybill,
         "env": creds.get("env"),
+        "env_source": creds.get("env_source"),
     }
 
 

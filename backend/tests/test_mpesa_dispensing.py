@@ -102,3 +102,34 @@ def test_employee_without_mpesa_permission_cannot_access_config(client):
     login(client, uname)
     r = client.get("/api/admin/mpesa/dispensing/config")
     assert r.status_code == 403, f"expected 403, got {r.status_code}"
+
+# ══════════════════════════════════════════════════════════════════════
+# Dispensing env — explicit > tenant > global priority
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispensing_env_explicit_overrides(monkeypatch):
+    """Explicit dispensing env var wins over tenant + global env."""
+    from mpesa import credentials_for_tenant_dispensing
+    monkeypatch.setenv("MPESA_DEMO_TENANT_1_DISPENSING_CONSUMER_KEY", "k")
+    monkeypatch.setenv("MPESA_DEMO_TENANT_1_DISPENSING_CONSUMER_SECRET", "s")
+    monkeypatch.setenv("MPESA_DEMO_TENANT_1_DISPENSING_ENV", "production")
+    monkeypatch.setenv("MPESA_DEMO_TENANT_1_ENV", "sandbox")
+    monkeypatch.setenv("MPESA_ENV", "sandbox")
+    creds = credentials_for_tenant_dispensing("demo-tenant-1")
+    assert creds["configured"] is True
+    assert creds["env"] == "production"
+    assert creds["env_source"] == "explicit"
+
+
+def test_dispensing_env_falls_back_to_tenant(monkeypatch):
+    """When explicit dispensing env absent, tenant env is used."""
+    from mpesa import credentials_for_tenant_dispensing
+    monkeypatch.setenv("MPESA_DEMO_TENANT_2_DISPENSING_CONSUMER_KEY", "k")
+    monkeypatch.setenv("MPESA_DEMO_TENANT_2_DISPENSING_CONSUMER_SECRET", "s")
+    monkeypatch.delenv("MPESA_DEMO_TENANT_2_DISPENSING_ENV", raising=False)
+    monkeypatch.setenv("MPESA_DEMO_TENANT_2_ENV", "production")
+    creds = credentials_for_tenant_dispensing("demo-tenant-2")
+    assert creds["configured"] is True
+    assert creds["env"] == "production"
+    assert creds["env_source"] == "tenant"
+
