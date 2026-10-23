@@ -288,6 +288,13 @@
       margin-right: -1rem;
       padding-left: 2.2rem;
       padding-right: 2.2rem;
+      /* Force explicit width: bypasses flexbox align-items:stretch
+         quirk (mobile Chrome/Safari clamp stretch when negative margins
+         are present). box-sizing:border-box (global) means width
+         includes padding — content stays at 2.2rem from viewport edge. */
+      width: calc(100% + 2rem);
+      max-width: calc(100% + 2rem);
+      box-sizing: border-box;
     }
   </style>
 </head>

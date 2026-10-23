@@ -171,3 +171,14 @@ def test_header_step7b_mobile_fix_preserved():
         assert 'Step 7b mobile fix' in html, f'{fn}: Step 7b comment missing'
         assert 'background: var(--blue-900);' in html, f'{fn}: Step 7b override missing'
 
+# ══════════════════════════════════════════════════════════════════════
+# Header full-width — explicit width (bypass flex stretch quirk)
+# ══════════════════════════════════════════════════════════════════════
+
+def test_header_explicit_full_width_rule():
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        assert 'width: calc(100% + 2rem);' in html, f'{fn}: width calc missing'
+        assert 'max-width: calc(100% + 2rem);' in html, f'{fn}: max-width calc missing'
+        assert 'box-sizing: border-box;' in html, f'{fn}: box-sizing missing'
+
