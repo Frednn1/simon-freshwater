@@ -102,10 +102,13 @@ def test_dispense_old_pay_buttons_removed():
 def test_dispense_has_3tab_nav():
     html = _read('dispense.html')
     assert 'id="dispenseTabs"' in html
-    assert html.count('class="dispense-tab"') == 3
-    assert 'data-tab="sales"' in html
-    assert 'data-tab="payments"' in html
-    assert 'data-tab="history"' in html
+    # Count via data-tab attribute — robust to extra classes added by
+    # later UX patches (e.g. dispense-tab-noicon)
+    assert html.count('data-tab="sales"') == 1
+    assert html.count('data-tab="payments"') == 1
+    assert html.count('data-tab="history"') == 1
+    assert html.count('class="dispense-tab dispense-tab-noicon"') == 2
+    assert html.count('class="dispense-tab"') == 1   # only History (no icon-less variant)
 
 
 def test_dispense_has_3tab_panels():
@@ -121,4 +124,29 @@ def test_dispense_tab_toggle_js():
     assert "getElementById('dispenseTabs')" in html
     assert 'dispense-tab--active' in html
     assert '.dispense-tab-panel[data-panel=' in html
+
+# ══════════════════════════════════════════════════════════════════════
+# Step 3 UX enhancement — icon cleanup + single-row fitting
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_tabs_no_prefix_icons_sales_payment():
+    html = _read('dispense.html')
+    # Sales + Payment have no prefix icon
+    assert "\U0001F4B7</span> Record Sales" not in html
+    assert "\U0001F4B0</span> Record Payment" not in html
+    # Activity History icon preserved
+    assert "\U0001F4CB</span>" in html
+    # Two noicon tabs marked
+    assert html.count('dispense-tab dispense-tab-noicon') == 2
+
+
+def test_dispense_tabs_single_row_layout():
+    html = _read('dispense.html')
+    # Nowrap on container
+    assert 'flex-wrap: nowrap' in html
+    # Equal-width flex on tabs
+    assert 'flex: 1 1 0' in html
+    # Mobile media queries present
+    assert 'max-width: 640px' in html
+    assert 'max-width: 420px' in html
 

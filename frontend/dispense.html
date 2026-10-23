@@ -188,18 +188,22 @@
     /* Upgrade Step 3: 3-tab navigation */
     .dispense-tabs {
       display: flex;
-      flex-wrap: wrap;
-      gap: .5rem;
+      flex-wrap: nowrap;
+      gap: .4rem;
       margin-bottom: .75rem;
       padding: 0;
       background: transparent;
+      width: 100%;
     }
     .dispense-tab {
       display: inline-flex;
       align-items: center;
-      gap: .4rem;
-      padding: .6rem 1rem;
-      font-size: .88rem;
+      justify-content: center;
+      gap: .35rem;
+      flex: 1 1 0;
+      min-width: 0;
+      padding: .55rem .7rem;
+      font-size: .85rem;
       font-weight: 600;
       font-family: inherit;
       border: 1px solid #cfd8dc;
@@ -210,7 +214,11 @@
       transition: background .15s, border-color .15s, color .15s, box-shadow .15s;
       position: relative;
       line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
+    .dispense-tab.dispense-tab-noicon { padding-left: .55rem; padding-right: .55rem; }
     .dispense-tab:hover {
       border-color: #1976d2;
       color: #1976d2;
@@ -251,6 +259,24 @@
     }
     .dispense-tab-panel {
       margin-bottom: .75rem;
+    }
+    /* Step 3 UX: fit 3 tabs on one row on all viewports */
+    @media (max-width: 640px) {
+      .dispense-tabs { gap: .3rem; }
+      .dispense-tab {
+        padding: .5rem .55rem;
+        font-size: .78rem;
+        gap: .25rem;
+      }
+      .dispense-tab.dispense-tab-noicon { padding-left: .45rem; padding-right: .45rem; }
+    }
+    @media (max-width: 420px) {
+      .dispense-tabs { gap: .25rem; }
+      .dispense-tab {
+        padding: .45rem .45rem;
+        font-size: .72rem;
+      }
+      .dispense-tab.dispense-tab-noicon { padding-left: .35rem; padding-right: .35rem; }
     }
   </style>
 </head>
@@ -418,12 +444,12 @@
 
     <!-- Upgrade Step 3: 3-tab navigation -->
     <nav class="dispense-tabs" id="dispenseTabs">
-      <button type="button" class="dispense-tab" data-tab="sales">
-        <span aria-hidden="true">💷</span> Record Sales
+      <button type="button" class="dispense-tab dispense-tab-noicon" data-tab="sales">
+        Record Sales
         <span class="dispense-tab-hint">Record walk-in sales &amp; view today&#39;s sales</span>
       </button>
-      <button type="button" class="dispense-tab" data-tab="payments">
-        <span aria-hidden="true">💰</span> Record Payment
+      <button type="button" class="dispense-tab dispense-tab-noicon" data-tab="payments">
+        Record Payment
         <span class="dispense-tab-hint">Record payments &amp; view today&#39;s payments</span>
       </button>
       <button type="button" class="dispense-tab" data-tab="history">
