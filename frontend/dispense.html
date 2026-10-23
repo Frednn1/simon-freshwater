@@ -344,6 +344,18 @@
     .settings-wrap {
       min-width: 0;
     }
+
+    /* Anchor brand to left of header on mobile — immune to header-inner
+       width changes when wide tab content pushes the layout viewport.
+       Menu is absolute at left:0; brand clears it with left padding. */
+    @media (max-width: 600px) {
+      .settings-body .site-header .header-inner {
+        justify-content: flex-start;
+      }
+      .settings-body .site-header .brand {
+        padding: 0 0 0 60px;
+      }
+    }
   </style>
 </head>
 <body class="settings-body">

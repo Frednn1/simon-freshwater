@@ -217,3 +217,15 @@ def test_settings_wrap_min_width_zero():
         # No body-level overflow: clip (that was the fix6 failure)
         assert 'overflow-x: clip' not in html, f'{fn}: overflow-x: clip must not be present'
 
+# ══════════════════════════════════════════════════════════════════════
+# Brand left-aligned on mobile — immune to header-inner width growth
+# ══════════════════════════════════════════════════════════════════════
+
+def test_brand_left_aligned_mobile():
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        assert '.settings-body .site-header .header-inner {' in html
+        assert 'justify-content: flex-start;' in html, f'{fn}: flex-start missing'
+        assert '.settings-body .site-header .brand {' in html
+        assert 'padding: 0 0 0 60px;' in html, f'{fn}: left padding missing'
+
