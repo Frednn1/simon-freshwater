@@ -321,6 +321,17 @@
     body.settings-body .site-header {
       background: var(--blue-900);
     }
+
+    /* Prevent .settings-wrap (a flex item of body) from expanding beyond
+       viewport when wide tab content (9-column tables) forces min-content.
+       Without min-width:0, the flex item expands to content's min-content,
+       causing page-wide horizontal scroll and leaving the sticky header
+       (width:100vw = viewport) not covering the overflow region.
+       Table scroll is PRESERVED — this adds no overflow clipping; the
+       tables still scroll inside their own overflow-x:auto wrappers. */
+    .settings-wrap {
+      min-width: 0;
+    }
   </style>
 </head>
 <body class="settings-body">

@@ -204,3 +204,18 @@ def test_dispense_solid_blue900_background():
         assert 'linear-gradient(135deg, var(--blue-900), var(--blue-700))' not in html, \
             f'{fn}: blue-700 gradient still in inline styles'
 
+# ══════════════════════════════════════════════════════════════════════
+# Flex-item overflow fix — .settings-wrap must not expand past viewport
+# ══════════════════════════════════════════════════════════════════════
+
+def test_settings_wrap_min_width_zero():
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        # Rule must be present with exact structure
+        assert '.settings-wrap {\n      min-width: 0;\n    }' in html, \
+            f'{fn}: .settings-wrap min-width: 0 missing'
+        # Table scroll wrappers still present — this fix must NOT clip them
+        assert 'overflow-x:auto' in html, f'{fn}: overflow-x:auto wrappers missing'
+        # No body-level overflow: clip (that was the fix6 failure)
+        assert 'overflow-x: clip' not in html, f'{fn}: overflow-x: clip must not be present'
+
