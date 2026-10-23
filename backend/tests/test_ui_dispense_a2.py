@@ -95,3 +95,30 @@ def test_dispense_old_pay_buttons_removed():
     assert 'dev-btn dev-btn--ghost" type="button" style="margin-right:.35rem;" onclick="reallocatePay' not in html
     assert 'dev-btn dev-btn--danger" type="button" onclick="voidPay' not in html
 
+# ══════════════════════════════════════════════════════════════════════
+# Upgrade Step 3 — 3-tab navigation
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_has_3tab_nav():
+    html = _read('dispense.html')
+    assert 'id="dispenseTabs"' in html
+    assert html.count('class="dispense-tab"') == 3
+    assert 'data-tab="sales"' in html
+    assert 'data-tab="payments"' in html
+    assert 'data-tab="history"' in html
+
+
+def test_dispense_has_3tab_panels():
+    html = _read('dispense.html')
+    assert html.count('class="dispense-tab-panel"') == 3
+    assert 'data-panel="sales"' in html
+    assert 'data-panel="payments"' in html
+    assert 'data-panel="history"' in html
+
+
+def test_dispense_tab_toggle_js():
+    html = _read('dispense.html')
+    assert "getElementById('dispenseTabs')" in html
+    assert 'dispense-tab--active' in html
+    assert '.dispense-tab-panel[data-panel=' in html
+

@@ -185,6 +185,73 @@
       background: #ffcdd2;
       border-color: #e57373;
     }
+    /* Upgrade Step 3: 3-tab navigation */
+    .dispense-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem;
+      margin-bottom: .75rem;
+      padding: 0;
+      background: transparent;
+    }
+    .dispense-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      padding: .6rem 1rem;
+      font-size: .88rem;
+      font-weight: 600;
+      font-family: inherit;
+      border: 1px solid #cfd8dc;
+      border-radius: 50px;
+      background: #fff;
+      color: #455a64;
+      cursor: pointer;
+      transition: background .15s, border-color .15s, color .15s, box-shadow .15s;
+      position: relative;
+      line-height: 1.2;
+    }
+    .dispense-tab:hover {
+      border-color: #1976d2;
+      color: #1976d2;
+      background: #f5f9fd;
+    }
+    .dispense-tab--active {
+      background: linear-gradient(135deg, #1976d2, #0d47a1);
+      color: #fff;
+      border-color: #0d47a1;
+      box-shadow: 0 2px 8px rgba(13,71,161,.25);
+    }
+    .dispense-tab--active:hover {
+      background: linear-gradient(135deg, #1565c0, #0d47a1);
+      color: #fff;
+    }
+    .dispense-tab-hint {
+      position: absolute;
+      top: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%) translateY(-4px);
+      background: #0d47a1;
+      color: #fff;
+      padding: .45rem .75rem;
+      border-radius: 6px;
+      font-size: .72rem;
+      font-weight: 500;
+      white-space: nowrap;
+      box-shadow: 0 4px 12px rgba(13,71,161,.25);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .15s ease, transform .15s ease;
+      z-index: 10;
+    }
+    .dispense-tab:hover .dispense-tab-hint,
+    .dispense-tab:focus-visible .dispense-tab-hint {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    .dispense-tab-panel {
+      margin-bottom: .75rem;
+    }
   </style>
 </head>
 <body class="settings-body">
@@ -349,6 +416,24 @@
       </form>
     </div>
 
+    <!-- Upgrade Step 3: 3-tab navigation -->
+    <nav class="dispense-tabs" id="dispenseTabs">
+      <button type="button" class="dispense-tab" data-tab="sales">
+        <span aria-hidden="true">💷</span> Record Sales
+        <span class="dispense-tab-hint">Record walk-in sales &amp; view today&#39;s sales</span>
+      </button>
+      <button type="button" class="dispense-tab" data-tab="payments">
+        <span aria-hidden="true">💰</span> Record Payment
+        <span class="dispense-tab-hint">Record payments &amp; view today&#39;s payments</span>
+      </button>
+      <button type="button" class="dispense-tab" data-tab="history">
+        <span aria-hidden="true">📋</span> Activity History
+        <span class="dispense-tab-hint">Last 7 days activity</span>
+      </button>
+    </nav>
+
+    <div class="dispense-tab-panel" data-panel="sales" style="display:none;">
+
     <!-- Phase F.5 — sales recording -->
     <div class="settings-card">
       <h2>Record Sale</h2>
@@ -406,6 +491,10 @@
         </table>
       </div>
     </div>
+
+    </div><!-- /dispense-tab-panel sales -->
+
+    <div class="dispense-tab-panel" data-panel="payments" style="display:none;">
 
     <!-- Phase F — payment recording -->
     <div class="settings-card">
@@ -467,6 +556,10 @@
       </div>
     </div>
 
+    </div><!-- /dispense-tab-panel payments -->
+
+    <div class="dispense-tab-panel" data-panel="history" style="display:none;">
+
     <div class="settings-card">
       <h2>Last 7 Days</h2>
       <div style="overflow-x:auto;">
@@ -490,6 +583,8 @@
         </table>
       </div>
     </div>
+
+    </div><!-- /dispense-tab-panel history -->
 
   </main>
 
@@ -1724,6 +1819,35 @@
         }
       } catch (_) {}
     })();
+  })();
+  </script>
+
+  <!-- Upgrade Step 3: 3-tab toggle -->
+  <script>
+  (function(){
+    var tabs = document.getElementById('dispenseTabs');
+    if (!tabs) return;
+    var buttons = tabs.querySelectorAll('.dispense-tab');
+    var panels = document.querySelectorAll('.dispense-tab-panel');
+
+    function hideAll() {
+      panels.forEach(function(p) { p.style.display = 'none'; });
+      buttons.forEach(function(b) { b.classList.remove('dispense-tab--active'); });
+    }
+
+    buttons.forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var target = btn.getAttribute('data-tab');
+        var panel = document.querySelector('.dispense-tab-panel[data-panel="' + target + '"]');
+        if (!panel) return;
+        var wasActive = btn.classList.contains('dispense-tab--active');
+        hideAll();
+        if (!wasActive) {
+          btn.classList.add('dispense-tab--active');
+          panel.style.display = 'block';
+        }
+      });
+    });
   })();
   </script>
 </body>
