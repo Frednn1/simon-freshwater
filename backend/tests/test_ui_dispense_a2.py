@@ -157,8 +157,10 @@ def test_dispense_tabs_single_row_layout():
 def test_header_full_width_background():
     for fn in ('dispense.html', 'dispense_analytics.html'):
         html = _read(fn)
+        # New design (100vw): margin-left pulls to viewport edge;
+        # margin-right:0 because width:100vw already reaches right edge.
         assert 'margin-left: -1rem' in html, f'{fn}: margin-left missing'
-        assert 'margin-right: -1rem' in html, f'{fn}: margin-right missing'
+        assert 'margin-right: 0;' in html, f'{fn}: margin-right should be 0 (100vw design)'
         assert 'padding-left: 2.2rem' in html, f'{fn}: padding-left missing'
         assert 'padding-right: 2.2rem' in html, f'{fn}: padding-right missing'
         # Selector scoped correctly
@@ -178,9 +180,10 @@ def test_header_step7b_mobile_fix_preserved():
 def test_header_explicit_full_width_rule():
     for fn in ('dispense.html', 'dispense_analytics.html'):
         html = _read(fn)
-        assert 'width: calc(100% + 2rem);' in html, f'{fn}: width calc missing'
-        assert 'max-width: calc(100% + 2rem);' in html, f'{fn}: max-width calc missing'
-        assert 'min-width: calc(100% + 2rem);' in html, f'{fn}: min-width calc missing'
+        assert 'width: 100vw;' in html, f'{fn}: width 100vw missing'
+        assert 'min-width: 100vw;' in html, f'{fn}: min-width 100vw missing'
+        assert 'max-width: 100vw;' in html, f'{fn}: max-width 100vw missing'
         assert 'flex-shrink: 0;' in html, f'{fn}: flex-shrink missing'
         assert 'box-sizing: border-box;' in html, f'{fn}: box-sizing missing'
+        assert 'html { overflow-x: hidden; }' in html, f'{fn}: overflow-x safety missing'
 

@@ -62,23 +62,26 @@
        padding compensated by +1rem to keep content at same visual position.
        Applies both mobile + desktop (outside any media query). */
     .settings-body .site-header {
+      /* Use 100vw, not calc(100% + 2rem): 100% excludes scrollbar and
+         suffers sub-pixel rounding on high-DPR mobile. 100vw is computed
+         directly from viewport width — exact, no compounding. */
+      width: 100vw;
+      min-width: 100vw;
+      max-width: 100vw;
+      /* Pull left by body's 1rem padding to reach viewport left edge.
+         No margin-right: width:100vw already reaches right edge. */
       margin-left: -1rem;
-      margin-right: -1rem;
+      margin-right: 0;
+      /* Preserve content position: was 1.2rem header + 1rem body = 2.2rem */
       padding-left: 2.2rem;
       padding-right: 2.2rem;
-      /* Force explicit width: bypasses flexbox align-items:stretch
-         quirk (mobile Chrome/Safari clamp stretch when negative margins
-         are present). box-sizing:border-box (global) means width
-         includes padding — content stays at 2.2rem from viewport edge. */
-      width: calc(100% + 2rem);
-      max-width: calc(100% + 2rem);
-      /* Force minimum: browsers sometimes shrink flex items with
-         negative margins even when width math says no shrink is needed. */
-      min-width: calc(100% + 2rem);
-      /* Never allow flexbox to shrink this item. */
       flex-shrink: 0;
       box-sizing: border-box;
     }
+    /* Safety net: hide any horizontal overflow created by 100vw extending
+       under a desktop scrollbar. Applied to html (not body) to preserve
+       position:sticky behavior — tested across modern browsers. */
+    html { overflow-x: hidden; }
   </style>
 </head>
 <body class="settings-body">
