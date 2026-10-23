@@ -118,8 +118,10 @@
         const r = await fetch('/api/admin/mpesa/config', { credentials: 'same-origin' });
         if (r.status === 401) { location.href = (window.adminLoginUrl && window.adminLoginUrl('/admin/mpesa')) || '/admin/login?next=/admin/mpesa'; return; }
         const d = await r.json();
+        var _envLabel = d.env || '—';
+        if (d.env_source) _envLabel += ' (' + d.env_source + ')';
         document.getElementById('mpesaConfig').innerHTML =
-          `Env: <strong>${esc(d.env)}</strong> · ` +
+          `Env: <strong>${esc(_envLabel)}</strong> · ` +
           `Shortcode: <strong>${esc(d.shortcode || '—')}</strong> · ` +
           `Configured: <strong>${d.configured ? '✅ Yes' : '❌ No'}</strong>`;
         // Hide simulate card in production

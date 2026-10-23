@@ -182,6 +182,53 @@ def _slug_prefix(slug: str) -> str:
     return (slug or "").strip().upper().replace("-", "_")
 
 
+
+def get_mpesa_config_for_tenant(tenant) -> dict:
+    """Non-secret M-Pesa config resolved for a specific tenant.
+
+    Reflects exactly what admin_mpesa_register would actually use:
+    env vars + Tenant.mpesa_shortcode + Tenant.mpesa_env overrides.
+
+    Exposes env_source so the admin UI can show where the resolved value
+    came from — mirroring get_mpesa_config_dispensing's behavior.
+    """
+    base = get_mpesa_config()
+    if tenant is None:
+        base["env_source"] = "global"
+        return base
+
+    creds = credentials_for_tenant(tenant.slug)
+    env = creds.get("env") or MPESA_ENV
+    shortcode = creds.get("shortcode") or MPESA_SHORTCODE
+
+    sources = []
+    # Tenant-level env vars (MPESA_<SLUG>_CONSUMER_KEY etc)
+    if (creds.get("env") and creds.get("env") != MPESA_ENV) or        (creds.get("shortcode") and creds.get("shortcode") != MPESA_SHORTCODE):
+        sources.append("tenant-env")
+    # Tenant DB overrides (mpesa_shortcode / mpesa_env columns)
+    if getattr(tenant, "mpesa_shortcode", None):
+        shortcode = tenant.mpesa_shortcode
+        sources.append("db-shortcode")
+    if getattr(tenant, "mpesa_env", None):
+        env = tenant.mpesa_env
+        sources.append("db-env")
+
+    base_url = ("https://api.safaricom.co.ke" if env == "production"
+                else "https://sandbox.safaricom.co.ke")
+
+    return {
+        "env": env,
+        "base_url": base_url,
+        "shortcode": shortcode,
+        "configured": bool(
+            shortcode
+            and creds.get("consumer_key")
+            and creds.get("consumer_secret")
+        ),
+        "env_source": "+".join(sources) if sources else "global",
+    }
+
+
 def credentials_for_tenant(slug: str = None) -> dict:
     """Return the M-Pesa credentials to use for the given tenant slug.
 

@@ -67,6 +67,7 @@ from mpesa import (
     get_mpesa_config, register_c2b_urls, simulate_c2b_payment,
     credentials_for_tenant, register_c2b_urls_for,
     credentials_for_tenant_dispensing, get_mpesa_config_dispensing,
+    get_mpesa_config_for_tenant,
 )
 import archive
 import backup
@@ -7848,7 +7849,9 @@ def mpesa_c2b_confirmation():
 def admin_mpesa_config():
     u = _require_admin()
     if u: return u
-    return jsonify(get_mpesa_config())
+    # Use tenant-aware resolution so shortcode/env reflect what register
+    # actually uses (Tenant.mpesa_shortcode + Tenant.mpesa_env overrides).
+    return jsonify(get_mpesa_config_for_tenant(getattr(g, "tenant", None)))
 
 
 @app.route("/api/admin/mpesa/register", methods=["POST"])
