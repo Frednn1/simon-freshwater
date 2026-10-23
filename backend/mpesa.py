@@ -107,10 +107,19 @@ def register_c2b_urls(confirmation_url: str, validation_url: str) -> dict:
         if r.status_code not in (200, 201):
             return {"ok": False, "error": f"HTTP {r.status_code}: {r.text[:200]}"}
         data = r.json()
-        if str(data.get("ResponseCode", "")) == "0":
+        # Safaricom returns ResponseCode in multiple formats on success:
+        # "0", "00", "00000000" (most common for /registerurl) — or int 0.
+        # Normalize: any all-zeros string counts as success.
+        # Fallback: if ResponseCode missing, trust "Success" description.
+        _raw_code = str(data.get("ResponseCode", "")).strip()
+        _raw_desc = str(data.get("ResponseDescription", "")).strip()
+        if _raw_code:
+            _is_success = (_raw_code.lstrip("0") == "")
+        else:
+            _is_success = _raw_desc.lower() in ("success", "successful")
+        if _is_success:
             return {"ok": True, "response": data}
-        return {"ok": False,
-                "error": data.get("ResponseDescription") or data}
+        return {"ok": False, "error": _raw_desc or _raw_code or data}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
@@ -338,8 +347,18 @@ def register_c2b_urls_for(creds: dict,
         if r.status_code not in (200, 201):
             return {"ok": False, "error": f"HTTP {r.status_code}: {r.text[:200]}"}
         data = r.json()
-        if str(data.get("ResponseCode", "")) == "0":
+        # Safaricom returns ResponseCode in multiple formats on success:
+        # "0", "00", "00000000" (most common for /registerurl) — or int 0.
+        # Normalize: any all-zeros string counts as success.
+        # Fallback: if ResponseCode missing, trust "Success" description.
+        _raw_code = str(data.get("ResponseCode", "")).strip()
+        _raw_desc = str(data.get("ResponseDescription", "")).strip()
+        if _raw_code:
+            _is_success = (_raw_code.lstrip("0") == "")
+        else:
+            _is_success = _raw_desc.lower() in ("success", "successful")
+        if _is_success:
             return {"ok": True, "response": data}
-        return {"ok": False, "error": data.get("ResponseDescription") or data}
+        return {"ok": False, "error": _raw_desc or _raw_code or data}
     except Exception as e:
         return {"ok": False, "error": str(e)}

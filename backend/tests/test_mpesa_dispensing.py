@@ -133,3 +133,59 @@ def test_dispensing_env_falls_back_to_tenant(monkeypatch):
     assert creds["env"] == "production"
     assert creds["env_source"] == "tenant"
 
+# ══════════════════════════════════════════════════════════════════════
+# register success detection — Safaricom response format handling
+# ══════════════════════════════════════════════════════════════════════
+
+def test_register_accepts_all_zeros_response_code(monkeypatch):
+    """Safaricom returns ResponseCode as '00000000' on /registerurl success."""
+    import mpesa
+    monkeypatch.setattr(mpesa, "get_access_token_for",
+                        lambda creds: {"ok": True, "token": "x"})
+    class MockResp:
+        status_code = 200
+        def json(self):
+            return {"ResponseCode": "00000000", "ResponseDescription": "Success"}
+    monkeypatch.setattr(mpesa.requests, "post", lambda *a, **kw: MockResp())
+    result = mpesa.register_c2b_urls_for(
+        {"shortcode": "804444", "base_url": "https://sandbox.safaricom.co.ke"},
+        "https://x/c", "https://x/v"
+    )
+    assert result["ok"] is True
+
+
+def test_register_accepts_short_zero_response_code(monkeypatch):
+    """Also accepts ResponseCode as literal '0'."""
+    import mpesa
+    monkeypatch.setattr(mpesa, "get_access_token_for",
+                        lambda creds: {"ok": True, "token": "x"})
+    class MockResp:
+        status_code = 200
+        def json(self):
+            return {"ResponseCode": "0", "ResponseDescription": "Success"}
+    monkeypatch.setattr(mpesa.requests, "post", lambda *a, **kw: MockResp())
+    result = mpesa.register_c2b_urls_for(
+        {"shortcode": "804444", "base_url": "https://sandbox.safaricom.co.ke"},
+        "https://x/c", "https://x/v"
+    )
+    assert result["ok"] is True
+
+
+def test_register_rejects_nonzero_response_code(monkeypatch):
+    """Genuine error codes still classified as error."""
+    import mpesa
+    monkeypatch.setattr(mpesa, "get_access_token_for",
+                        lambda creds: {"ok": True, "token": "x"})
+    class MockResp:
+        status_code = 200
+        def json(self):
+            return {"ResponseCode": "500.001.1001",
+                    "ResponseDescription": "Service unreachable"}
+    monkeypatch.setattr(mpesa.requests, "post", lambda *a, **kw: MockResp())
+    result = mpesa.register_c2b_urls_for(
+        {"shortcode": "804444", "base_url": "https://sandbox.safaricom.co.ke"},
+        "https://x/c", "https://x/v"
+    )
+    assert result["ok"] is False
+    assert "unreachable" in (result.get("error") or "").lower()
+
