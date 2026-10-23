@@ -76,3 +76,22 @@ def test_dispense_reminder_copy_reworded():
     assert 'Remember to enter the closing reading' in html
     assert 'Close the day to lock activity' not in html
 
+# ══════════════════════════════════════════════════════════════════════
+# Upgrade Step 2 — modern Void/Allocate buttons
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_has_modern_pay_buttons():
+    html = _read('dispense.html')
+    assert 'dispense-pay-action' in html
+    assert 'dispense-pay-action--alloc' in html
+    assert 'dispense-pay-action--void' in html
+    assert '.dispense-pay-action {' in html
+    assert 'dispense-pay-actions' in html          # wrapper
+
+
+def test_dispense_old_pay_buttons_removed():
+    html = _read('dispense.html')
+    # Old generic dev-btn-based buttons must be gone
+    assert 'dev-btn dev-btn--ghost" type="button" style="margin-right:.35rem;" onclick="reallocatePay' not in html
+    assert 'dev-btn dev-btn--danger" type="button" onclick="voidPay' not in html
+

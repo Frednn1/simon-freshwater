@@ -126,6 +126,65 @@
       background: rgba(245,124,0,.18);
       color: #6d4c00;
     }
+    /* Upgrade Step 2: modern Void/Allocate buttons */
+    .dispense-pay-actions {
+      display: inline-flex;
+      gap: .35rem;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: flex-end;
+    }
+    .dispense-pay-action {
+      display: inline-flex;
+      align-items: center;
+      gap: .3rem;
+      padding: .38rem .75rem;
+      border-radius: 8px;
+      font-size: .78rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: background .15s, border-color .15s, transform .08s, box-shadow .15s;
+      white-space: nowrap;
+      line-height: 1.2;
+    }
+    .dispense-pay-action:active {
+      transform: translateY(1px);
+    }
+    .dispense-pay-action:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 6px rgba(0,0,0,.09);
+    }
+    .dispense-pay-action:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    .dispense-pay-action__icon {
+      font-size: .9rem;
+      line-height: 1;
+      display: inline-block;
+    }
+    .dispense-pay-action--alloc {
+      background: #e3f2fd;
+      color: #1565c0;
+      border-color: #90caf9;
+    }
+    .dispense-pay-action--alloc:hover {
+      background: #bbdefb;
+      border-color: #64b5f6;
+    }
+    .dispense-pay-action--void {
+      background: #ffebee;
+      color: #c62828;
+      border-color: #ef9a9a;
+    }
+    .dispense-pay-action--void:hover {
+      background: #ffcdd2;
+      border-color: #e57373;
+    }
   </style>
 </head>
 <body class="settings-body">
@@ -887,10 +946,12 @@
             const _canRealloc = p.can_reallocate;
             const actionBtn = p.voided
               ? '<span class="status-pill status-no-reading">Voided</span>'
-              : (_canRealloc
-                  ? `<button class="dev-btn dev-btn--ghost" type="button" style="margin-right:.35rem;" onclick="reallocatePay(${p.id}, '${_sd}')">Allocate</button>`
-                  : '')
-                + `<button class="dev-btn dev-btn--danger" type="button" onclick="voidPay(${p.id})">Void</button>`;
+              : '<span class="dispense-pay-actions">'
+                + (_canRealloc
+                    ? `<button class="dispense-pay-action dispense-pay-action--alloc" type="button" onclick="reallocatePay(${p.id}, '${_sd}')"><span class="dispense-pay-action__icon" aria-hidden="true">\u21c4</span>Allocate</button>`
+                    : '')
+                + `<button class="dispense-pay-action dispense-pay-action--void" type="button" onclick="voidPay(${p.id})"><span class="dispense-pay-action__icon" aria-hidden="true">\u2715</span>Void</button>`
+                + '</span>';
             return '<tr style="' + strike + '">'
               + '<td>' + fmtTime(p.created_at) + '</td>'
               + '<td class="num">' + amt + '</td>'
