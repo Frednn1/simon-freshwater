@@ -303,7 +303,13 @@
     /* Safety net: hide any horizontal overflow created by 100vw extending
        under a desktop scrollbar. Applied to html (not body) to preserve
        position:sticky behavior — tested across modern browsers. */
-    html { overflow-x: hidden; }
+    /* Paint html background so the region beyond 100vw (visible when
+       user zooms out on mobile) matches the header's deep blue.
+       Without this, zoom-out reveals the browser default white background. */
+    html {
+      overflow-x: hidden;
+      background: var(--blue-900);
+    }
   </style>
 </head>
 <body class="settings-body">

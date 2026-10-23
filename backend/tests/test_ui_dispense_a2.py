@@ -185,5 +185,7 @@ def test_header_explicit_full_width_rule():
         assert 'max-width: 100vw;' in html, f'{fn}: max-width 100vw missing'
         assert 'flex-shrink: 0;' in html, f'{fn}: flex-shrink missing'
         assert 'box-sizing: border-box;' in html, f'{fn}: box-sizing missing'
-        assert 'html { overflow-x: hidden; }' in html, f'{fn}: overflow-x safety missing'
+        # html background paints overscroll region (zoom-out visible area)
+        assert 'html {' in html and 'overflow-x: hidden;' in html
+        assert 'background: var(--blue-900);' in html, f'{fn}: html bg missing'
 
