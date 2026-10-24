@@ -5028,6 +5028,54 @@ def _dispense_is_closed(tenant_id, target_date):
     return bool(r and r.is_closed)
 
 
+def _dispense_opening_derivation(tenant_id, requested):
+    """Phase 2: Compute opening derivation info for a given target date.
+
+    Returns:
+      {
+        "manual": bool,          # True when user MUST supply opening
+        "source": DispenseMeterReading or None,  # most recent CLOSED row
+        "reason": None | "bootstrap" | "no_prior_closed" | "open_gap",
+        "open_gap_date": ISO str or None,
+      }
+
+    Manual is True when:
+      - bootstrap   (no prior rows at all)
+      - no_prior_closed (rows exist but none are closed)
+      - open_gap    (any row between most-recent-closed and requested is open)
+    Manual is False when safe auto-derivation is possible.
+    """
+    any_reading_ever = DispenseMeterReading.query.filter_by(
+        tenant_id=tenant_id).first()
+    if any_reading_ever is None:
+        return {"manual": True, "source": None,
+                "reason": "bootstrap", "open_gap_date": None}
+
+    prev_closed = (DispenseMeterReading.query
+                   .filter(DispenseMeterReading.tenant_id == tenant_id,
+                           DispenseMeterReading.reading_date < requested,
+                           DispenseMeterReading.is_closed == True)
+                   .order_by(DispenseMeterReading.reading_date.desc())
+                   .first())
+    if prev_closed is None:
+        return {"manual": True, "source": None,
+                "reason": "no_prior_closed", "open_gap_date": None}
+
+    open_gap = (DispenseMeterReading.query
+                .filter(DispenseMeterReading.tenant_id == tenant_id,
+                        DispenseMeterReading.reading_date > prev_closed.reading_date,
+                        DispenseMeterReading.reading_date < requested,
+                        DispenseMeterReading.is_closed == False)  # noqa: E712
+                .first())
+    if open_gap is not None:
+        return {"manual": True, "source": None,
+                "reason": "open_gap",
+                "open_gap_date": open_gap.reading_date.isoformat()}
+
+    return {"manual": False, "source": prev_closed,
+            "reason": None, "open_gap_date": None}
+
+
 def _dispense_window_stats(tenant_id, dates):
     """Bulk-compute dispensing metrics for a list of date objects.
     Returns {iso_date: stats_dict}. Three queries total regardless of window size."""
@@ -5279,17 +5327,16 @@ def admin_dispense_today():
                       .first())
     yesterday_open = bool(_yesterday_row and not _yesterday_row.is_closed)
 
-    manual_opening_required = is_first_day or prev_day_missing
-
+    # Phase 2: derivation helper gives consistent source/manual/reason
+    _derivation = _dispense_opening_derivation(tenant_id, requested)
+    manual_opening_required = _derivation["manual"]
     suggested_opening = None
-    if not manual_opening_required and not tstats["has_reading"]:
-        prev_reading = (DispenseMeterReading.query
-                        .filter(DispenseMeterReading.tenant_id == tenant_id,
-                                DispenseMeterReading.reading_date < requested)
-                        .order_by(DispenseMeterReading.reading_date.desc())
-                        .first())
-        if prev_reading:
-            suggested_opening = float(prev_reading.closing_reading_m3)
+    suggested_opening_source_iso = None
+    if _derivation["source"] is not None and not tstats["has_reading"]:
+        suggested_opening = float(_derivation["source"].closing_reading_m3)
+        suggested_opening_source_iso = _derivation["source"].reading_date.isoformat()
+    derivation_reason = _derivation["reason"]
+    open_gap_date = _derivation.get("open_gap_date")
 
     reading_id = tstats["reading"].id if tstats["reading"] else None
 
@@ -5320,6 +5367,9 @@ def admin_dispense_today():
         "yesterday_iso": yesterday.isoformat(),
         "manual_opening_required": manual_opening_required,
         "suggested_opening_m3": suggested_opening,
+        "suggested_opening_source_iso": suggested_opening_source_iso,
+        "derivation_reason": derivation_reason,
+        "open_gap_date": open_gap_date,
     })
 
 
@@ -5441,44 +5491,38 @@ def admin_dispense_reading_post():
             }), 400
         op = "create_closed" if has_closing else "open_only"
 
-    # ── 5. Determine whether opening must be supplied manually ──
-    any_reading_ever = (DispenseMeterReading.query
-                        .filter_by(tenant_id=tenant_id)
-                        .first())
-    bootstrap_required = (any_reading_ever is None) and (existing is None)
-
-    previous = (DispenseMeterReading.query
-                .filter(DispenseMeterReading.tenant_id == tenant_id,
-                        DispenseMeterReading.reading_date < requested)
-                .order_by(DispenseMeterReading.reading_date.desc())
-                .first())
-    yesterday = requested - timedelta(days=1)
-    has_yesterday = (DispenseMeterReading.query
-                     .filter_by(tenant_id=tenant_id, reading_date=yesterday)
-                     .first())
-    previous_day_missing = (
-        (not bootstrap_required)
-        and existing is None
-        and has_yesterday is None
-        and any_reading_ever is not None
-    )
-    manual_opening_required = bootstrap_required or previous_day_missing
+    # ── 5. Determine opening derivation (Phase 2) ──
+    _derivation = _dispense_opening_derivation(tenant_id, requested)
+    manual_opening_required = _derivation["manual"]
+    previous_closed = _derivation["source"]
 
     # ── 6. Resolve opening ──
     if op in ("correction", "close"):
+        # Existing row: STORED opening is source of truth
         opening = float(existing.opening_reading_m3)
     elif manual_opening_required:
+        # Bootstrap, no_prior_closed, or open_gap: user MUST supply
         try:
             opening = float(data.get("opening_reading_m3"))
         except (ValueError, TypeError):
             return jsonify({
-                "error": "opening_reading_m3 is required for the first day "
-                         "or when yesterday's reading is missing."
+                "error": "opening_reading_m3 is required (bootstrap, "
+                         "no prior closed day, or unresolved open gap)."
             }), 400
         if opening < 0 or opening > 10_000_000:
             return jsonify({"error": "Opening reading is out of range."}), 400
+    elif data.get("opening_reading_m3") is not None:
+        # Phase 2 (D-P2-3=A): user override of auto-derived opening
+        try:
+            opening = float(data.get("opening_reading_m3"))
+        except (ValueError, TypeError):
+            return jsonify({"error": "opening_reading_m3 must be a number."}), 400
+        if opening < 0 or opening > 10_000_000:
+            return jsonify({"error": "Opening reading is out of range."}), 400
     else:
-        opening = float(previous.closing_reading_m3) if previous else 0.0
+        # Auto-derive from most recent CLOSED row
+        opening = (float(previous_closed.closing_reading_m3)
+                   if previous_closed else 0.0)
 
     # ── 7. Resolve closing / consumption / is_closed ──
     is_closed_final = (op in ("create_closed", "close", "correction"))

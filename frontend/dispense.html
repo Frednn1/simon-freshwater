@@ -884,7 +884,14 @@
             } else if (d.is_first_day) {
               wMsg = 'First day of dispensing \u2014 record the opening reading to begin.';
             } else if (d.prev_day_missing) {
-              wMsg = "Previous day's closing reading is missing \u2014 enter the opening reading manually.";
+              if (d.suggested_opening_m3 != null && d.suggested_opening_source_iso) {
+                wMsg = 'Opening auto-derived from ' + d.suggested_opening_source_iso
+                     + ' closing: ' + d.suggested_opening_m3 + ' m\u00b3. Edit if needed.';
+              } else if (d.derivation_reason === 'open_gap' && d.open_gap_date) {
+                wMsg = 'Open reading on ' + d.open_gap_date + '. Enter opening manually.';
+              } else {
+                wMsg = "Previous day's closing reading is missing \u2014 enter the opening reading manually.";
+              }
             } else if (!d.has_reading && ((d.sales_kes || 0) > 0 || (d.paid_kes || 0) > 0)) {
               // Step 1: gentle reminder (not a warning) — eventful day, no close yet
               wMsg = 'You have sales or payments recorded today. Remember to enter the closing reading at the end of the day to lock today\u2019s activity.';
@@ -1003,14 +1010,28 @@
             reasonInp.value = '';
             submitBtn.textContent = 'Save Opening';
           } else if (d.prev_day_missing) {
-            title.textContent = 'Previous Reading Missing';
-            openRow.style.display = 'block';
-            openInput.value = '';
-            closeInput.value = '';
-            closeInput.required = false;
-            reasonRow.style.display = 'none';
-            reasonInp.value = '';
-            submitBtn.textContent = 'Save Opening';
+            if (d.suggested_opening_m3 != null) {
+              // Phase 2: auto-derived opening available — prefill, editable
+              title.textContent = "Close Today's Reading";
+              openRow.style.display = 'block';
+              openInput.value = String(d.suggested_opening_m3);
+              openInput.required = false;
+              closeInput.value = '';
+              closeInput.required = false;
+              reasonRow.style.display = 'none';
+              reasonInp.value = '';
+              submitBtn.textContent = 'Save Reading';
+            } else {
+              // Manual entry required (bootstrap / no_prior_closed / open_gap)
+              title.textContent = 'Previous Reading Missing';
+              openRow.style.display = 'block';
+              openInput.value = '';
+              closeInput.value = '';
+              closeInput.required = false;
+              reasonRow.style.display = 'none';
+              reasonInp.value = '';
+              submitBtn.textContent = 'Save Opening';
+            }
           } else {
             title.textContent = "Close Today's Reading";
             openRow.style.display = 'none';
