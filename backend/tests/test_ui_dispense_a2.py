@@ -285,3 +285,27 @@ def test_no_client_side_opening_override_comment():
     # After Step 1, opening is immutable — client doesn't send it in derivable cases
     assert 'Step 1: opening immutable' in html
 
+# ══════════════════════════════════════════════════════════════════════
+# Step 2 gap fixes — banner removal, card gating, eventful-only, locked
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_banner_no_prev_missing_text():
+    html = _read('dispense.html')
+    assert "enter the opening reading manually" not in html
+
+
+def test_dispense_prev_missing_card_gated_on_manual():
+    html = _read('dispense.html')
+    assert "d.prev_day_missing && d.manual_opening_required" in html
+
+
+def test_dispense_create_past_day_eventful_gate():
+    html = _read('dispense.html')
+    assert "D-CL-2=A: only eventful days can be created" in html
+
+
+def test_dispense_past_day_locked_state():
+    html = _read('dispense.html')
+    assert "D-CL-1=A: locked state" in html
+    assert "'Day Closed'" in html
+

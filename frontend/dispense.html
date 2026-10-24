@@ -798,7 +798,7 @@
           _osVal.textContent = fmtK(_os);
         }
         if (d.is_first_day) document.getElementById('firstDayCard').style.display = 'block';
-        if (d.prev_day_missing) document.getElementById('prevMissingCard').style.display = 'block';
+        if (d.prev_day_missing && d.manual_opening_required) document.getElementById('prevMissingCard').style.display = 'block';
       } catch (_) {}
 
       try {
@@ -879,6 +879,7 @@
           const submitBtn  = document.getElementById('dSubmitBtn');
 
           card.style.display = 'block';
+          form.style.display = '';
           if (msg) msg.className = 'alert hidden';
 
           // Phase A2: warning banner + no-activity button
@@ -898,9 +899,6 @@
             } else if (d.prev_day_missing) {
               if (d.derivation_reason === 'open_gap' && d.open_gap_date) {
                 wMsg = 'Open reading on ' + d.open_gap_date + '. Enter opening manually.';
-              } else if (d.suggested_opening_m3 == null) {
-                wMsg = "Previous day's closing reading is missing \u2014 enter the opening reading manually.";
-              }
               // else: derivation info now shown in today card, no banner
             } else if (!d.has_reading && ((d.sales_kes || 0) > 0 || (d.paid_kes || 0) > 0)) {
               // Step 1: gentle reminder (not a warning) — eventful day, no close yet
@@ -967,27 +965,44 @@
           if (!d.is_today) {
             if (noActBtn) noActBtn.style.display = 'none';
             if (warnEl) warnEl.classList.add('hidden');
-            if (d.is_closed) { card.style.display = 'none'; return; }
-            if (!d.has_reading) {
-              // GAP-1 fix: retroactive creation for orphaned past days
-              title.textContent = 'Create Past Day Reading';
-              if (d.suggested_opening_m3 != null && d.derivation_reason == null) {
-                // Step 2: derivation available — hide opening, only closing + reason
-                openRow.style.display = 'none';
-                openInput.value = '';
-                openInput.required = false;
-              } else {
-                // Bootstrap / no_prior_closed / open_gap — opening required
-                openRow.style.display = 'block';
-                openInput.value = '';
-                openInput.required = true;
+            if (d.is_closed) {
+              // D-CL-1=A: locked state — show card + note instead of hiding entirely
+              card.style.display = 'block';
+              title.textContent = 'Day Closed';
+              form.style.display = 'none';
+              if (warnEl && warnTextEl) {
+                warnTextEl.textContent = 'This day is closed \u2014 read-only. Payment recording remains active below.';
+                warnEl.classList.remove('hidden');
+                warnEl.style.display = 'flex';
               }
-              closeInput.value = '';
-              closeInput.required = true;
-              reasonRow.style.display = 'block';
-              reasonInp.value = '';
-              submitBtn.textContent = 'Create Past Day';
               return;
+            }
+            if (!d.has_reading) {
+              // D-CL-2=A: only eventful days can be created
+              if ((d.sales_kes || 0) > 0) {
+                title.textContent = 'Create Past Day Reading';
+                if (d.suggested_opening_m3 != null && d.derivation_reason == null) {
+                  // Derivation available — hide opening, only closing + reason
+                  openRow.style.display = 'none';
+                  openInput.value = '';
+                  openInput.required = false;
+                } else {
+                  // Bootstrap / no_prior_closed / open_gap — opening required
+                  openRow.style.display = 'block';
+                  openInput.value = '';
+                  openInput.required = true;
+                }
+                closeInput.value = '';
+                closeInput.required = true;
+                reasonRow.style.display = 'block';
+                reasonInp.value = '';
+                submitBtn.textContent = 'Create Past Day';
+                return;
+              } else {
+                // No sales, no reading — nothing to create
+                card.style.display = 'none';
+                return;
+              }
             }
             title.textContent = 'Close Past Day';
             openRow.style.display = 'none';
