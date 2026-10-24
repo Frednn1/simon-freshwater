@@ -241,6 +241,36 @@ def get_mpesa_config_for_tenant(tenant) -> dict:
     base_url = ("https://api.safaricom.co.ke" if env == "production"
                 else "https://sandbox.safaricom.co.ke")
 
+    # TEMP DIAGNOSTIC (safe, wrapped): exposes env-var NAMES visible to
+    # this process and value LENGTHS (never values). Remove after
+    # production env issue is diagnosed.
+    _diag = {"available": False}
+    try:
+        _slug_d = tenant.slug if tenant else None
+        _prefix_d = _slug_d.upper().replace("-", "_") if _slug_d else None
+        _key_name_d = f"MPESA_{_prefix_d}_CONSUMER_KEY" if _prefix_d else None
+        _sec_name_d = f"MPESA_{_prefix_d}_CONSUMER_SECRET" if _prefix_d else None
+        _env_name_d = f"MPESA_{_prefix_d}_ENV" if _prefix_d else None
+        _all_mpesa_keys = sorted([k for k in os.environ.keys()
+                                  if k.startswith("MPESA_")])
+        _diag = {
+            "available": True,
+            "tenant_slug": _slug_d,
+            "computed_prefix": _prefix_d,
+            "expected_key_name": _key_name_d,
+            "expected_secret_name": _sec_name_d,
+            "expected_env_name": _env_name_d,
+            "key_present": (_key_name_d in os.environ) if _key_name_d else False,
+            "key_length": len(os.environ.get(_key_name_d, "")) if _key_name_d else 0,
+            "secret_present": (_sec_name_d in os.environ) if _sec_name_d else False,
+            "secret_length": len(os.environ.get(_sec_name_d, "")) if _sec_name_d else 0,
+            "env_present": (_env_name_d in os.environ) if _env_name_d else False,
+            "env_value": (os.environ.get(_env_name_d, "") if _env_name_d else ""),
+            "all_mpesa_env_names_visible_to_process": _all_mpesa_keys,
+        }
+    except Exception as _e:
+        _diag = {"available": False, "error": str(_e)[:100]}
+
     return {
         "env": env,
         "base_url": base_url,
@@ -252,6 +282,7 @@ def get_mpesa_config_for_tenant(tenant) -> dict:
         ),
         "env_source": "+".join(sources) if sources else "unconfigured",
         "consumer_key_source": creds.get("consumer_key_source", "global"),
+        "debug_env": _diag,
     }
 
 
