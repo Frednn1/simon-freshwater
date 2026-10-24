@@ -899,6 +899,7 @@
             } else if (d.prev_day_missing) {
               if (d.derivation_reason === 'open_gap' && d.open_gap_date) {
                 wMsg = 'Open reading on ' + d.open_gap_date + '. Enter opening manually.';
+              }
               // else: derivation info now shown in today card, no banner
             } else if (!d.has_reading && ((d.sales_kes || 0) > 0 || (d.paid_kes || 0) > 0)) {
               // Step 1: gentle reminder (not a warning) — eventful day, no close yet

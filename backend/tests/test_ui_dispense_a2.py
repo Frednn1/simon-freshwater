@@ -313,3 +313,12 @@ def test_dispense_create_past_day_alert_note():
     html = _read('dispense.html')
     assert 'Sales recorded on this day but no closing reading' in html
 
+def test_load_context_open_gap_brace_balanced():
+    """Bug guard: the if(open_gap) block must have a closing brace before else-if."""
+    html = _read('dispense.html')
+    # Correct pattern (with `}` between wMsg and the else-if comment)
+    correct = "wMsg = 'Open reading on ' + d.open_gap_date + '. Enter opening manually.';\n              }\n              // else:"
+    broken = "wMsg = 'Open reading on ' + d.open_gap_date + '. Enter opening manually.';\n              // else:"
+    assert correct in html, "correct brace pattern missing"
+    assert broken not in html, "broken pattern still present — syntax error"
+
