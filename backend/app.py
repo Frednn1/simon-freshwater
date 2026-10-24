@@ -7866,14 +7866,28 @@ def admin_mpesa_register():
     conf = f"{base}/api/pay/c2b/confirmation"
     val  = f"{base}/api/pay/c2b/validation"
 
-    # Resolve the current tenant's credentials. Falls back to Simon's
-    # globals when the tenant has no per-tenant env vars configured.
+    # Resolve the current tenant's credentials.
+    # Step 1: shortcode is DB-persistent — no env fallback.
     _t = getattr(g, "tenant", None)
-    _slug = _t.slug if _t else None
+    if not _t:
+        return jsonify({
+            "ok": False,
+            "error": "Tenant not resolved. Log in on a tenant-scoped URL."
+        }), 400
+
+    _shortcode = _t.mpesa_shortcode or _t.paybill
+    if not _shortcode:
+        return jsonify({
+            "ok": False,
+            "error": "Tenant M-Pesa shortcode is not set. Configure "
+                     "mpesa_shortcode on the tenant record via the dev "
+                     "portal before registering."
+        }), 400
+
+    _slug = _t.slug
     creds = credentials_for_tenant(_slug)
-    if _t and _t.mpesa_shortcode:
-        creds["shortcode"] = _t.mpesa_shortcode
-    if _t and _t.mpesa_env:
+    creds["shortcode"] = _shortcode
+    if _t.mpesa_env:
         creds["env"] = _t.mpesa_env
         creds["base_url"] = ("https://api.safaricom.co.ke"
                              if creds["env"] == "production"
@@ -7965,6 +7979,25 @@ def admin_mpesa_simulate():
     if not _rate_limit("mpesa_simulate", 10, 60):
         return _too_many(60)
 
+    _t = getattr(g, "tenant", None)
+    if not _t:
+        return jsonify({"ok": False, "error": "Tenant not resolved."}), 400
+    _shortcode = _t.mpesa_shortcode or _t.paybill
+    if not _shortcode:
+        return jsonify({
+            "ok": False,
+            "error": "Tenant M-Pesa shortcode is not configured. Set "
+                     "mpesa_shortcode on the tenant record."
+        }), 400
+
+    _creds = credentials_for_tenant(_t.slug)
+    _creds["shortcode"] = _shortcode
+    if _t.mpesa_env:
+        _creds["env"] = _t.mpesa_env
+        _creds["base_url"] = ("https://api.safaricom.co.ke"
+                              if _creds["env"] == "production"
+                              else "https://sandbox.safaricom.co.ke")
+
     data = request.get_json(silent=True) or {}
     try:
         amount = int(data.get("amount", 10))
@@ -7974,7 +8007,7 @@ def admin_mpesa_simulate():
     msisdn = str(data.get("msisdn") or "254708374149")
     bill_ref = str(data.get("bill_ref_number") or "")
 
-    result = simulate_c2b_payment(amount, msisdn, bill_ref)
+    result = simulate_c2b_payment(amount, msisdn, bill_ref, creds=_creds)
     if not result.get("ok"):
         return jsonify({"ok": False, "error": result.get("error")}), 502
     return jsonify({"ok": True, "response": result.get("response")})

@@ -138,3 +138,25 @@ def test_style_css_drawer_classes():
                 '.drawer-item', '.menu-toggle']
     missing = [c for c in required if c not in css]
     assert not missing, f"style.css missing drawer classes: {missing}"
+
+# ══════════════════════════════════════════════════════════════════════
+# Step 2 — user-facing "portal" instead of "profile"
+# ══════════════════════════════════════════════════════════════════════
+
+def test_portal_text_replaces_profile_in_user_facing_ui():
+    idx = _read('index.html')
+    login = _read('admin_login.html')
+    team = _read('admin_team.html')
+
+    assert "profLabel + ' portal'" in idx
+    assert "profLabel + ' profile'" not in idx
+    assert '>Choose Portal<' in login
+    assert '>Choose Profile<' not in login
+    assert 'Portal Assignment' in team
+    assert '>Profile Assignment<' not in team
+
+    # Internal identifiers must remain unchanged
+    assert 'active_profile' in idx
+    assert 'enabled_profiles' in idx
+    assert 'profile-choice' in login
+

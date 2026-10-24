@@ -29,15 +29,20 @@ _token_lock = Lock()
 
 
 def _configured() -> bool:
-    return bool(MPESA_CONSUMER_KEY and MPESA_CONSUMER_SECRET and MPESA_SHORTCODE)
+    """True when global M-Pesa credentials (consumer key + secret) exist.
+    Shortcode is tenant-persistent (Tenant.mpesa_shortcode); do NOT
+    require MPESA_SHORTCODE env var here."""
+    return bool(MPESA_CONSUMER_KEY and MPESA_CONSUMER_SECRET)
 
 
 def get_mpesa_config() -> dict:
-    """Non-secret configuration info for diagnostics."""
+    """Non-secret configuration info for diagnostics.
+    shortcode is None unless MPESA_SHORTCODE env var is set — normally
+    it will be None because shortcode is tenant-persistent (DB field)."""
     return {
         "env": MPESA_ENV,
         "base_url": BASE_URL,
-        "shortcode": MPESA_SHORTCODE,
+        "shortcode": MPESA_SHORTCODE or None,
         "configured": _configured(),
     }
 
@@ -124,26 +129,45 @@ def register_c2b_urls(confirmation_url: str, validation_url: str) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-def simulate_c2b_payment(amount: int, msisdn: str, bill_ref_number: str) -> dict:
+def simulate_c2b_payment(amount: int, msisdn: str, bill_ref_number: str,
+                         creds: dict = None) -> dict:
     """
     Sandbox only: ask Safaricom to fire a test C2B confirmation at our URL.
     Production does not expose this endpoint.
-    """
-    if MPESA_ENV == "production":
-        return {"ok": False, "error": "Simulation is sandbox-only."}
 
-    tok = get_access_token()
+    When creds is provided (tenant-scoped), uses creds['shortcode'] and
+    creds['base_url'] — env vars are only a fallback for legacy callers.
+    """
+    if creds:
+        _env = creds.get("env", "sandbox")
+        _shortcode = creds.get("shortcode")
+        _base_url = creds.get("base_url", BASE_URL)
+    else:
+        _env = MPESA_ENV
+        _shortcode = MPESA_SHORTCODE
+        _base_url = BASE_URL
+
+    if _env == "production":
+        return {"ok": False, "error": "Simulation is sandbox-only."}
+    if not _shortcode:
+        return {"ok": False,
+                "error": "No shortcode configured. Set mpesa_shortcode on the tenant."}
+
+    if creds:
+        tok = get_access_token_for(creds)
+    else:
+        tok = get_access_token()
     if not tok.get("ok"):
         return tok
 
-    url = f"{BASE_URL}/mpesa/c2b/v1/simulate"
+    url = f"{_base_url}/mpesa/c2b/v1/simulate"
     headers = {
         "Authorization": f"Bearer {tok['token']}",
         "Content-Type": "application/json",
     }
     digits = "".join(c for c in str(msisdn) if c.isdigit())
     payload = {
-        "ShortCode": MPESA_SHORTCODE,
+        "ShortCode": _shortcode,
         "CommandID": "CustomerPayBillOnline",
         "Amount": int(amount),
         "Msisdn": digits,
@@ -199,16 +223,17 @@ def get_mpesa_config_for_tenant(tenant) -> dict:
 
     creds = credentials_for_tenant(tenant.slug)
     env = creds.get("env") or MPESA_ENV
-    shortcode = creds.get("shortcode") or MPESA_SHORTCODE
+    # Step 1: shortcode is DB-only — no env fallback. If neither mpesa_shortcode
+    # nor paybill is set on the tenant, shortcode stays None.
+    shortcode = None
 
     sources = []
-    # Tenant-level env vars (MPESA_<SLUG>_CONSUMER_KEY etc)
-    if (creds.get("env") and creds.get("env") != MPESA_ENV) or        (creds.get("shortcode") and creds.get("shortcode") != MPESA_SHORTCODE):
-        sources.append("tenant-env")
-    # Tenant DB overrides (mpesa_shortcode / mpesa_env columns)
     if getattr(tenant, "mpesa_shortcode", None):
         shortcode = tenant.mpesa_shortcode
         sources.append("db-shortcode")
+    elif getattr(tenant, "paybill", None):
+        shortcode = tenant.paybill
+        sources.append("db-paybill")
     if getattr(tenant, "mpesa_env", None):
         env = tenant.mpesa_env
         sources.append("db-env")
@@ -225,7 +250,7 @@ def get_mpesa_config_for_tenant(tenant) -> dict:
             and creds.get("consumer_key")
             and creds.get("consumer_secret")
         ),
-        "env_source": "+".join(sources) if sources else "global",
+        "env_source": "+".join(sources) if sources else "unconfigured",
     }
 
 
