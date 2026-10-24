@@ -1090,7 +1090,9 @@
         if (msg) msg.className = 'alert hidden';
 
         try {
-          const ctxResp = await fetch('/api/admin/dispense/today', {credentials: 'same-origin'});
+          const _vDate = new URLSearchParams(location.search).get('date') || '';
+          const _dateQS = _vDate ? ('?date=' + encodeURIComponent(_vDate)) : '';
+          const ctxResp = await fetch('/api/admin/dispense/today' + _dateQS, {credentials: 'same-origin'});
           const ctx = await ctxResp.json();
           if (!ctx.ok) throw new Error(ctx.error || 'Cannot load today data.');
 

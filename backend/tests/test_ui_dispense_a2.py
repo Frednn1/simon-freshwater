@@ -322,3 +322,18 @@ def test_load_context_open_gap_brace_balanced():
     assert correct in html, "correct brace pattern missing"
     assert broken not in html, "broken pattern still present — syntax error"
 
+# ══════════════════════════════════════════════════════════════════════
+# Past-day submit handler — must fetch ctx with ?date=
+# ══════════════════════════════════════════════════════════════════════
+
+def test_submit_handler_respects_date_param():
+    html = _read('dispense.html')
+    # Both loadContext and submit handler must fetch /today with ?date=
+    # when the URL has one. Currently expected: 2+ occurrences of the
+    # pattern `'/api/admin/dispense/today' + _dateQS`.
+    occurrences = html.count("'/api/admin/dispense/today' + _dateQS")
+    assert occurrences >= 2, (
+        f"expected at least 2 date-aware /today fetches (loadContext + submit handler), "
+        f"found {occurrences}"
+    )
+
