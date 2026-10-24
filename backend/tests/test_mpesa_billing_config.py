@@ -190,33 +190,3 @@ def test_config_for_tenant_shows_consumer_key_source(monkeypatch):
     result = get_mpesa_config_for_tenant(T())
     assert result["consumer_key_source"] == "tenant-env"
     assert result["shortcode"] == "123456"
-
-# ══════════════════════════════════════════════════════════════════════
-# TEMP DIAGNOSTIC — debug_env shape (remove after env diagnosis)
-# ══════════════════════════════════════════════════════════════════════
-
-def test_config_debug_env_present(monkeypatch):
-    """Temporary: verify debug_env block exists and never exposes secrets."""
-    from mpesa import get_mpesa_config_for_tenant
-    class T:
-        slug = "diag-tenant"
-        mpesa_shortcode = "999"
-        mpesa_env = None
-        paybill = None
-    monkeypatch.setenv("MPESA_DIAG_TENANT_CONSUMER_KEY", "SECRET_VALUE_HERE")
-    monkeypatch.setenv("MPESA_DIAG_TENANT_CONSUMER_SECRET", "OTHER_SECRET")
-    result = get_mpesa_config_for_tenant(T())
-    assert "debug_env" in result
-    d = result["debug_env"]
-    assert d["available"] is True
-    assert d["tenant_slug"] == "diag-tenant"
-    assert d["computed_prefix"] == "DIAG_TENANT"
-    assert d["expected_key_name"] == "MPESA_DIAG_TENANT_CONSUMER_KEY"
-    assert d["key_present"] is True
-    assert d["key_length"] == len("SECRET_VALUE_HERE")  # length only, not value
-    # NEVER expose actual secret
-    import json as _j
-    serialized = _j.dumps(d)
-    assert "SECRET_VALUE_HERE" not in serialized
-    assert "OTHER_SECRET" not in serialized
-
