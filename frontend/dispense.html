@@ -892,6 +892,10 @@
               } else {
                 wMsg = "Previous day's closing reading is missing \u2014 enter the opening reading manually.";
               }
+            } else if (!d.has_reading && d.suggested_opening_m3 != null && d.derivation_reason == null) {
+              // A1 fix: normal derivation path (yesterday closed, today not yet opened)
+              wMsg = 'Opening auto-derived from ' + d.suggested_opening_source_iso
+                   + ' closing: ' + d.suggested_opening_m3 + ' m\u00b3. Edit if needed.';
             } else if (!d.has_reading && ((d.sales_kes || 0) > 0 || (d.paid_kes || 0) > 0)) {
               // Step 1: gentle reminder (not a warning) — eventful day, no close yet
               wMsg = 'You have sales or payments recorded today. Remember to enter the closing reading at the end of the day to lock today\u2019s activity.';
@@ -1032,6 +1036,17 @@
               reasonInp.value = '';
               submitBtn.textContent = 'Save Opening';
             }
+          } else if (d.suggested_opening_m3 != null && d.derivation_reason == null) {
+            // A1 fix: normal derivation available — show prefilled editable opening
+            title.textContent = "Close Today's Reading";
+            openRow.style.display = 'block';
+            openInput.value = String(d.suggested_opening_m3);
+            openInput.required = false;
+            closeInput.value = '';
+            closeInput.required = true;
+            reasonRow.style.display = 'none';
+            reasonInp.value = '';
+            submitBtn.textContent = 'Close Day';
           } else {
             title.textContent = "Close Today's Reading";
             openRow.style.display = 'none';

@@ -246,3 +246,21 @@ def test_dispense_analytics_has_mpesa_tab():
     assert 'href="/admin/mpesa/dispensing"' in html
     assert 'id="drawerMpesaDisp"' in html
 
+# ══════════════════════════════════════════════════════════════════════
+# A1 fix — normal auto-derive path (yesterday closed, today not yet opened)
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_a1_auto_derive_branch():
+    html = _read('dispense.html')
+    # Banner condition for normal derivation
+    assert "d.suggested_opening_m3 != null && d.derivation_reason == null" in html
+    # Marker comments
+    assert 'A1 fix: normal derivation path' in html
+    assert 'A1 fix: normal derivation available' in html
+
+
+def test_dispense_a1_prefill_opening_for_normal_derivation():
+    html = _read('dispense.html')
+    # Both banner + form-mode branches present
+    assert html.count("d.suggested_opening_m3 != null && d.derivation_reason == null") == 2
+
