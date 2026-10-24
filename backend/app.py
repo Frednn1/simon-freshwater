@@ -5028,6 +5028,87 @@ def _dispense_is_closed(tenant_id, target_date):
     return bool(r and r.is_closed)
 
 
+def _dispense_cascade_forward(tenant_id, from_date):
+    """After a write to `from_date` (create/close/correct), propagate the
+    opening reading through all downstream CLOSED rows so the chain rule
+    (closing of prior day = opening of next day) holds.
+
+    - Only cascades from a CLOSED source row (open rows have no real closing).
+    - Walks forward while rows are CLOSED; stops at the first OPEN row
+      (open rows derive from the most recent closed row above them — no
+      cascade needed since they have no real closing yet).
+    - Updates opening_reading_m3 + consumption_m3 on every affected row.
+    - Returns a list of {date, old_opening, new_opening, old_consumption_l,
+      new_consumption_l} for audit / response.
+
+    NEVER raises — swallow errors so a cascade failure can't roll back the
+    primary write that already committed.
+    """
+    affected = []
+    try:
+        source = (DispenseMeterReading.query
+                  .filter_by(tenant_id=tenant_id, reading_date=from_date)
+                  .first())
+        if not source or not source.is_closed:
+            return affected  # nothing to cascade from an open row
+
+        prev_closing = float(source.closing_reading_m3)
+
+        downstream = (DispenseMeterReading.query
+                      .filter(DispenseMeterReading.tenant_id == tenant_id,
+                              DispenseMeterReading.reading_date > from_date)
+                      .order_by(DispenseMeterReading.reading_date.asc())
+                      .all())
+
+        for row in downstream:
+            old_opening = float(row.opening_reading_m3 or 0)
+            old_cons = float(row.consumption_m3 or 0)
+
+            # Tolerance check — avoid float jitter updates
+            if abs(old_opening - prev_closing) > 0.001:
+                row.opening_reading_m3 = prev_closing
+                if row.is_closed:
+                    new_cons = round(float(row.closing_reading_m3) - prev_closing, 4)
+                    row.consumption_m3 = new_cons
+                else:
+                    # Open row — sentinel closing = opening, consumption = 0
+                    row.closing_reading_m3 = prev_closing
+                    row.consumption_m3 = 0.0
+                affected.append({
+                    "date": row.reading_date.isoformat(),
+                    "old_opening": old_opening,
+                    "new_opening": prev_closing,
+                    "old_consumption_l": int(round(old_cons * 1000)),
+                    "new_consumption_l": int(round(float(row.consumption_m3 or 0) * 1000)),
+                    "was_closed": bool(row.is_closed),
+                })
+
+            if row.is_closed:
+                prev_closing = float(row.closing_reading_m3)
+            else:
+                # Stop cascade at first open row — it has no real closing
+                break
+
+        if affected:
+            db.session.commit()
+            for x in affected:
+                _audit("dispense_reading_cascade",
+                       target_type="tenant", target_id=tenant_id,
+                       detail=(f"date={x['date']} "
+                               f"old_opening={x['old_opening']:g} "
+                               f"new_opening={x['new_opening']:g} "
+                               f"old_cons_l={x['old_consumption_l']} "
+                               f"new_cons_l={x['new_consumption_l']} "
+                               f"closed={x['was_closed']}"))
+    except Exception:
+        try:
+            app.logger.exception("[Cascade] forward cascade failed")
+            db.session.rollback()
+        except Exception:
+            pass
+    return affected
+
+
 def _dispense_opening_derivation(tenant_id, requested):
     """Phase 2: Compute opening derivation info for a given target date.
 
@@ -5577,6 +5658,12 @@ def admin_dispense_reading_post():
             action = "corrected"
         rid = existing.id
 
+    # ── 8b. Cascade to downstream closed rows ──
+    # If this write changed a closing value (retro-close / correction /
+    # retro-create), all downstream closed rows must re-derive their opening
+    # so the chain rule (closing of prior day = opening of next day) holds.
+    cascade_affected = _dispense_cascade_forward(tenant_id, requested)
+
     # ── 9. Reload fresh stats for the response ──
     stats_map = _dispense_window_stats(tenant_id, [requested])
     st = stats_map[requested.isoformat()]
@@ -5597,6 +5684,9 @@ def admin_dispense_reading_post():
         "variance_l": st["variance_l"],
         "has_reading": True,
         "is_closed": is_closed_final,
+        # Step 1 (cascade fix): report downstream corrections triggered by
+        # this write. Empty when chain was already consistent.
+        "cascade_affected": cascade_affected,
     })
 
 
