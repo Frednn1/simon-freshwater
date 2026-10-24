@@ -486,6 +486,7 @@
 
     <div class="settings-card">
       <h2>Today &middot; <span id="todayDate">&hellip;</span></h2>
+      <div id="todayDerivationNote" style="display:none;background:#e3f2fd;border-left:3px solid #1976d2;padding:.5rem .75rem;border-radius:6px;margin-bottom:.75rem;font-size:.82rem;color:#0d47a1;"></div>
       <div class="dpanel">
         <div class="row"><span class="label">Opening Reading</span><span class="value" id="tOpening">&mdash;</span></div>
         <div class="row"><span class="label">Closing Reading</span><span class="value" id="tClosing">&mdash;</span></div>
@@ -755,7 +756,18 @@
         const d = await r.json();
         if (!d.ok) return;
         document.getElementById('todayDate').textContent = d.date || '\u2014';
-        document.getElementById('tOpening').textContent = fmtM(d.opening_reading_m3);
+        var _dNote = document.getElementById('todayDerivationNote');
+        if (_dNote) {
+          if (d.opening_reading_m3 == null && d.suggested_opening_m3 != null && d.suggested_opening_source_iso) {
+            _dNote.textContent = 'Opening auto-derived from ' + d.suggested_opening_source_iso + ' closing: ' + d.suggested_opening_m3 + ' m\u00b3';
+            _dNote.style.display = 'block';
+          } else {
+            _dNote.style.display = 'none';
+          }
+        }
+        var _openVal = (d.opening_reading_m3 != null) ? d.opening_reading_m3
+                      : (d.suggested_opening_m3 != null ? d.suggested_opening_m3 : null);
+        document.getElementById('tOpening').textContent = fmtM(_openVal);
         document.getElementById('tClosing').textContent = fmtM(d.closing_reading_m3);
         document.getElementById('tConsumption').textContent = d.has_reading ? fmtL(d.consumption_l) : '\u2014';
         document.getElementById('tSold').textContent = fmtL(d.sold_l);
@@ -884,18 +896,12 @@
             } else if (d.is_first_day) {
               wMsg = 'First day of dispensing \u2014 record the opening reading to begin.';
             } else if (d.prev_day_missing) {
-              if (d.suggested_opening_m3 != null && d.suggested_opening_source_iso) {
-                wMsg = 'Opening auto-derived from ' + d.suggested_opening_source_iso
-                     + ' closing: ' + d.suggested_opening_m3 + ' m\u00b3. Edit if needed.';
-              } else if (d.derivation_reason === 'open_gap' && d.open_gap_date) {
+              if (d.derivation_reason === 'open_gap' && d.open_gap_date) {
                 wMsg = 'Open reading on ' + d.open_gap_date + '. Enter opening manually.';
-              } else {
+              } else if (d.suggested_opening_m3 == null) {
                 wMsg = "Previous day's closing reading is missing \u2014 enter the opening reading manually.";
               }
-            } else if (!d.has_reading && d.suggested_opening_m3 != null && d.derivation_reason == null) {
-              // A1 fix: normal derivation path (yesterday closed, today not yet opened)
-              wMsg = 'Opening auto-derived from ' + d.suggested_opening_source_iso
-                   + ' closing: ' + d.suggested_opening_m3 + ' m\u00b3. Edit if needed.';
+              // else: derivation info now shown in today card, no banner
             } else if (!d.has_reading && ((d.sales_kes || 0) > 0 || (d.paid_kes || 0) > 0)) {
               // Step 1: gentle reminder (not a warning) — eventful day, no close yet
               wMsg = 'You have sales or payments recorded today. Remember to enter the closing reading at the end of the day to lock today\u2019s activity.';
@@ -965,9 +971,17 @@
             if (!d.has_reading) {
               // GAP-1 fix: retroactive creation for orphaned past days
               title.textContent = 'Create Past Day Reading';
-              openRow.style.display = 'block';
-              openInput.value = (d.suggested_opening_m3 != null) ? String(d.suggested_opening_m3) : '';
-              openInput.required = true;
+              if (d.suggested_opening_m3 != null && d.derivation_reason == null) {
+                // Step 2: derivation available — hide opening, only closing + reason
+                openRow.style.display = 'none';
+                openInput.value = '';
+                openInput.required = false;
+              } else {
+                // Bootstrap / no_prior_closed / open_gap — opening required
+                openRow.style.display = 'block';
+                openInput.value = '';
+                openInput.required = true;
+              }
               closeInput.value = '';
               closeInput.required = true;
               reasonRow.style.display = 'block';
@@ -1013,40 +1027,26 @@
             reasonRow.style.display = 'none';
             reasonInp.value = '';
             submitBtn.textContent = 'Save Opening';
-          } else if (d.prev_day_missing) {
-            if (d.suggested_opening_m3 != null) {
-              // Phase 2: auto-derived opening available — prefill, editable
-              title.textContent = "Close Today's Reading";
-              openRow.style.display = 'block';
-              openInput.value = String(d.suggested_opening_m3);
-              openInput.required = false;
-              closeInput.value = '';
-              closeInput.required = false;
-              reasonRow.style.display = 'none';
-              reasonInp.value = '';
-              submitBtn.textContent = 'Save Reading';
-            } else {
-              // Manual entry required (bootstrap / no_prior_closed / open_gap)
-              title.textContent = 'Previous Reading Missing';
-              openRow.style.display = 'block';
-              openInput.value = '';
-              closeInput.value = '';
-              closeInput.required = false;
-              reasonRow.style.display = 'none';
-              reasonInp.value = '';
-              submitBtn.textContent = 'Save Opening';
-            }
           } else if (d.suggested_opening_m3 != null && d.derivation_reason == null) {
-            // A1 fix: normal derivation available — show prefilled editable opening
+            // Step 1: opening immutable — hidden from form, derived server-side
             title.textContent = "Close Today's Reading";
-            openRow.style.display = 'block';
-            openInput.value = String(d.suggested_opening_m3);
-            openInput.required = false;
+            openRow.style.display = 'none';
+            openInput.value = '';
             closeInput.value = '';
             closeInput.required = true;
             reasonRow.style.display = 'none';
             reasonInp.value = '';
             submitBtn.textContent = 'Close Day';
+          } else if (d.prev_day_missing) {
+            // Manual entry required (bootstrap / no_prior_closed / open_gap)
+            title.textContent = 'Previous Reading Missing';
+            openRow.style.display = 'block';
+            openInput.value = '';
+            closeInput.value = '';
+            closeInput.required = false;
+            reasonRow.style.display = 'none';
+            reasonInp.value = '';
+            submitBtn.textContent = 'Save Opening';
           } else {
             title.textContent = "Close Today's Reading";
             openRow.style.display = 'none';
@@ -1081,7 +1081,7 @@
             const openVal = parseFloat(document.getElementById('dOpenInput').value);
             if (Number.isFinite(openVal)) {
               body.opening_reading_m3 = openVal;
-            } else if (ctx.is_first_day || ctx.prev_day_missing) {
+            } else if (ctx.manual_opening_required) {
               if (msg) { msg.className = 'alert alert-error'; msg.textContent = '\u274c Opening reading is required.'; }
               btn.disabled = false; btn.textContent = orig;
               return;
@@ -1125,7 +1125,12 @@
                                 ' (' + (d.consumption_l || 0).toLocaleString() + ' L).';
             }
             await new Promise(r => setTimeout(r, 800));
-            location.reload();
+            // Step 2: past-day CREATE → redirect home (D-P3-1: only 'created')
+            if (!ctx.is_today && d.action === 'created') {
+              location.href = '/dispense';
+            } else {
+              location.reload();
+            }
           } else {
             if (msg) { msg.className = 'alert alert-error'; msg.textContent = '❌ ' + (d.error || 'Save failed.'); }
             btn.disabled = false; btn.textContent = orig;

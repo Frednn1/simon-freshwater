@@ -5423,15 +5423,14 @@ def admin_dispense_reading_post():
                           .filter_by(tenant_id=tenant_id, reading_date=requested)
                           .first())
         if not _past_existing:
-            # GAP-1 fix: allow retroactive creation for orphaned eventful days.
-            # Requires opening + closing + force + reason (all enforced below).
-            # Row is created with is_closed=True (via op="create_closed" path).
-            _provided_opening = data.get("opening_reading_m3")
+            # Step 2: retroactive creation for orphaned eventful days.
+            # Only closing_reading_m3 required here. Opening is derived when
+            # possible; if derivation is impossible (bootstrap / no_prior_closed /
+            # open_gap), later phase will require it explicitly.
             _provided_closing = data.get("closing_reading_m3")
-            if _provided_opening is None or _provided_closing is None:
+            if _provided_closing is None or _provided_closing == "":
                 return jsonify({
-                    "error": "Retroactive past-day creation requires both "
-                             "opening_reading_m3 and closing_reading_m3."
+                    "error": "Retroactive past-day creation requires closing_reading_m3."
                 }), 400
             # Fall through — bootstrap_required path handles opening,
             # op=create_closed path handles is_closed=True
@@ -5511,16 +5510,9 @@ def admin_dispense_reading_post():
             }), 400
         if opening < 0 or opening > 10_000_000:
             return jsonify({"error": "Opening reading is out of range."}), 400
-    elif data.get("opening_reading_m3") is not None:
-        # Phase 2 (D-P2-3=A): user override of auto-derived opening
-        try:
-            opening = float(data.get("opening_reading_m3"))
-        except (ValueError, TypeError):
-            return jsonify({"error": "opening_reading_m3 must be a number."}), 400
-        if opening < 0 or opening > 10_000_000:
-            return jsonify({"error": "Opening reading is out of range."}), 400
     else:
-        # Auto-derive from most recent CLOSED row
+        # Step 1: opening immutable — always derived from most recent CLOSED
+        # row. Client-supplied opening_reading_m3 is intentionally ignored.
         opening = (float(previous_closed.closing_reading_m3)
                    if previous_closed else 0.0)
 

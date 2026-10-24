@@ -121,17 +121,19 @@ def test_reading_post_uses_derived_opening(client):
     assert d["is_closed"] is True
 
 
-def test_reading_post_accepts_user_override(client):
-    """D-P2-3=A: user can override auto-derived opening (meter reset)."""
+def test_reading_post_ignores_client_opening_when_derivable(client):
+    """Step 1: opening is immutable — client-supplied opening_reading_m3 is ignored."""
     _enable(); _ensure_rate(); _wipe()
     _admin_login(client, "p2e")
     _seed(1, days_ago=10, opening=100.0, closing=200.0, is_closed=True)
-    # Submit opening=999 as user override
+    # Client submits opening=999 but derivation works from prior closed row (200.0)
     r = client.post("/api/admin/dispense/reading",
                     json={"opening_reading_m3": 999.0,
                           "closing_reading_m3": 1099.0})
     assert r.status_code == 200, f"body={r.get_json()}"
-    assert r.get_json()["opening_reading_m3"] == 999.0
+    # Opening should be 200.0 (derived), NOT 999.0 (client value ignored)
+    assert r.get_json()["opening_reading_m3"] == 200.0
+
 
 
 def test_reading_requires_manual_on_open_gap(client):
@@ -149,3 +151,20 @@ def test_reading_requires_manual_on_open_gap(client):
                     json={"opening_reading_m3": 200.0,
                           "closing_reading_m3": 300.0})
     assert r.status_code == 200
+
+def test_retroactive_create_only_needs_closing(client):
+    """Step 2: derivation available → only closing required (opening derived)."""
+    _enable(); _ensure_rate(); _wipe()
+    _admin_login(client, "p2g")
+    _seed(1, days_ago=15, opening=100.0, closing=250.0, is_closed=True)
+    target = app_module._nairobi_today() - timedelta(days=10)
+    r = client.post("/api/admin/dispense/reading", json={
+        "reading_date": target.isoformat(),
+        "closing_reading_m3": 300.0,
+        "force": True, "reason": "retroactive-no-opening"})
+    assert r.status_code == 200, f"body={r.get_json()}"
+    d = r.get_json()
+    assert d["is_closed"] is True
+    assert d["opening_reading_m3"] == 250.0  # derived from day-15
+    assert d["closing_reading_m3"] == 300.0
+

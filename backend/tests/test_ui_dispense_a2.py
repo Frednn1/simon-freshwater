@@ -250,17 +250,38 @@ def test_dispense_analytics_has_mpesa_tab():
 # A1 fix — normal auto-derive path (yesterday closed, today not yet opened)
 # ══════════════════════════════════════════════════════════════════════
 
-def test_dispense_a1_auto_derive_branch():
+def test_dispense_step1_opening_immutable():
+    """Step 1: opening is derived and shown in card; hidden from form."""
     html = _read('dispense.html')
-    # Banner condition for normal derivation
-    assert "d.suggested_opening_m3 != null && d.derivation_reason == null" in html
-    # Marker comments
-    assert 'A1 fix: normal derivation path' in html
-    assert 'A1 fix: normal derivation available' in html
+    # Card note + fallback
+    assert 'id="todayDerivationNote"' in html
+    assert 'Opening auto-derived from ' in html
+    # Form: opening hidden when derivable
+    assert 'Step 1: opening immutable — hidden from form' in html
+    # Old "Edit if needed" removed
+    assert 'Edit if needed' not in html
+
 
 
 def test_dispense_a1_prefill_opening_for_normal_derivation():
     html = _read('dispense.html')
     # Both banner + form-mode branches present
     assert html.count("d.suggested_opening_m3 != null && d.derivation_reason == null") == 2
+
+# ══════════════════════════════════════════════════════════════════════
+# Step 1 — todayDerivationNote in card + no "Edit if needed"
+# ══════════════════════════════════════════════════════════════════════
+
+def test_today_derivation_note_in_card():
+    html = _read('dispense.html')
+    assert 'id="todayDerivationNote"' in html
+    assert 'Opening auto-derived from ' in html
+    # "Edit if needed" removed
+    assert 'Edit if needed' not in html
+
+
+def test_no_client_side_opening_override_comment():
+    html = _read('dispense.html')
+    # After Step 1, opening is immutable — client doesn't send it in derivable cases
+    assert 'Step 1: opening immutable' in html
 
