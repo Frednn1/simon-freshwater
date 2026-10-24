@@ -30,9 +30,10 @@
       <h2>⚙️ Configuration</h2>
       <div class="current-value" id="mpesaConfig">Loading…</div>
       <p class="form-hint-small" style="margin-top:.5rem;">
-        Values come from <code>MPESA_ENV</code>, <code>MPESA_SHORTCODE</code>,
-        <code>MPESA_CONSUMER_KEY</code>, <code>MPESA_CONSUMER_SECRET</code>
-        on Render. Sandbox shortcode is <code>174379</code>.
+        Shortcode is tenant-persistent — set <code>mpesa_shortcode</code> (or
+        <code>paybill</code>) on the tenant record via the developer portal.
+        <code>MPESA_CONSUMER_KEY</code> and <code>MPESA_CONSUMER_SECRET</code>
+        remain global on Render env.
       </p>
     </div>
 
