@@ -677,7 +677,8 @@
           <thead>
             <tr>
               <th>Date</th>
-              <th class="num">Meter (L)</th>
+              <th class="num">Opening (m&sup3;) Reading</th>
+              <th class="num">Consumption (L)</th>
               <th class="num">Sold (L)</th>
               <th class="num">Variance (L)</th>
               <th class="num">Sales (KES)</th>
@@ -688,7 +689,7 @@
             </tr>
           </thead>
           <tbody id="windowBody">
-            <tr><td colspan="8" class="status-unavailable">Loading&hellip;</td></tr>
+            <tr><td colspan="10" class="status-unavailable">Loading&hellip;</td></tr>
           </tbody>
         </table>
       </div>
@@ -808,10 +809,11 @@
         if (!d.ok || !Array.isArray(d.days)) return;
         const tbody = document.getElementById('windowBody');
         if (!d.days.length) {
-          tbody.innerHTML = '<tr><td colspan="9" class="status-unavailable">No data yet.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="10" class="status-unavailable">No data yet.</td></tr>';
           return;
         }
         const fmtL = (v) => v === null || v === undefined ? '\u2014' : Number(v).toLocaleString();
+        const fmtM = (v) => v === null || v === undefined ? '\u2014' : Number(v).toFixed(2) + ' m\u00b3';
         const fmtK = (v) => Number(v || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
         const fmtVariance = (v) => (v > 0 ? '+' : '') + fmtL(v);
         const statusCls = (s) => 'status-' + String(s || 'unavailable').toLowerCase().replace(/\s+/g, '-');
@@ -825,8 +827,10 @@
           const reportCell = showReport
             ? '<button type="button" style="padding:.2rem .55rem;font-size:.72rem;border:1px solid #1976d2;color:#1976d2;background:transparent;border-radius:5px;cursor:pointer;font-weight:600;" onclick="sendReconReport(\'' + row.date_iso + '\')">Send</button>'
             : '<span style="opacity:.35;">\u2014</span>';
+          const _opening = (row.opening_reading_m3 != null) ? fmtM(row.opening_reading_m3) : '\u2014';
           return '<tr data-date="' + row.date_iso + '" style="cursor:pointer;">'
             + '<td>' + row.date + '</td>'
+            + '<td class="num">' + _opening + '</td>'
             + '<td class="num">' + meter + '</td>'
             + '<td class="num">' + fmtL(row.sold_l) + '</td>'
             + '<td class="num ' + varCls + '">' + variance + '</td>'

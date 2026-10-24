@@ -337,3 +337,20 @@ def test_submit_handler_respects_date_param():
         f"found {occurrences}"
     )
 
+# ══════════════════════════════════════════════════════════════════════
+# Step 1 — Activity History: Opening column + Consumption rename
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_window_has_opening_column():
+    html = _read('dispense.html')
+    assert 'Opening (m&sup3;) Reading' in html
+    assert 'Meter (L)' not in html
+    assert 'Consumption (L)' in html
+
+
+def test_dispense_window_colspan_is_10():
+    html = _read('dispense.html')
+    assert 'colspan="10"' in html
+    assert 'colspan="8"' not in html
+    assert 'colspan="9"' not in html
+

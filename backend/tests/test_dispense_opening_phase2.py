@@ -168,3 +168,16 @@ def test_retroactive_create_only_needs_closing(client):
     assert d["opening_reading_m3"] == 250.0  # derived from day-15
     assert d["closing_reading_m3"] == 300.0
 
+def test_window_returns_opening_reading(client):
+    """Step 1: window endpoint must return opening_reading_m3 per day."""
+    _enable(); _ensure_rate(); _wipe()
+    _admin_login(client, "wo")
+    _seed(1, days_ago=2, opening=100.0, closing=150.0, is_closed=True)
+    r = client.get("/api/admin/dispense/window?days=7")
+    assert r.status_code == 200
+    d = r.get_json()
+    target_iso = (app_module._nairobi_today() - timedelta(days=2)).isoformat()
+    target_day = next(x for x in d["days"] if x["date_iso"] == target_iso)
+    assert target_day["opening_reading_m3"] == 100.0
+    assert target_day["consumption_l"] == 50000  # (150-100) * 1000
+

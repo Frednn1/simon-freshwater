@@ -5126,6 +5126,8 @@ def _dispense_window_stats(tenant_id, dates):
         consumption_l = int(round(consumption_m3 * 1000))
         out[iso] = {
             "reading": reading,
+            # Step 1: expose opening reading for the 7-day table column
+            "opening_reading_m3": (float(reading.opening_reading_m3) if reading else None),
             "consumption_m3": consumption_m3,
             "consumption_l": consumption_l,
             "sold_l": sold_l,
@@ -6332,6 +6334,7 @@ def admin_dispense_window():
         days.append({
             "date": d.strftime("%d %b %Y"),
             "date_iso": iso,
+            "opening_reading_m3": st["opening_reading_m3"],
             "consumption_l": st["consumption_l"],
             "consumption_m3": st["consumption_m3"],
             "sold_l": st["sold_l"],
