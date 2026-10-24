@@ -174,17 +174,38 @@ def test_close_open_past_day_succeeds(client):
     assert d.get("is_closed") is True
 
 
-def test_create_new_past_day_reading_rejected(client):
+def test_create_new_past_day_reading_now_requires_force_and_full_data(client):
+    """GAP-1 fix: retroactive creation is now ALLOWED, but only with
+    force+reason+opening+closing. Without all four, still rejected."""
     _enable_dispensing(); _ensure_rate(); _wipe()
     _admin_login(client, "cnw")
-    # No existing reading for this past day
-    past = (app_module._nairobi_today() - timedelta(days=3))
+
+    # (a) Full data → 200 (new behavior)
+    past_a = (app_module._nairobi_today() - timedelta(days=3))
     r = client.post("/api/admin/dispense/reading",
-                    json={"reading_date": past.isoformat(),
+                    json={"reading_date": past_a.isoformat(),
                           "opening_reading_m3": 50.0,
                           "closing_reading_m3": 60.0,
                           "force": True,
-                          "reason": "try create"})
+                          "reason": "retroactive-create"})
+    assert r.status_code == 200, f"body={r.get_json()}"
+    assert r.get_json()["is_closed"] is True
+
+    # (b) Missing force → 400
+    past_b = (app_module._nairobi_today() - timedelta(days=10))
+    r = client.post("/api/admin/dispense/reading",
+                    json={"reading_date": past_b.isoformat(),
+                          "opening_reading_m3": 60.0,
+                          "closing_reading_m3": 70.0,
+                          "reason": "no force"})
     assert r.status_code == 400
-    err = (r.get_json().get("error") or "").lower()
-    assert "cannot create" in err or "past day" in err
+
+    # (c) Missing opening or closing → 400
+    past_c = (app_module._nairobi_today() - timedelta(days=15))
+    r = client.post("/api/admin/dispense/reading",
+                    json={"reading_date": past_c.isoformat(),
+                          "opening_reading_m3": 70.0,
+                          "force": True,
+                          "reason": "missing closing"})
+    assert r.status_code == 400
+

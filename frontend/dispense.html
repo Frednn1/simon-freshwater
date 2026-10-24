@@ -950,8 +950,20 @@
           if (!d.is_today) {
             if (noActBtn) noActBtn.style.display = 'none';
             if (warnEl) warnEl.classList.add('hidden');
-            if (!d.has_reading) { card.style.display = 'none'; return; }
             if (d.is_closed) { card.style.display = 'none'; return; }
+            if (!d.has_reading) {
+              // GAP-1 fix: retroactive creation for orphaned past days
+              title.textContent = 'Create Past Day Reading';
+              openRow.style.display = 'block';
+              openInput.value = (d.suggested_opening_m3 != null) ? String(d.suggested_opening_m3) : '';
+              openInput.required = true;
+              closeInput.value = '';
+              closeInput.required = true;
+              reasonRow.style.display = 'block';
+              reasonInp.value = '';
+              submitBtn.textContent = 'Create Past Day';
+              return;
+            }
             title.textContent = 'Close Past Day';
             openRow.style.display = 'none';
             openInput.value = '';

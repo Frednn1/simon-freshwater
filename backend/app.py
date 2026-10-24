@@ -5373,10 +5373,18 @@ def admin_dispense_reading_post():
                           .filter_by(tenant_id=tenant_id, reading_date=requested)
                           .first())
         if not _past_existing:
-            return jsonify({
-                "error": "Cannot create a new reading for a past day. "
-                         "Only close an existing open day or correct a closed one."
-            }), 400
+            # GAP-1 fix: allow retroactive creation for orphaned eventful days.
+            # Requires opening + closing + force + reason (all enforced below).
+            # Row is created with is_closed=True (via op="create_closed" path).
+            _provided_opening = data.get("opening_reading_m3")
+            _provided_closing = data.get("closing_reading_m3")
+            if _provided_opening is None or _provided_closing is None:
+                return jsonify({
+                    "error": "Retroactive past-day creation requires both "
+                             "opening_reading_m3 and closing_reading_m3."
+                }), 400
+            # Fall through — bootstrap_required path handles opening,
+            # op=create_closed path handles is_closed=True
 
     # ── 2. Parse closing_reading_m3 (OPTIONAL — opening-only save is allowed) ──
     closing_raw = data.get("closing_reading_m3")
