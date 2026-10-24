@@ -981,6 +981,12 @@
               // D-CL-2=A: only eventful days can be created
               if ((d.sales_kes || 0) > 0) {
                 title.textContent = 'Create Past Day Reading';
+                // Alert note: sales exist but closing reading missing
+                if (warnEl && warnTextEl) {
+                  warnTextEl.textContent = 'Sales recorded on this day but no closing reading. Enter the closing reading to lock it.';
+                  warnEl.classList.remove('hidden');
+                  warnEl.style.display = 'flex';
+                }
                 if (d.suggested_opening_m3 != null && d.derivation_reason == null) {
                   // Derivation available — hide opening, only closing + reason
                   openRow.style.display = 'none';

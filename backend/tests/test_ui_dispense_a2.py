@@ -309,3 +309,7 @@ def test_dispense_past_day_locked_state():
     assert "D-CL-1=A: locked state" in html
     assert "'Day Closed'" in html
 
+def test_dispense_create_past_day_alert_note():
+    html = _read('dispense.html')
+    assert 'Sales recorded on this day but no closing reading' in html
+
