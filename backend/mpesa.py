@@ -251,6 +251,7 @@ def get_mpesa_config_for_tenant(tenant) -> dict:
             and creds.get("consumer_secret")
         ),
         "env_source": "+".join(sources) if sources else "unconfigured",
+        "consumer_key_source": creds.get("consumer_key_source", "global"),
     }
 
 
@@ -266,6 +267,7 @@ def credentials_for_tenant(slug: str = None) -> dict:
         "consumer_secret": MPESA_CONSUMER_SECRET,
         "shortcode": MPESA_SHORTCODE,
         "base_url": BASE_URL,
+        "consumer_key_source": "global",
     }
     if not slug:
         return globals_
@@ -274,7 +276,12 @@ def credentials_for_tenant(slug: str = None) -> dict:
     key   = os.environ.get(f"MPESA_{p}_CONSUMER_KEY", "").strip()
     sec   = os.environ.get(f"MPESA_{p}_CONSUMER_SECRET", "").strip()
     short = os.environ.get(f"MPESA_{p}_SHORTCODE", "").strip()
-    if not (key and sec and short):
+    # Step 2: per-tenant shortcode is DB-persistent (Tenant.mpesa_shortcode).
+    # Only consumer key + secret are needed for per-tenant credential override.
+    # The caller sets creds["shortcode"] from DB (admin_mpesa_register /
+    # admin_mpesa_simulate). Requiring short env var here would silently
+    # fall back to globals for tenants that use DB shortcode.
+    if not (key and sec):
         return globals_
     if env_ not in ("sandbox", "production"):
         env_ = MPESA_ENV
@@ -284,8 +291,9 @@ def credentials_for_tenant(slug: str = None) -> dict:
         "env": env_,
         "consumer_key": key,
         "consumer_secret": sec,
-        "shortcode": short,
+        "shortcode": short or "",
         "base_url": base,
+        "consumer_key_source": "tenant-env",
     }
 
 

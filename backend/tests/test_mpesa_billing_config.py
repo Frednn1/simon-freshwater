@@ -152,3 +152,42 @@ def test_simulate_requires_tenant_shortcode(client):
             t.paybill = old_pb
             db.session.commit()
 
+# ══════════════════════════════════════════════════════════════════════
+# Step 2 — per-tenant M-Pesa consumer keys (no shortcode env required)
+# ══════════════════════════════════════════════════════════════════════
+
+def test_credentials_for_tenant_uses_tenant_keys_without_shortcode(monkeypatch):
+    """Per-tenant CONSUMER_KEY+SECRET, no SHORTCODE env var → uses tenant creds.
+    (Shortcode is DB-only per Step 1; must not force globals fallback.)"""
+    from mpesa import credentials_for_tenant
+    monkeypatch.setenv("MPESA_TEST_TENANT_X_CONSUMER_KEY", "tenant-key")
+    monkeypatch.setenv("MPESA_TEST_TENANT_X_CONSUMER_SECRET", "tenant-secret")
+    creds = credentials_for_tenant("test-tenant-x")
+    assert creds["consumer_key"] == "tenant-key"
+    assert creds["consumer_secret"] == "tenant-secret"
+    assert creds["shortcode"] == ""
+    assert creds["consumer_key_source"] == "tenant-env"
+
+
+def test_credentials_for_tenant_falls_back_on_partial_config(monkeypatch):
+    """Only CONSUMER_KEY set (no secret) → falls back to globals (safe)."""
+    from mpesa import credentials_for_tenant
+    monkeypatch.setenv("MPESA_TEST_TENANT_Y_CONSUMER_KEY", "tenant-key")
+    creds = credentials_for_tenant("test-tenant-y")
+    assert creds["consumer_key_source"] == "global"
+
+
+def test_config_for_tenant_shows_consumer_key_source(monkeypatch):
+    """get_mpesa_config_for_tenant exposes consumer_key_source field."""
+    from mpesa import get_mpesa_config_for_tenant
+    class T:
+        slug = "test-tenant-z"
+        mpesa_shortcode = "123456"
+        mpesa_env = None
+        paybill = None
+    monkeypatch.setenv("MPESA_TEST_TENANT_Z_CONSUMER_KEY", "k")
+    monkeypatch.setenv("MPESA_TEST_TENANT_Z_CONSUMER_SECRET", "s")
+    result = get_mpesa_config_for_tenant(T())
+    assert result["consumer_key_source"] == "tenant-env"
+    assert result["shortcode"] == "123456"
+
