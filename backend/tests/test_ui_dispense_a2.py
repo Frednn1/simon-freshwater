@@ -369,3 +369,25 @@ def test_dispense_has_resync_button():
     # Confirm it targets /reading with force+reason
     assert 'reason: \'Re-sync downstream chain\'' in html
 
+# ══════════════════════════════════════════════════════════════════════
+# Phase B — today card alert when yesterday's closing is missing
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_today_missing_close_alert():
+    html = _read('dispense.html')
+    assert 'id="todayMissingCloseAlert"' in html
+    assert 'id="todayMissingCloseText"' in html
+    assert 'id="todayMissingCloseLink"' in html
+    assert 'class="today-alert"' in html
+    assert '.today-alert {' in html
+    assert 'today-alert-link' in html
+
+
+def test_dispense_today_alert_link_targets_yesterday():
+    html = _read('dispense.html')
+    # Both trigger branches must be scoped to today view only
+    assert 'd.is_today && d.yesterday_open' in html
+    assert 'd.is_today && d.prev_day_missing' in html
+    # Link target uses yesterday_iso
+    assert "'/dispense?date=' + d.yesterday_iso" in html
+

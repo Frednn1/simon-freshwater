@@ -356,6 +356,37 @@
         padding: 0 0 0 60px;
       }
     }
+    /* Phase B: missing previous closing alert (top of today card) */
+    .today-alert {
+      display: flex;
+      align-items: center;
+      gap: .65rem;
+      padding: .75rem .9rem;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #fff8e1 0%, #fff3e0 100%);
+      border: 1px solid #ffcc80;
+      border-left: 4px solid #f57c00;
+      color: #6d4c00;
+      font-size: .88rem;
+      line-height: 1.4;
+      margin-bottom: .75rem;
+      box-shadow: 0 1px 3px rgba(245,124,0,.08);
+    }
+    .today-alert-icon { font-size: 1.1rem; line-height: 1.25; flex-shrink: 0; }
+    .today-alert-text { flex: 1; min-width: 0; }
+    .today-alert-link {
+      background: #f57c00;
+      color: #fff !important;
+      padding: .35rem .75rem;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: .78rem;
+      text-decoration: none;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: background .15s;
+    }
+    .today-alert-link:hover { background: #e65100; }
   </style>
 </head>
 <body class="settings-body">
@@ -486,6 +517,11 @@
 
     <div class="settings-card">
       <h2>Today &middot; <span id="todayDate">&hellip;</span></h2>
+      <div id="todayMissingCloseAlert" class="today-alert" style="display:none;">
+        <span class="today-alert-icon" aria-hidden="true">&#x26A0;&#xFE0F;</span>
+        <span id="todayMissingCloseText" class="today-alert-text"></span>
+        <a id="todayMissingCloseLink" class="today-alert-link" href="#">Fix yesterday &rarr;</a>
+      </div>
       <div id="todayDerivationNote" style="display:none;background:#e3f2fd;border-left:3px solid #1976d2;padding:.5rem .75rem;border-radius:6px;margin-bottom:.75rem;font-size:.82rem;color:#0d47a1;"></div>
       <div class="dpanel">
         <div class="row"><span class="label">Opening Reading</span><span class="value" id="tOpening">&mdash;</span></div>
@@ -757,6 +793,27 @@
         const d = await r.json();
         if (!d.ok) return;
         document.getElementById('todayDate').textContent = d.date || '\u2014';
+
+        // Phase B: alert when previous day's closing is missing
+        var _ma = document.getElementById('todayMissingCloseAlert');
+        var _mt = document.getElementById('todayMissingCloseText');
+        var _ml = document.getElementById('todayMissingCloseLink');
+        if (_ma && _mt && _ml) {
+          if (d.is_today && d.yesterday_open) {
+            _mt.textContent = "Yesterday's closing reading was not recorded. Close yesterday's activity first to keep the meter chain consistent.";
+            _ml.textContent = 'Close yesterday \u2192';
+            _ml.href = '/dispense?date=' + d.yesterday_iso;
+            _ma.style.display = 'flex';
+          } else if (d.is_today && d.prev_day_missing) {
+            _mt.textContent = "Yesterday has no closing reading recorded. Create yesterday's closing reading to continue.";
+            _ml.textContent = 'Create yesterday \u2192';
+            _ml.href = '/dispense?date=' + d.yesterday_iso;
+            _ma.style.display = 'flex';
+          } else {
+            _ma.style.display = 'none';
+          }
+        }
+
         var _dNote = document.getElementById('todayDerivationNote');
         if (_dNote) {
           if (d.opening_reading_m3 == null && d.suggested_opening_m3 != null && d.suggested_opening_source_iso) {
