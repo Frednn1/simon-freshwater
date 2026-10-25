@@ -250,6 +250,25 @@
       </form>
       <p id="aRangeLabel" style="font-size:.82rem;color:#666;margin:.25rem 0 0;"></p>
       <div class="aKPI" id="kpiWrap"></div>
+      <div class="aDownloadRow" style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid #eee;display:flex;justify-content:flex-start;">
+        <a id="downloadReportBtn" href="/api/admin/dispense/report.pdf"
+           class="btn-primary btn-fit"
+           style="display:inline-flex;align-items:center;gap:.45rem;text-decoration:none;">
+          <span aria-hidden="true">&#x1F4C4;</span> Download Report (PDF)
+        </a>
+      </div>
+      <script>
+      (function(){
+        try {
+          var el = document.getElementById('downloadReportBtn');
+          if (!el) return;
+          var qs = location.search;
+          if (qs && qs.length > 1) {
+            el.href = el.getAttribute('href') + qs;
+          }
+        } catch (_) {}
+      })();
+      </script>
     </div>
 
     <div class="settings-card">

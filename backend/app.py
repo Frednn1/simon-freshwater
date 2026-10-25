@@ -72,6 +72,7 @@ from mpesa import (
 import archive
 import backup
 from statement import generate_statement_pdf
+from dispense_report import generate_dispense_report_pdf
 
 
 BACKEND_DIR   = os.path.dirname(os.path.abspath(__file__))
@@ -6450,6 +6451,103 @@ def admin_dispense_window():
         })
 
     return jsonify({"ok": True, "days": days})
+
+
+@app.route("/api/admin/dispense/report.pdf")
+def admin_dispense_report_pdf():
+    """Generate & stream a Dispensing Activity Report PDF for the current
+    preset (7/30/90 days) or an explicit from/to range.
+
+    Mirrors the analytics endpoint's parameter parsing so the download
+    button always matches what the operator is currently viewing."""
+    u = _require_admin()
+    if u: return u
+    if not _rate_limit("dispense_report_pdf", 10, 60):
+        return _too_many(60)
+    tenant_id, err = _dispense_tenant_or_error()
+    if err: return err
+
+    preset   = (request.args.get("preset") or "").strip()
+    from_str = (request.args.get("from") or "").strip()
+    to_str   = (request.args.get("to") or "").strip()
+    today = _nairobi_today()
+
+    if from_str and to_str:
+        try:
+            d_from = datetime.strptime(from_str, "%Y-%m-%d").date()
+            d_to   = datetime.strptime(to_str, "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid date format (YYYY-MM-DD)."}), 400
+        if d_from > d_to:
+            return jsonify({"error": "From date must be <= To date."}), 400
+        if (d_to - d_from).days > 365:
+            return jsonify({"error": "Range cannot exceed 365 days."}), 400
+        if d_to > today:
+            d_to = today
+    elif preset in ("7", "30", "90"):
+        days = int(preset)
+        d_to = today
+        d_from = today - timedelta(days=days - 1)
+    else:
+        d_to = today
+        d_from = today - timedelta(days=29)
+
+    dates = []
+    cur = d_from
+    while cur <= d_to:
+        dates.append(cur)
+        cur += timedelta(days=1)
+
+    stats_map = _dispense_window_stats(tenant_id, dates)
+    daily = []
+    for d in dates:
+        st = stats_map[d.isoformat()]
+        daily.append({
+            "date": d.strftime("%d %b"),
+            "date_iso": d.isoformat(),
+            "opening_reading_m3": st.get("opening_reading_m3"),
+            "consumption_l": st["consumption_l"],
+            "sold_l": st["sold_l"],
+            "sales_kes": st["sales_kes"],
+            "paid_kes": st["paid_kes"],
+            "cash_received_kes": st.get("cash_received_kes", 0),
+            "outstanding_kes": st["outstanding_kes"],
+            "variance_l": st["variance_l"],
+            "has_reading": st["has_reading"],
+            "status": _dispense_status(st),
+        })
+
+    totals = {
+        "consumption_l":   sum(x["consumption_l"] for x in daily),
+        "sold_l":          sum(x["sold_l"] for x in daily),
+        "variance_l":      sum(x["variance_l"] for x in daily),
+        "sales_kes":       round(sum(x["sales_kes"] for x in daily), 2),
+        "paid_kes":        round(sum(x["paid_kes"] for x in daily), 2),
+        "outstanding_kes": round(sum(x["outstanding_kes"] for x in daily), 2),
+    }
+
+    tenant = Tenant.query.get(tenant_id)
+    try:
+        pdf_buf = generate_dispense_report_pdf(tenant, daily, totals, d_from, d_to)
+    except Exception as e:
+        app.logger.exception("[DispenseReport] PDF generation failed")
+        return jsonify({"error": f"PDF generation failed: {e}"}), 500
+
+    _audit("dispense_report_downloaded",
+           target_type="tenant", target_id=tenant_id,
+           detail=(f"from={d_from.isoformat()} to={d_to.isoformat()} "
+                   f"rows={len(daily)}"))
+
+    from flask import send_file
+    slug = (tenant.slug if tenant else "tenant") or "tenant"
+    filename = (f"dispense-report-{slug}-{d_from.isoformat()}"
+                f"-to-{d_to.isoformat()}-{len(daily)}d.pdf")
+    return send_file(
+        pdf_buf,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=filename,
+    )
 
 
 @app.route("/api/admin/logout", methods=["POST"])

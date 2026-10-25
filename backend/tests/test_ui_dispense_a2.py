@@ -431,3 +431,14 @@ def test_dispense_send_button_all_statuses():
     # Send handler still present
     assert 'sendReconReport' in html
 
+# ══════════════════════════════════════════════════════════════════════
+# Download Report button in analytics page
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_analytics_has_download_report_btn():
+    html = _read('dispense_analytics.html')
+    assert 'id="downloadReportBtn"' in html
+    assert '/api/admin/dispense/report.pdf' in html
+    # Button must pass through current query string (preset / from-to)
+    assert "location.search" in html
+
