@@ -8709,6 +8709,13 @@ def admin_team_deactivate(user_id):
             return jsonify({"error": "Cannot deactivate the last active admin."}), 400
 
     target.is_active = False
+    # G-2: also clear lockout state on deactivation. Without this, a
+    # user who was locked out at the moment of deactivation retains
+    # failed_attempts / locked_until in the DB until reactivation
+    # (reactivate already resets both). Deactivation should leave a
+    # clean inactive row, not an "inactive + locked" hybrid.
+    target.failed_attempts = 0
+    target.locked_until = None
     db.session.commit()
     _audit("team_member_deactivated",
            target_type="tenant", target_id=admin.tenant_id,
