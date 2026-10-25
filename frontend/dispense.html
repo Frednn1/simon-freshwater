@@ -906,9 +906,10 @@
           const meter = row.has_reading ? fmtL(row.consumption_l) : '\u2014';
           const variance = row.has_reading ? fmtVariance(row.variance_l) : '\u2014';
           const varCls = row.has_reading ? (row.variance_l === 0 ? 'variance-zero' : 'variance-nonzero') : '';
-          const _vr = Number(row.variance_l || 0);
-          const _or = Number(row.outstanding_kes || 0);
-          const showReport = row.has_reading && (_vr !== 0 || _or !== 0);
+          // Send button available for every reading row (Due, Cleared,
+          // Review). No-reading rows stay hidden — backend rejects them
+          // (admin_dispense_reconciliation_send requires has_reading=true).
+          const showReport = row.has_reading;
           const reportCell = showReport
             ? '<button type="button" style="padding:.2rem .55rem;font-size:.72rem;border:1px solid #1976d2;color:#1976d2;background:transparent;border-radius:5px;cursor:pointer;font-weight:600;" onclick="sendReconReport(\'' + row.date_iso + '\')">Send</button>'
             : '<span style="opacity:.35;">\u2014</span>';

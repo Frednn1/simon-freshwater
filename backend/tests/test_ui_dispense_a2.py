@@ -418,3 +418,16 @@ def test_dispense_header_pad_runs_before_main_content():
             f'and <main> ({main_open}), found at {sync_pos}'
         )
 
+# ══════════════════════════════════════════════════════════════════════
+# Send button — enabled for all reading statuses
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_send_button_all_statuses():
+    html = _read('dispense.html')
+    # New gate: show whenever a reading exists
+    assert 'const showReport = row.has_reading;' in html
+    # Old variance/outstanding gate must be gone
+    assert '_vr !== 0 || _or !== 0' not in html
+    # Send handler still present
+    assert 'sendReconReport' in html
+
