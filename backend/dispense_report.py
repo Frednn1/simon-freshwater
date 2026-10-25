@@ -56,17 +56,34 @@ def _status_color(status):
     return (0.38, 0.49, 0.55)
 
 
-def _try_insert_logo(page, x, y_baseline, logo_bytes, size=48):
-    """Insert logo box aligned to org-name baseline. Returns (x_after, ok).
-    Preserves aspect ratio. Silently no-ops when logo_bytes is None/empty."""
+def _try_insert_logo(page, x, y_baseline, logo_bytes, size=48, name_ascender=13):
+    """Insert logo with TOP EDGE aligned to the org name's top edge.
+    Preserves aspect ratio (via Pixmap). No-op when logo_bytes is None/empty."""
     if not logo_bytes:
         return x, False
     try:
         import fitz
-        y0 = y_baseline - (size - 6)
-        rect = fitz.Rect(x, y0, x + size, y_baseline + 6)
-        page.insert_image(rect, stream=logo_bytes, keep_proportion=True)
-        return x + size + 10, True
+        # Read actual image dimensions to preserve aspect ratio
+        try:
+            pix = fitz.Pixmap(logo_bytes)
+            iw, ih = pix.width, pix.height
+        except Exception:
+            iw, ih = size, size
+        if ih <= 0 or iw <= 0:
+            return x, False
+        aspect = iw / ih
+        # Fit inside a `size` x `size` box, preserving aspect
+        if aspect >= 1.0:
+            draw_w = size
+            draw_h = size / aspect
+        else:
+            draw_h = size
+            draw_w = size * aspect
+        # TOP of image = name's top edge (baseline - ascender)
+        y0 = y_baseline - name_ascender
+        rect = fitz.Rect(x, y0, x + draw_w, y0 + draw_h)
+        page.insert_image(rect, stream=logo_bytes, keep_proportion=False)
+        return x + draw_w + 12, True
     except Exception:
         return x, False
 
@@ -176,16 +193,16 @@ def _col_layout(page):
 
 def _draw_table_header(page, y, cols):
     import fitz
-    H = 22
+    H = 20
     page.draw_rect(fitz.Rect(40, y, page.rect.width - 40, y + H),
                    color=None, fill=_THEME_TABLE_HEAD_BG, width=0)
     for h, x in cols:
-        page.insert_text((x + 3, y + 15), h, fontsize=10,
+        page.insert_text((x + 3, y + 13), h, fontsize=8,
                          fontname="hebo", color=_THEME_TABLE_HEAD_FG)
     return y + H
 
 
-def _draw_row(page, y, cols, values, row_h=18):
+def _draw_row(page, y, cols, values, row_h=15):
     for (h, x), val in zip(cols, values):
         if isinstance(val, dict):
             text = val.get("text", "")
@@ -193,7 +210,7 @@ def _draw_row(page, y, cols, values, row_h=18):
         else:
             text = str(val)
             color = (0.15, 0.15, 0.15)
-        page.insert_text((x + 3, y + 13), text, fontsize=11,
+        page.insert_text((x + 3, y + 11), text, fontsize=8,
                          fontname="helv", color=color)
     return y + row_h
 
@@ -219,7 +236,7 @@ def generate_dispense_report_pdf(tenant, daily, totals, d_from, d_to,
     cols = _col_layout(page)
     y = _draw_table_header(page, y, cols)
 
-    row_h = 18
+    row_h = 15
     footer_reserve = 36
     # Step 1: report rows DESCENDING — most recent first
     for row in reversed(daily):
