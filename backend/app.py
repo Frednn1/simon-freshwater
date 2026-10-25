@@ -497,8 +497,14 @@ def _before_request_employee_path_guard():
     is_api = p.startswith("/api/")
     wants_html = "text/html" in (request.headers.get("Accept") or "")
     if is_api or not wants_html:
+        # O-1: unified employee-forbidden message. The permission-denied
+        # branch above already uses "This section is not enabled for your
+        # account." — using the same string here makes the two refusals
+        # indistinguishable to the caller, closing the enumeration signal
+        # that "dispensing portal" implied even when the employee's profile
+        # was billing.
         return jsonify({
-            "error": "Forbidden. Employees can only access the dispensing portal."
+            "error": "Forbidden. This section is not enabled for your account."
         }), 403
     return redirect(_home)
 
