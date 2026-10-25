@@ -391,3 +391,30 @@ def test_dispense_today_alert_link_targets_yesterday():
     # Link target uses yesterday_iso
     assert "'/dispense?date=' + d.yesterday_iso" in html
 
+# ══════════════════════════════════════════════════════════════════════
+# Header overlap fix — dynamic header height → body padding-top
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_header_pad_sync():
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        assert 'syncHeaderPad' in html, f'{fn}: syncHeaderPad missing'
+        assert "getBoundingClientRect().height" in html, f'{fn}: measurement missing'
+        assert "document.body.style.paddingTop" in html, f'{fn}: padding set missing'
+        assert "addEventListener('resize', syncHeaderPad)" in html, f'{fn}: resize listener missing'
+        assert "addEventListener('orientationchange', syncHeaderPad)" in html, f'{fn}: orientation listener missing'
+
+
+def test_dispense_header_pad_runs_before_main_content():
+    """The sync script must appear after </header> and before <main>."""
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        hdr_close = html.find('</header>')
+        sync_pos  = html.find('syncHeaderPad')
+        main_open = html.find('<main class="settings-wrap"')
+        assert hdr_close > 0 and sync_pos > 0 and main_open > 0, f'{fn}: positions invalid'
+        assert hdr_close < sync_pos < main_open, (
+            f'{fn}: sync script must be between </header> ({hdr_close}) '
+            f'and <main> ({main_open}), found at {sync_pos}'
+        )
+

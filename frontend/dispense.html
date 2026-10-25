@@ -413,6 +413,33 @@
       </button>
     </div>
   </header>
+  <script>
+  /* Header overlap fix: measure actual fixed-header height and set body
+     padding-top so the first card is never truncated.
+     Re-runs on resize, orientation change, and after fonts load. */
+  (function(){
+    function syncHeaderPad(){
+      var hdr = document.querySelector('.site-header');
+      if (!hdr) return;
+      var h = Math.ceil(hdr.getBoundingClientRect().height);
+      if (h > 0 && document.body) {
+        document.body.style.paddingTop = h + 'px';
+      }
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', syncHeaderPad);
+    } else {
+      syncHeaderPad();
+    }
+    window.addEventListener('resize', syncHeaderPad);
+    window.addEventListener('orientationchange', syncHeaderPad);
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(syncHeaderPad).catch(function(){});
+    }
+    syncHeaderPad();  /* try immediately too */
+  })();
+  </script>
+
 
   <!-- ═══ Mobile Drawer ═══ -->
   <div class="drawer-backdrop" id="drawerBackdrop" aria-hidden="true"></div>
