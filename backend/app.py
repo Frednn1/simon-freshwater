@@ -5224,12 +5224,23 @@ def _dispense_window_stats(tenant_id, dates):
 
 
 def _dispense_status(stats):
-    if not stats["has_reading"]:
+    """Status per approved rule:
+      - No reading: no reading row exists
+      - Review:     variance < 0  (meter consumption < sold — data anomaly)
+      - Due:        variance > 0  (water unaccounted) OR (variance == 0 AND outstanding > 0 — money owed)
+      - Cleared:    variance == 0 AND outstanding <= 0
+    """
+    if not stats.get("has_reading"):
         return "No reading"
-    if stats["outstanding_kes"] > 0.01:
+    variance    = float(stats.get("variance_l") or 0)
+    outstanding = float(stats.get("outstanding_kes") or 0)
+    if variance < 0:
+        return "Review"
+    if variance > 0:
         return "Due"
-    if stats["outstanding_kes"] < -0.01:
-        return "Overpaid"
+    # variance == 0 here
+    if outstanding > 0:
+        return "Due"
     return "Cleared"
 
 
