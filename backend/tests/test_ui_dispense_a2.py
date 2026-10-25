@@ -306,8 +306,11 @@ def test_dispense_create_past_day_eventful_gate():
 
 def test_dispense_past_day_locked_state():
     html = _read('dispense.html')
-    assert "D-CL-1=A: locked state" in html
-    assert "'Day Closed'" in html
+    # Locked state: card visible, form hidden, day-closed title, re-sync button
+    assert "title.textContent = 'Day Closed';" in html
+    assert "form.style.display = 'none';" in html
+    assert 'id="dResyncBtn"' in html
+    assert 'This day is closed' in html
 
 def test_dispense_create_past_day_alert_note():
     html = _read('dispense.html')
@@ -353,4 +356,16 @@ def test_dispense_window_colspan_is_10():
     assert 'colspan="10"' in html
     assert 'colspan="8"' not in html
     assert 'colspan="9"' not in html
+
+# ══════════════════════════════════════════════════════════════════════
+# Re-sync chain button (closed past days)
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_has_resync_button():
+    html = _read('dispense.html')
+    assert 'id="dResyncBtn"' in html
+    assert 'window.reSyncChain' in html
+    assert 'Re-sync chain' in html
+    # Confirm it targets /reading with force+reason
+    assert 'reason: \'Re-sync downstream chain\'' in html
 
