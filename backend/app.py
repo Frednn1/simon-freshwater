@@ -5163,18 +5163,36 @@ def _dispense_window_stats(tenant_id, dates):
     Returns {iso_date: stats_dict}. Three queries total regardless of window size."""
     if not dates:
         return {}
+    # Step 1: use RANGE filters, not .in_() on the dates list. Cloudflare D1
+    # has a hard SQL-variable limit (~130). 90-day report = 1+1+90+90 params
+    # in the payments query alone -> OperationalError 7500 "too many SQL
+    # variables at offset 130". Callers always pass consecutive dates (report
+    # route & /window endpoint), so range is semantically equivalent. A
+    # Python-side iso_set post-filter enforces identical results even if a
+    # future caller passes non-consecutive dates.
+    # Param count after fix: 3 (readings) + 4 (sales) + 6 (payments) = 13.
+    _min_d = min(dates)
+    _max_d = max(dates)
+    _iso_set = {d.isoformat() for d in dates}
+
     readings = {r.reading_date.isoformat(): r for r in
                 DispenseMeterReading.query
                 .filter(DispenseMeterReading.tenant_id == tenant_id,
-                        DispenseMeterReading.reading_date.in_(dates))
-                .all()}
+                        DispenseMeterReading.reading_date >= _min_d,
+                        DispenseMeterReading.reading_date <= _max_d)
+                .all()
+                if r.reading_date.isoformat() in _iso_set}
     sales_by_date = {}
     for row in (DispenseSale.query
                 .filter(DispenseSale.tenant_id == tenant_id,
-                        DispenseSale.sale_date.in_(dates),
+                        DispenseSale.sale_date >= _min_d,
+                        DispenseSale.sale_date <= _max_d,
                         DispenseSale.voided == False)  # noqa: E712
                 .all()):
-        sales_by_date.setdefault(row.sale_date.isoformat(), []).append(row)
+        _iso = row.sale_date.isoformat()
+        if _iso not in _iso_set:
+            continue
+        sales_by_date.setdefault(_iso, []).append(row)
     # Fetch payments that either arrive on these dates OR target these dates.
     # Second clause catches credit offsets: payment arrives on day 10 for a
     # sale on day 5 — payment_date=day10, sale_date=day5. Both lists updated.
@@ -5182,16 +5200,22 @@ def _dispense_window_stats(tenant_id, dates):
                     .filter(DispensePayment.tenant_id == tenant_id,
                             DispensePayment.voided == False,  # noqa: E712
                             db.or_(
-                                DispensePayment.payment_date.in_(dates),
-                                DispensePayment.sale_date.in_(dates),
+                                db.and_(DispensePayment.payment_date >= _min_d,
+                                        DispensePayment.payment_date <= _max_d),
+                                db.and_(DispensePayment.sale_date >= _min_d,
+                                        DispensePayment.sale_date <= _max_d),
                             ))
                     .all())
     payments_by_date = {}
     payments_by_sale_date = {}
     for row in payments_raw:
-        payments_by_date.setdefault(row.payment_date.isoformat(), []).append(row)
+        _p_iso = row.payment_date.isoformat()
+        if _p_iso in _iso_set:
+            payments_by_date.setdefault(_p_iso, []).append(row)
         if row.sale_date:
-            payments_by_sale_date.setdefault(row.sale_date.isoformat(), []).append(row)
+            _s_iso = row.sale_date.isoformat()
+            if _s_iso in _iso_set:
+                payments_by_sale_date.setdefault(_s_iso, []).append(row)
 
     out = {}
     for d in dates:

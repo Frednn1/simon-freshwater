@@ -131,3 +131,54 @@ def test_report_pdf_rows_descending(client):
         f"older at {txt.index(older)}"
     )
 
+# ══════════════════════════════════════════════════════════════════════
+# Regression — D1 SQL-variable limit (90-day report)
+# ══════════════════════════════════════════════════════════════════════
+
+def test_window_stats_90_days_returns_90_dates(client):
+    """Regression: 90-day call must not hit D1 SQL-variable limit.
+
+    Fixed by switching from .in_() on the dates list to range filters.
+    On D1 the old approach sent 1+1+90+90=182 bind params in the payments
+    query and failed with 'too many SQL variables at offset 130'."""
+    import app as app_module
+    from datetime import timedelta
+    with app_module.app.app_context():
+        today = app_module._nairobi_today()
+        dates = [today - timedelta(days=i) for i in range(90)]
+        result = app_module._dispense_window_stats(1, dates)
+    assert len(result) == 90, f"expected 90 entries, got {len(result)}"
+    for d in dates:
+        assert d.isoformat() in result, f"missing {d.isoformat()} in result"
+
+
+def test_window_stats_range_filter_preserves_data(client):
+    """Regression: range filter must still pick up data deep in the window."""
+    import app as app_module
+    from models import DispenseMeterReading, db
+    from datetime import timedelta
+    with app_module.app.app_context():
+        today = app_module._nairobi_today()
+        d45 = today - timedelta(days=45)
+        DispenseMeterReading.query.filter_by(tenant_id=1, reading_date=d45).delete()
+        db.session.add(DispenseMeterReading(
+            tenant_id=1, reading_date=d45,
+            opening_reading_m3=100.0, closing_reading_m3=150.0,
+            consumption_m3=50.0, is_closed=True, recorded_by="test",
+        ))
+        db.session.commit()
+
+        dates = [today - timedelta(days=i) for i in range(90)]
+        result = app_module._dispense_window_stats(1, dates)
+
+        target_iso = d45.isoformat()
+        assert target_iso in result
+        assert result[target_iso]["consumption_l"] == 50000, (
+            f"expected 50,000 L, got {result[target_iso]['consumption_l']}"
+        )
+        assert result[target_iso]["opening_reading_m3"] == 100.0
+        assert result[target_iso]["is_closed"] is True
+
+        DispenseMeterReading.query.filter_by(tenant_id=1, reading_date=d45).delete()
+        db.session.commit()
+
