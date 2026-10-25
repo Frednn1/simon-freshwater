@@ -6455,11 +6455,21 @@ def admin_dispense_window():
 
 @app.route("/api/admin/dispense/report.pdf")
 def admin_dispense_report_pdf():
-    """Generate & stream a Dispensing Activity Report PDF for the current
-    preset (7/30/90 days) or an explicit from/to range.
+    # Diagnostic wrapper: any exception surfaces as JSON so 90-day failures
+    # can be root-caused without needing Render log access.
+    try:
+        return _admin_dispense_report_pdf_impl()
+    except Exception as e:
+        app.logger.exception("[DispenseReport] unhandled")
+        import traceback as _tb
+        _last = (_tb.format_exc() or "").strip().split("\n")[-1]
+        return jsonify({
+            "error": f"{type(e).__name__}: {str(e)[:200]}",
+            "where": _last[:300],
+        }), 500
 
-    Mirrors the analytics endpoint's parameter parsing so the download
-    button always matches what the operator is currently viewing."""
+
+def _admin_dispense_report_pdf_impl():
     u = _require_admin()
     if u: return u
     if not _rate_limit("dispense_report_pdf", 10, 60):
@@ -6527,11 +6537,31 @@ def admin_dispense_report_pdf():
     }
 
     tenant = Tenant.query.get(tenant_id)
-    try:
-        pdf_buf = generate_dispense_report_pdf(tenant, daily, totals, d_from, d_to)
-    except Exception as e:
-        app.logger.exception("[DispenseReport] PDF generation failed")
-        return jsonify({"error": f"PDF generation failed: {e}"}), 500
+
+    # Step 2: persistent tenant logo — from Tenant.logo_key (persisted).
+    #   logos/...   -> R2 uploaded logo
+    #   images/...  -> bundled file in frontend/ (default seed logo)
+    #   anything else -> no logo (skip, never crash)
+    logo_bytes = None
+    if tenant and tenant.logo_key:
+        _lk = (tenant.logo_key or "").strip()
+        try:
+            if _lk.startswith("logos/"):
+                _lb, _ct = archive.fetch_logo_bytes(_lk)
+                if _lb:
+                    logo_bytes = _lb
+            elif _lk.startswith("images/"):
+                _p = os.path.join(FRONTEND_DIR, _lk)
+                if os.path.exists(_p):
+                    with open(_p, "rb") as _fh:
+                        logo_bytes = _fh.read()
+        except Exception:
+            app.logger.exception("[DispenseReport] logo fetch failed")
+            logo_bytes = None
+
+    pdf_buf = generate_dispense_report_pdf(
+        tenant, daily, totals, d_from, d_to, logo_bytes=logo_bytes,
+    )
 
     _audit("dispense_report_downloaded",
            target_type="tenant", target_id=tenant_id,

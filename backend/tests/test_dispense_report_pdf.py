@@ -101,3 +101,33 @@ def test_report_pdf_preset_90(client):
     r = client.get("/api/admin/dispense/report.pdf?preset=90")
     assert r.status_code == 200
     assert r.data[:5] == b"%PDF-"
+
+def test_report_pdf_rows_descending(client):
+    """Report rows must be DESCENDING (most recent first)."""
+    import pytest as _pt
+    try:
+        import fitz as _fitz
+    except ImportError:
+        _pt.skip("PyMuPDF not installed locally")
+
+    _enable(); _ensure_rate(); _wipe()
+    _admin_login(client, "desc")
+    _seed(days_ago=3, opening=100, closing=150)
+    _seed(days_ago=2, opening=150, closing=200)
+    _seed(days_ago=1, opening=200, closing=250)
+    r = client.get("/api/admin/dispense/report.pdf?preset=7")
+    assert r.status_code == 200
+    doc = _fitz.open(stream=BytesIO(r.data), filetype="pdf")
+    txt = "\n".join(p.get_text() for p in doc)
+    doc.close()
+    import datetime as _dt
+    today = app_module._nairobi_today()
+    newest = (today - _dt.timedelta(days=1)).strftime("%d %b")
+    older = (today - _dt.timedelta(days=3)).strftime("%d %b")
+    assert newest in txt, f"newest date {newest} missing"
+    assert older in txt, f"older date {older} missing"
+    assert txt.index(newest) < txt.index(older), (
+        f"rows not descending: newest at {txt.index(newest)}, "
+        f"older at {txt.index(older)}"
+    )
+
