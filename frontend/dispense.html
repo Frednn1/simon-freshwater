@@ -971,12 +971,18 @@
             if (noActBtn) noActBtn.style.display = 'none';
             if (warnEl) warnEl.classList.add('hidden');
             if (d.is_closed) {
-              // D-CL-1=A: locked state — show card + note instead of hiding entirely
+              // Day is closed — read-only by default, but admin can re-sync
+              // the downstream chain if earlier corrections left stale openings.
               card.style.display = 'block';
               title.textContent = 'Day Closed';
               form.style.display = 'none';
               if (warnEl && warnTextEl) {
-                warnTextEl.textContent = 'This day is closed \u2014 read-only. Payment recording remains active below.';
+                warnTextEl.innerHTML =
+                  'This day is closed \u2014 read-only. Payment recording remains active below. '
+                  + '<button type="button" id="dResyncBtn" class="btn-secondary" '
+                  + 'style="margin-left:.5rem;font-size:.75rem;padding:.3rem .65rem;white-space:nowrap;" '
+                  + 'onclick="reSyncChain(\'' + d.date_iso + '\')">'
+                  + '\u{1F504} Re-sync chain</button>';
                 warnEl.classList.remove('hidden');
                 warnEl.style.display = 'flex';
               }
@@ -1248,6 +1254,43 @@
           }).join('');
         } catch (_) {}
       }
+
+      window.reSyncChain = async (dateIso) => {
+        if (!dateIso) return;
+        if (!confirm('Re-sync downstream chain from ' + dateIso + '?\n\n'
+                   + 'This re-applies this day\'s closing as the opening for all later '
+                   + 'closed days, keeping the chain rule consistent.')) return;
+        try {
+          var tr = await fetch('/api/admin/dispense/today?date=' + encodeURIComponent(dateIso),
+                               {credentials: 'same-origin'});
+          var td = await tr.json();
+          if (!td.ok || td.closing_reading_m3 == null) {
+            alert('\u274c Cannot re-sync: closing reading is missing for this day.');
+            return;
+          }
+          var r = await fetch('/api/admin/dispense/reading', {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              reading_date: dateIso,
+              closing_reading_m3: td.closing_reading_m3,
+              force: true,
+              reason: 'Re-sync downstream chain',
+            })
+          });
+          var resp = await r.json();
+          if (r.ok && resp.ok) {
+            var n = (resp.cascade_affected || []).length;
+            alert('\u2705 Chain re-synced. ' + n + ' downstream day'
+                + (n === 1 ? '' : 's') + ' updated.');
+            location.reload();
+          } else {
+            alert('\u274c ' + (resp.error || 'Re-sync failed.'));
+          }
+        } catch (err) {
+          alert('\u274c ' + (err.message || 'Network error.'));
+        }
+      };
 
       window.voidPay = async (id) => {
         const reason = prompt('Reason for voiding this payment:');
