@@ -1813,37 +1813,37 @@
     };
   </script>
 
-  <!-- B3 — bulk sales import -->
+  <!-- B3 — bulk sales import (modern form) -->
   <div id="bulkSalesModal" style="position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;place-items:center;z-index:9999;padding:1rem;">
-    <div style="background:#fff;border-radius:14px;width:100%;max-width:760px;max-height:92vh;overflow:auto;">
+    <div style="background:#fff;border-radius:14px;width:100%;max-width:620px;max-height:92vh;overflow:auto;">
       <div style="display:flex;justify-content:space-between;align-items:center;padding:1rem 1.15rem;border-bottom:1px solid #e0e0e0;">
         <h3 style="margin:0;font-size:1rem;">Bulk Import Sales</h3>
         <button type="button" id="bulkSalesClose" style="background:transparent;border:none;font-size:1.4rem;cursor:pointer;color:#666;line-height:1;">&times;</button>
       </div>
       <div style="padding:1.15rem;">
         <p style="font-size:.82rem;color:#666;margin:0 0 .75rem;line-height:1.55;">
-          CSV format: <code style="background:#f5f5f5;padding:1px 5px;border-radius:4px;">size_l,quantity[,date][,notes]</code><br>
-          Date format YYYY-MM-DD (within last 7 days, defaults to today). Header row optional. Blank lines ignored.
+          Enter quantities below. Rows with 0 quantity will be skipped. All entries will be recorded on the selected date.
         </p>
         <div class="form-row">
-          <label for="bulkSalesFile">Upload CSV / TXT (optional — fills the textarea below)</label>
-          <input type="file" id="bulkSalesFile" accept=".csv,.txt,text/csv,text/plain">
+          <label for="bulkSalesDate">Date * (within last 7 days)</label>
+          <input type="date" id="bulkSalesDate" required>
         </div>
-        <div class="form-row">
-          <label for="bulkSalesCsv">CSV content *</label>
-          <textarea id="bulkSalesCsv" rows="8" style="font-family:ui-monospace,monospace;font-size:.82rem;width:100%;padding:.5rem;border:1px solid #cfd8dc;border-radius:6px;" placeholder="size_l,quantity,date,notes&#10;200,3,2026-10-20,Wed morning&#10;5000,1,2026-10-20,Lorry KDA 123A"></textarea>
+        <div id="bulkSalesRows" style="margin-top:.85rem;display:flex;flex-direction:column;gap:.5rem;"></div>
+        <div style="background:#f8f9fa;padding:.75rem .9rem;border-radius:8px;margin-top:.9rem;display:flex;justify-content:space-between;align-items:center;font-size:.9rem;">
+          <span style="color:#666;">Grand Total</span>
+          <strong id="bulkSalesGrandTotal" style="color:#0d47a1;font-size:1.05rem;">KES 0.00</strong>
         </div>
-        <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+        <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.9rem;">
           <button type="button" id="bulkSalesPreviewBtn" class="btn-secondary btn-fit">Preview</button>
           <button type="button" id="bulkSalesImportBtn" class="btn-primary btn-fit">Import All</button>
         </div>
         <div id="bulkSalesMsg" class="alert hidden" style="margin-top:.6rem;"></div>
         <div id="bulkSalesPreviewWrap" style="display:none;margin-top:.9rem;">
           <p id="bulkSalesSummary" style="font-size:.82rem;color:#444;margin:0 0 .4rem;font-weight:600;"></p>
-          <div style="overflow-x:auto;max-height:320px;border:1px solid #e0e0e0;border-radius:6px;">
-            <table class="dtable" style="width:100%;font-size:.78rem;margin:0;">
+          <div style="overflow-x:auto;max-height:280px;border:1px solid #e0e0e0;border-radius:6px;">
+            <table class="dtable" style="width:100%;font-size:.8rem;margin:0;">
               <thead>
-                <tr><th>Line</th><th class="num">Size (L)</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Total</th><th>Date</th><th>Notes</th></tr>
+                <tr><th>Unit</th><th class="num">Qty</th><th class="num">Rate (KES)</th><th class="num">Total (KES)</th></tr>
               </thead>
               <tbody id="bulkSalesPreviewBody"></tbody>
             </table>
@@ -1861,8 +1861,6 @@
 
       const modal   = document.getElementById('bulkSalesModal');
       const closeEl = document.getElementById('bulkSalesClose');
-      const fileEl  = document.getElementById('bulkSalesFile');
-      const csvEl   = document.getElementById('bulkSalesCsv');
       const msg     = document.getElementById('bulkSalesMsg');
       const prevBtn = document.getElementById('bulkSalesPreviewBtn');
       const impBtn  = document.getElementById('bulkSalesImportBtn');
@@ -1870,8 +1868,95 @@
       const prevSum = document.getElementById('bulkSalesSummary');
       const prevBody = document.getElementById('bulkSalesPreviewBody');
       const errBox  = document.getElementById('bulkSalesErrors');
+      const dateEl  = document.getElementById('bulkSalesDate');
+      const rowsEl  = document.getElementById('bulkSalesRows');
+      const grandTotalEl = document.getElementById('bulkSalesGrandTotal');
 
-      function openModal() {
+      const UNIT_LABELS = {
+        20: 'Jerrycan (20 L)',
+        200: 'Drum (200 L)',
+        5000: 'Tank (5,000 L)',
+        10000: 'Tank (10,000 L)'
+      };
+      function unitLabel(size) {
+        return UNIT_LABELS[size] || (Number(size).toLocaleString() + ' L');
+      }
+      function fmtN(n) {
+        return Number(n || 0).toLocaleString(undefined,
+          {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      }
+      function todayISO() {
+        const dd = new Date();
+        const parts = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Africa/Nairobi',
+          year: 'numeric', month: '2-digit', day: '2-digit'
+        }).formatToParts(dd);
+        const y  = parts.find(p => p.type === 'year').value;
+        const m  = parts.find(p => p.type === 'month').value;
+        const d2 = parts.find(p => p.type === 'day').value;
+        return y + '-' + m + '-' + d2;
+      }
+      function addDaysISO(iso, days) {
+        const dt = new Date(iso + 'T12:00:00Z');
+        dt.setUTCDate(dt.getUTCDate() + days);
+        return dt.toISOString().slice(0, 10);
+      }
+
+      let _rates = [];
+
+      async function fetchRates() {
+        try {
+          const r = await fetch('/api/admin/dispense/sales', {credentials: 'same-origin'});
+          if (!r.ok) return [];
+          const dd = await r.json();
+          return dd.rates || [];
+        } catch (_) { return []; }
+      }
+
+      function renderRows() {
+        if (!_rates.length) {
+          rowsEl.innerHTML = '<div class="alert alert-error" style="margin:0;">No dispensing rates are configured for this tenant. Set them up in the dev portal.</div>';
+          impBtn.disabled = true;
+          prevBtn.disabled = true;
+          return;
+        }
+        impBtn.disabled = false;
+        prevBtn.disabled = false;
+        rowsEl.innerHTML = _rates.map(r => {
+          const size = r.container_size_L;
+          const price = Number(r.price_kes || 0);
+          return '<div class="bulk-row" data-size="' + size + '" data-price="' + price + '" '
+            + 'style="display:grid;grid-template-columns:1fr 80px 100px 110px;gap:.6rem;align-items:center;padding:.6rem .75rem;border:1px solid #e0e0e0;border-radius:8px;background:#fafafa;">'
+            + '<div style="font-weight:600;font-size:.85rem;">' + unitLabel(size) + '</div>'
+            + '<input type="number" min="0" max="10000" step="1" value="0" class="bulk-qty" data-size="' + size + '" '
+            +   'style="padding:.35rem .45rem;border:1px solid #cfd8dc;border-radius:6px;font-size:.85rem;width:100%;text-align:center;" '
+            +   'aria-label="Quantity for ' + unitLabel(size) + '">'
+            + '<div style="font-size:.75rem;color:#666;text-align:right;">@ ' + fmtN(price) + '</div>'
+            + '<div class="bulk-line-total" style="font-size:.85rem;font-weight:600;text-align:right;">0.00</div>'
+            + '</div>';
+        }).join('');
+
+        rowsEl.querySelectorAll('.bulk-qty').forEach(inp => {
+          inp.addEventListener('input', recomputeTotals);
+        });
+        recomputeTotals();
+      }
+
+      function recomputeTotals() {
+        let grand = 0;
+        rowsEl.querySelectorAll('.bulk-row').forEach(row => {
+          const price = Number(row.dataset.price || 0);
+          const qty = parseInt(row.querySelector('.bulk-qty').value, 10);
+          const safeQty = Number.isFinite(qty) && qty > 0 ? qty : 0;
+          const lineTotal = price * safeQty;
+          grand += lineTotal;
+          const el = row.querySelector('.bulk-line-total');
+          if (el) el.textContent = fmtN(lineTotal);
+        });
+        grandTotalEl.textContent = 'KES ' + fmtN(grand);
+      }
+
+      async function openModal() {
         modal.style.display = 'grid';
         msg.className = 'alert hidden';
         msg.textContent = '';
@@ -1879,8 +1964,14 @@
         prevSum.textContent = '';
         prevBody.innerHTML = '';
         errBox.innerHTML = '';
-        csvEl.value = '';
-        fileEl.value = '';
+
+        const today = todayISO();
+        dateEl.min = addDaysISO(today, -6);
+        dateEl.max = today;
+        dateEl.value = today;
+
+        _rates = await fetchRates();
+        renderRows();
       }
       function closeModal() {
         modal.style.display = 'none';
@@ -1889,28 +1980,32 @@
       openBtn.addEventListener('click', openModal);
       closeEl.addEventListener('click', closeModal);
 
-      fileEl.addEventListener('change', function (ev) {
-        const f = ev.target.files && ev.target.files[0];
-        if (!f) return;
-        const reader = new FileReader();
-        reader.onload = function () {
-          csvEl.value = String(reader.result || '');
-        };
-        reader.readAsText(f);
-      });
-
-      function fmtN(n) {
-        return Number(n || 0).toLocaleString(undefined,
-          {minimumFractionDigits: 2, maximumFractionDigits: 2});
+      function buildCsv() {
+        const date = (dateEl.value || '').trim();
+        if (!date) {
+          msg.className = 'alert alert-error';
+          msg.textContent = 'Please select a date.';
+          return null;
+        }
+        const lines = [];
+        rowsEl.querySelectorAll('.bulk-row').forEach(row => {
+          const size = row.dataset.size;
+          const qty = parseInt(row.querySelector('.bulk-qty').value, 10);
+          if (Number.isFinite(qty) && qty > 0) {
+            lines.push(size + ',' + qty + ',' + date);
+          }
+        });
+        if (!lines.length) {
+          msg.className = 'alert alert-error';
+          msg.textContent = 'Enter a quantity for at least one unit.';
+          return null;
+        }
+        return lines.join('\n');
       }
 
       async function post(dryRun) {
-        const csv = csvEl.value;
-        if (!csv.trim()) {
-          msg.className = 'alert alert-error';
-          msg.textContent = 'Paste CSV content or upload a file first.';
-          return;
-        }
+        const csv = buildCsv();
+        if (!csv) return;
         impBtn.disabled = true; prevBtn.disabled = true;
         const origImp = impBtn.textContent;
         const origPrev = prevBtn.textContent;
@@ -1925,48 +2020,45 @@
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ csv: csv, dry_run: dryRun })
           });
-          const d = await r.json();
+          const dd = await r.json();
 
-          const parsed = d.parsed || [];
-          const errors = d.errors || [];
+          const parsed = dd.parsed || [];
+          const errors = dd.errors || [];
 
           prevWrap.style.display = 'block';
           prevSum.textContent =
-            'Valid: ' + parsed.length + ' · Errors: ' + errors.length +
-            ' · Total: KES ' + fmtN(d.total_kes || 0) +
-            ' · Litres: ' + Number(d.total_liters || 0).toLocaleString();
+            'Valid rows: ' + parsed.length + ' \u00b7 Errors: ' + errors.length +
+            ' \u00b7 Total: KES ' + fmtN(dd.total_kes || 0) +
+            ' \u00b7 Litres: ' + Number(dd.total_liters || 0).toLocaleString();
 
           prevBody.innerHTML = parsed.map(p =>
             '<tr>'
-            + '<td>' + p.line + '</td>'
-            + '<td class="num">' + p.size_l + '</td>'
+            + '<td>' + unitLabel(p.size_l) + '</td>'
             + '<td class="num">' + p.quantity + '</td>'
             + '<td class="num">' + fmtN(p.price_per_unit_kes) + '</td>'
             + '<td class="num">' + fmtN(p.total_kes) + '</td>'
-            + '<td>' + p.date_iso + '</td>'
-            + '<td>' + (p.notes || '\u2014') + '</td>'
             + '</tr>'
           ).join('');
 
           errBox.innerHTML = errors.length
-            ? '<div class="alert alert-error"><strong>Errors (' + errors.length + ') &mdash; fix and retry:</strong><br>'
-              + errors.map(e => 'Line ' + e.line + ': ' + e.error).join('<br>')
+            ? '<div class="alert alert-error"><strong>Errors (' + errors.length + ') \u2014 fix and retry:</strong><br>'
+              + errors.map(e => 'Row ' + e.line + ': ' + e.error).join('<br>')
               + '</div>'
             : '';
 
-          if (r.ok && d.ok && !dryRun) {
+          if (r.ok && dd.ok && !dryRun) {
             msg.className = 'alert alert-success';
-            msg.textContent = '\u2705 Imported ' + d.count + ' sale(s), total KES ' + fmtN(d.total_kes) + '.';
+            msg.textContent = '\u2705 Imported ' + dd.count + ' sale(s), total KES ' + fmtN(dd.total_kes) + '.';
             setTimeout(function () { closeModal(); location.reload(); }, 1200);
-          } else if (r.ok && d.ok && dryRun) {
+          } else if (r.ok && dd.ok && dryRun) {
             msg.className = 'alert alert-success';
-            msg.textContent = '\u2705 Preview OK \u2014 ' + d.count_ok + ' valid row(s). Click Import All to commit.';
+            msg.textContent = '\u2705 Preview OK \u2014 ' + dd.count_ok + ' valid row(s). Click Import All to commit.';
           } else if (errors.length) {
             msg.className = 'alert alert-error';
             msg.textContent = '\u274c Fix ' + errors.length + ' error(s) before importing.';
           } else {
             msg.className = 'alert alert-error';
-            msg.textContent = '\u274c ' + (d.error || ('HTTP ' + r.status));
+            msg.textContent = '\u274c ' + (dd.error || ('HTTP ' + r.status));
           }
         } catch (e) {
           msg.className = 'alert alert-error';

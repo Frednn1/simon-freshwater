@@ -632,3 +632,50 @@ def test_dispense_brand_centered_on_viewport():
             f'{fn}: brand-link full-width missing'
         assert 'position: relative' in html, \
             f'{fn}: header-inner position:relative missing'
+
+# ══════════════════════════════════════════════════════════════════════
+# Step 1 (this batch) — modern bulk import form
+# ══════════════════════════════════════════════════════════════════════
+
+def test_bulk_import_has_date_and_rows_container():
+    html = _read('dispense.html')
+    assert 'id="bulkSalesDate"' in html
+    assert 'id="bulkSalesRows"' in html
+    assert 'id="bulkSalesGrandTotal"' in html
+
+
+def test_bulk_import_old_csv_removed():
+    html = _read('dispense.html')
+    assert 'id="bulkSalesFile"' not in html
+    assert 'id="bulkSalesCsv"' not in html
+    assert 'CSV content' not in html
+
+
+def test_bulk_import_unit_labels_present():
+    html = _read('dispense.html')
+    assert "Jerrycan (20 L)" in html
+    assert "Drum (200 L)" in html
+    assert "Tank (5,000 L)" in html
+    assert "Tank (10,000 L)" in html
+
+
+def test_bulk_import_preview_summary_intact():
+    html = _read('dispense.html')
+    assert 'id="bulkSalesPreviewWrap"' in html
+    assert 'id="bulkSalesSummary"' in html
+    assert 'id="bulkSalesPreviewBody"' in html
+    assert 'id="bulkSalesErrors"' in html
+
+
+def test_bulk_import_buttons_intact():
+    html = _read('dispense.html')
+    assert 'id="bulkSalesPreviewBtn"' in html
+    assert 'id="bulkSalesImportBtn"' in html
+    assert 'id="bulkSalesClose"' in html
+
+
+def test_bulk_import_posts_to_unchanged_endpoint():
+    html = _read('dispense.html')
+    assert '/api/admin/dispense/sales/bulk_import' in html
+    assert 'dry_run' in html
+
