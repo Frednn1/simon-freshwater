@@ -476,6 +476,16 @@
         align-self: flex-start;
         flex-shrink: 0;
       }
+      /* Shift brand text up so the org name glyph cap aligns flush with
+         logo top and menu top. Compensates for the ~8px of leading above
+         the h1 glyph caused by inherited line-height:1.6 from <body>.
+         position:relative preserves layout — header height, body
+         padding-top, and page content below are all unchanged. Name +
+         tagline move together so their mutual gap is preserved. */
+      .settings-body .site-header .brand > div {
+        position: relative;
+        top: -8px;
+      }
     }
   </style>
 </head>

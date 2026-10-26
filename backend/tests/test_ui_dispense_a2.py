@@ -692,3 +692,19 @@ def test_mobile_header_30px_gap_and_flush_top():
         # No transform tricks
         assert 'order: -1;' not in html, f'{fn}: order:-1 must not be used'
 
+# ══════════════════════════════════════════════════════════════════════
+# Mobile header — brand text shifted up to make org name cap flush
+# ══════════════════════════════════════════════════════════════════════
+
+def test_mobile_header_brand_div_shifted_up():
+    """Brand wrapper uses position:relative + negative top to compensate
+    for h1's line-height:1.6 leading — brings org name glyph cap flush
+    with logo top and menu top without changing layout."""
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        assert '.settings-body .site-header .brand > div {' in html, \
+            f'{fn}: brand>div rule missing'
+        assert 'top: -8px;' in html, f'{fn}: negative top missing'
+        assert 'position: relative;' in html, \
+            f'{fn}: position:relative missing on brand>div'
+
