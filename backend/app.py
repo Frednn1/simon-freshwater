@@ -6832,39 +6832,6 @@ def admin_diagnostics_session():
     })
 
 
-# TEMP — DEPENDENCY DIAGNOSTIC (STAGING + PROD, REMOVE AFTER VERIFY)
-# Guarded by X-Admin-Secret == ADMIN_SEED_SECRET. Read-only. Returns
-# package versions + SSL version only — no secrets, no paths, no env values.
-@app.route("/api/admin/diag/deps", methods=["GET"])
-def admin_diag_deps():
-    import hmac as _hmac
-    import sys as _sys
-    secret   = request.headers.get("X-Admin-Secret", "")
-    expected = os.environ.get("ADMIN_SEED_SECRET", "")
-    if not (expected and secret and _hmac.compare_digest(secret, expected)):
-        return jsonify({"error": "Unauthorized"}), 401
-    if not _rate_limit("diag_deps", 10, 60):
-        return _too_many(60)
-
-    def _ver(modname):
-        try:
-            m = __import__(modname)
-            return getattr(m, "__version__", "unknown")
-        except Exception:
-            return "not-installed"
-
-    import ssl as _ssl
-    return jsonify({
-        "python":     _sys.version.split()[0],
-        "certifi":    _ver("certifi"),
-        "requests":   _ver("requests"),
-        "urllib3":    _ver("urllib3"),
-        "httpx":      _ver("httpx"),
-        "ssl":        _ssl.OPENSSL_VERSION,
-    })
-# END TEMP
-
-
 @app.route("/api/admin/settings", methods=["GET"])
 def admin_get_settings():
     if not _rate_limit("settings_get", 30, 60):
