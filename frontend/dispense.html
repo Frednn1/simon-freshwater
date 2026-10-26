@@ -434,34 +434,36 @@
 
 
     /* ═══════════════════════════════════════════════════════════
-       HEADER: menu absolute at top-left, brand flex-centered
-       Flex + position:relative on header-inner so absolute menu
-       anchors to header-inner (not site-header). Menu top:.9rem
-       matches header-inner padding-top; brand top = flex line
-       content-top (.9rem) → same Y. Brand centered via full-width
-       brand-link + justify-content:center inside it → viewport center.
+       MOBILE HEADER — menu · brand · nav (plain flex, no tricks)
+       Menu is 1st child in DOM (reordered); it's a normal flex item
+       with 30px gap to brand, all children aligned flush-top via
+       align-items:flex-start. No absolute positioning, no order:-1,
+       no calc(). Menu's visual position preserved by .header-inner
+       padding .9rem 1.2rem (content-box origin = old absolute point).
        ═══════════════════════════════════════════════════════════ */
     @media (max-width: 600px) {
       .settings-body .site-header .header-inner {
         display: flex;
         align-items: flex-start;
-        justify-content: center;
-        gap: 0;
+        justify-content: flex-start;
+        gap: 30px;
         padding: .9rem 1.2rem;
         position: relative;
       }
       .settings-body .site-header .menu-toggle {
-        position: absolute;
-        top: .9rem;
-        left: 1.2rem;
+        position: static;
+        top: auto;
+        left: auto;
         transform: none;
         margin: 0;
         padding: .55rem .8rem;
+        flex-shrink: 0;
       }
       .settings-body .site-header .brand-link {
         display: flex;
-        justify-content: center;
-        width: 100%;
+        justify-content: flex-start;
+        flex: 1 1 auto;
+        min-width: 0;
         margin: 0;
         padding: 0;
       }
@@ -525,6 +527,9 @@
       <span id="profileSwitchLink" style="display:none;"> &middot; <a href="#" id="switchProfileLink" style="color:#0d47a1;font-weight:600;text-decoration:underline;"></a></span>
     </div>
     <div class="header-inner">
+      <button class="menu-toggle mobile-only" id="menuToggle" type="button" aria-label="Open menu" aria-controls="mobileDrawer" aria-expanded="false">
+        <span class="menu-toggle-icon">☰</span>
+      </button>
       <a href="/?__tenant={{tenant_slug}}" class="brand-link" aria-label="Go to home"><div class="brand">
         <img class="brand-logo" src="{{brand_logo_url}}" alt="{{brand_name}}">
         <div>
@@ -539,9 +544,6 @@
         <a id="tabSettingsDisp" href="/admin/settings" class="tab-btn">Settings</a>
         <button id="logoutBtn" type="button" class="tab-btn">Logout</button>
       </nav>
-      <button class="menu-toggle mobile-only" id="menuToggle" type="button" aria-label="Open menu" aria-controls="mobileDrawer" aria-expanded="false">
-        <span class="menu-toggle-icon">☰</span>
-      </button>
     </div>
   </header>
 

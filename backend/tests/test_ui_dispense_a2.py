@@ -608,30 +608,13 @@ def test_dispense_brand_top_aligned_for_menu_flush():
 # ══════════════════════════════════════════════════════════════════════
 
 def test_dispense_header_flex_top_align():
-    """Header uses flex with absolute-positioned menu. Menu top:.9rem
-    matches header-inner padding-top; brand top = flex content-top = same Y."""
+    """Mobile header: menu, brand, nav are plain flex children.
+    Menu 1st in DOM, brand after a 30px gap, both flush-top."""
     for fn in ('dispense.html', 'dispense_analytics.html'):
         html = _read(fn)
-        assert 'HEADER: menu absolute at top-left, brand flex-centered' in html, \
+        assert 'MOBILE HEADER — menu · brand · nav (plain flex, no tricks)' in html, \
             f'{fn}: header fix block missing'
-        assert 'position: absolute' in html, \
-            f'{fn}: menu absolute positioning missing'
-        assert 'top: .9rem' in html, \
-            f'{fn}: menu top offset missing'
-        assert 'left: 1.2rem' in html, \
-            f'{fn}: menu left offset missing'
-
-def test_dispense_brand_centered_on_viewport():
-    """Brand centered horizontally via full-width brand-link +
-    justify-content:center inside it."""
-    for fn in ('dispense.html', 'dispense_analytics.html'):
-        html = _read(fn)
-        assert 'justify-content: center' in html, \
-            f'{fn}: brand center justify missing'
-        assert 'width: 100%' in html, \
-            f'{fn}: brand-link full-width missing'
-        assert 'position: relative' in html, \
-            f'{fn}: header-inner position:relative missing'
+        assert 'gap: 30px;' in html, f'{fn}: 30px gap missing'
 
 # ══════════════════════════════════════════════════════════════════════
 # Step 1 (this batch) — modern bulk import form
@@ -678,4 +661,34 @@ def test_bulk_import_posts_to_unchanged_endpoint():
     html = _read('dispense.html')
     assert '/api/admin/dispense/sales/bulk_import' in html
     assert 'dry_run' in html
+
+# ══════════════════════════════════════════════════════════════════════
+# Mobile header — plain flex children, 30px gap, DOM order menu→brand→nav
+# ══════════════════════════════════════════════════════════════════════
+
+def test_mobile_header_menu_first_in_dom():
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        start = html.find('<div class="header-inner">')
+        end = html.find('</header>', start)
+        block = html[start:end]
+        idx_menu = block.find('<button class="menu-toggle')
+        idx_brand = block.find('<a href="/?__tenant')
+        assert idx_menu >= 0, f'{fn}: menu-toggle button not in header-inner'
+        assert idx_brand >= 0, f'{fn}: brand-link not in header-inner'
+        assert idx_menu < idx_brand, \
+            f'{fn}: menu must come before brand (menu idx={idx_menu}, brand idx={idx_brand})'
+
+
+def test_mobile_header_30px_gap_and_flush_top():
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        assert 'gap: 30px;' in html, f'{fn}: 30px gap missing'
+        assert 'justify-content: flex-start;' in html, f'{fn}: flex-start missing'
+        assert 'align-items: flex-start;' in html, f'{fn}: align-items flex-start missing'
+        assert 'position: relative;' in html, f'{fn}: header-inner position:relative missing'
+        # Menu is a plain flex child, not absolutely positioned
+        assert 'position: static;' in html, f'{fn}: menu position:static missing'
+        # No transform tricks
+        assert 'order: -1;' not in html, f'{fn}: order:-1 must not be used'
 
