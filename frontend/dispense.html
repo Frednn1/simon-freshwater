@@ -2189,5 +2189,49 @@
     });
   })();
   </script>
+
+  <!-- bfcache-auth-guard: browser may restore this page from back/forward
+       cache without a server round-trip, so the server-side auth redirect
+       never runs. Re-verify auth on pageshow to close that gap. -->
+  <script>
+  (function () {
+    // Fires on every page show; only re-verify when restored from bfcache
+    // (event.persisted === true) or on initial load where auth may have
+    // expired while the tab was hidden.
+    window.addEventListener('pageshow', function (e) {
+      var isRestored = (e && e.persisted) ||
+                       (window.performance &&
+                        performance.getEntriesByType &&
+                        performance.getEntriesByType('navigation')[0] &&
+                        performance.getEntriesByType('navigation')[0].type === 'back_forward');
+      if (!isRestored) return;
+      fetch('/api/admin/whoami', { credentials: 'same-origin' })
+        .then(function (r) { return r.ok ? r.json() : { authenticated: false }; })
+        .then(function (d) {
+          if (!d || !d.authenticated) {
+            location.replace('/admin/login');
+          }
+        })
+        .catch(function () {
+          // Fail closed: network error after bfcache restore → force logout
+          location.replace('/admin/login');
+        });
+    });
+    // Also fire on visibilitychange from 'hidden' → 'visible' when the
+    // page was frozen via Page Lifecycle (Safari/Chrome sometimes use this
+    // instead of bfcache). Cheap re-check, no harm on normal navigation.
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState !== 'visible') return;
+      fetch('/api/admin/whoami', { credentials: 'same-origin' })
+        .then(function (r) { return r.ok ? r.json() : { authenticated: false }; })
+        .then(function (d) {
+          if (!d || !d.authenticated) {
+            location.replace('/admin/login');
+          }
+        })
+        .catch(function () {});
+    });
+  })();
+  </script>
 </body>
 </html>

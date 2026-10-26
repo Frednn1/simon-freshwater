@@ -473,3 +473,18 @@ def test_dispense_hide_does_not_break_legitimate_cases():
     assert "d.is_first_day" in html
     assert "d.prev_day_missing" in html
 
+# ══════════════════════════════════════════════════════════════════════
+# bfcache auth guard — re-verify auth when page restored from back/forward cache
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_has_bfcache_guard():
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        assert 'bfcache-auth-guard' in html, f'{fn}: marker missing'
+        assert "addEventListener('pageshow'" in html, f'{fn}: pageshow listener missing'
+        assert 'e.persisted' in html, f'{fn}: persisted check missing'
+        # Fail-closed redirect
+        assert "location.replace('/admin/login')" in html, f'{fn}: redirect missing'
+        # Defense-in-depth on visibilitychange
+        assert "addEventListener('visibilitychange'" in html, f'{fn}: visibilitychange missing'
+
