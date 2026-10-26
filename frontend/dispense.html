@@ -388,6 +388,16 @@
       transition: background .15s;
     }
     .today-alert-link:hover { background: #e65100; }
+
+    /* Banner top fix: banner is now the topmost visual block.
+       .settings-body's original 1.5rem top padding is removed so banner
+       sits flush at the top edge. Live offset to keep header below banner
+       is set dynamically in the header-padding script (below <main>). */
+    body.settings-body { padding-top: 0; }
+    body.settings-body #profileBanner {
+      position: relative;
+      z-index: 101;   /* above sticky header z:100 so banner not covered */
+    }
   </style>
 </head>
 <body class="settings-body">
@@ -466,8 +476,20 @@
       var hdr = document.querySelector('.site-header');
       if (!hdr) return;
       var h = Math.ceil(hdr.getBoundingClientRect().height);
-      if (h > 0 && document.body) {
-        document.body.style.paddingTop = h + 'px';
+      // Banner top fix: profileBanner sits above the sticky header.
+      // Combined offset must include banner height + header height so
+      // the first content card clears both.
+      var bnr = document.getElementById('profileBanner');
+      var b = 0;
+      if (bnr) {
+        var _bs = window.getComputedStyle(bnr);
+        if (_bs.display !== 'none') {
+          b = Math.ceil(bnr.getBoundingClientRect().height);
+        }
+      }
+      var total = h + b;
+      if (total > 0 && document.body) {
+        document.body.style.paddingTop = total + 'px';
       }
     }
     if (document.readyState === 'loading') {

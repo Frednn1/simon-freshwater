@@ -410,7 +410,7 @@ def test_dispense_header_pad_runs_before_main_content():
     for fn in ('dispense.html', 'dispense_analytics.html'):
         html = _read(fn)
         hdr_close = html.find('</header>')
-        sync_pos  = html.find('syncHeaderPad')
+        sync_pos  = html.find('function syncHeaderPad')
         main_open = html.find('<main class="settings-wrap"')
         assert hdr_close > 0 and sync_pos > 0 and main_open > 0, f'{fn}: positions invalid'
         assert hdr_close < sync_pos < main_open, (
@@ -550,4 +550,32 @@ def test_dispense_banner_uses_whoami_and_can_switch():
         assert 'd.can_switch_to_billing' in html, f'{fn}: banner must check can_switch_to_billing'
         assert "Signed in as " in html, f'{fn}: banner must show signed-in text'
         assert "Dispensing portal" in html, f'{fn}: banner must show Dispensing portal label'
+
+# ══════════════════════════════════════════════════════════════════════
+# Banner top fix — banner is topmost visual block, above sticky header
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_banner_above_header():
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        # CSS override: settings-body padding-top removed
+        assert 'body.settings-body { padding-top: 0; }' in html, (
+            f'{fn}: missing padding-top override'
+        )
+        # Banner z-index above header
+        assert 'z-index: 101;' in html, (
+            f'{fn}: banner must be above header z-index'
+        )
+        # JS: syncHeaderPad measures banner + header
+        assert "document.getElementById('profileBanner')" in html, (
+            f'{fn}: syncHeaderPad must query banner'
+        )
+        assert 'banner height + header height' in html or \
+               'Combined offset must include banner height' in html, (
+            f'{fn}: syncHeaderPad comment missing'
+        )
+        # Still measures header (regression)
+        assert "document.querySelector('.site-header')" in html, (
+            f'{fn}: header lookup must remain'
+        )
 
