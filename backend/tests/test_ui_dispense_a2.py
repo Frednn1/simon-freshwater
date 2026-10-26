@@ -550,3 +550,18 @@ def test_dispense_matches_billing_header_pattern():
         # Banner markup intact
         assert 'id="profileBanner"' in html, f'{fn}: profileBanner missing'
 
+# ══════════════════════════════════════════════════════════════════════
+# Menu icon flush with brand top edge (Option B)
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_menu_flush_with_brand_top():
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        assert '/* Top-align brand + menu icon' in html, \
+            f'{fn}: header-inner flex-start comment missing'
+        assert '/* Top-align logo + text block within brand */' in html, \
+            f'{fn}: brand flex-start comment missing'
+        # Count align-items: flex-start occurrences — at least 2 in the mobile media block
+        assert html.count('align-items: flex-start;') >= 2, \
+            f'{fn}: expected >= 2 align-items:flex-start, got {html.count("align-items: flex-start;")}'
+
