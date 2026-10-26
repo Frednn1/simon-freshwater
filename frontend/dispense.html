@@ -968,6 +968,26 @@
           const reasonInp  = document.getElementById('dReasonInput');
           const submitBtn  = document.getElementById('dSubmitBtn');
 
+          // Step 1 upgrade: hide the reading card on a fresh, eventless day.
+          // Show only when there is something to do: reading exists, sales/paid
+          // exist, or the user must first resolve yesterday (open / missing) or
+          // is at first-day bootstrap. All 4 legitimate "must-show" cases are
+          // excluded via the && conditions below. This is purely a UI hide —
+          // backend rules are unchanged.
+          var _isFreshEmpty = (
+            d.is_today === true &&
+            !d.has_reading &&
+            (d.sales_kes || 0) === 0 &&
+            (d.paid_kes || 0) === 0 &&
+            !d.yesterday_open &&
+            !d.prev_day_missing &&
+            !d.is_first_day
+          );
+          if (_isFreshEmpty) {
+            card.style.display = 'none';
+            return;
+          }
+
           card.style.display = 'block';
           form.style.display = '';
           if (msg) msg.className = 'alert hidden';

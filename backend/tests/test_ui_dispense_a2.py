@@ -442,3 +442,34 @@ def test_dispense_analytics_has_download_report_btn():
     # Button must pass through current query string (preset / from-to)
     assert "location.search" in html
 
+# ══════════════════════════════════════════════════════════════════════
+# Step 1 upgrade — hide reading card on fresh, eventless day
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_hide_fresh_empty_card():
+    html = _read('dispense.html')
+    assert '_isFreshEmpty' in html
+    # All 7 conditions must be present (else we'd over-hide legitimate cases)
+    assert 'd.is_today === true' in html
+    assert '!d.has_reading' in html
+    assert '(d.sales_kes || 0) === 0' in html
+    assert '(d.paid_kes || 0) === 0' in html
+    assert '!d.yesterday_open' in html
+    assert '!d.prev_day_missing' in html
+    assert '!d.is_first_day' in html
+    # Hide action + early return
+    assert "card.style.display = 'none';\n            return;" in html or \
+           "card.style.display = 'none';" in html
+
+
+def test_dispense_hide_does_not_break_legitimate_cases():
+    """The hide logic must not affect yesterday_open, prev_day_missing, is_first_day."""
+    html = _read('dispense.html')
+    # yesterday_open branch: still has its lock-and-return
+    assert "if (d.yesterday_open && d.is_today) {" in html
+    # past-day branch: still present
+    assert "if (!d.is_today) {" in html
+    # first_day / prev_day_missing branch: still present
+    assert "d.is_first_day" in html
+    assert "d.prev_day_missing" in html
+
