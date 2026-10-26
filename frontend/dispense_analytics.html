@@ -347,8 +347,19 @@
         }
         const lo = document.getElementById('logoutBtn');
         if (lo) lo.addEventListener('click', async function () {
-          await fetch('/api/admin/logout', {method: 'POST', credentials: 'same-origin'});
-          location.href = '/admin/login';
+          // Confirmation mirrors billing portal + disqualifies the page
+          // from bfcache: Chrome does not snapshot pages that had a
+          // confirm() active at navigation time (bfcache exclusion rule).
+          if (!confirm('Log out of the dispensing panel?')) return;
+          // Tenant-aware logout — backend returns /admin/login?__tenant=<slug>.
+          const fallback = '/admin/login?__tenant={{tenant_slug}}';
+          try {
+            const r = await fetch('/api/admin/logout', { method: 'POST', credentials: 'same-origin' });
+            const d = await r.json();
+            location.href = (d && d.redirect) || fallback;
+          } catch (_) {
+            location.href = fallback;
+          }
         });
       } catch (_) {}
 

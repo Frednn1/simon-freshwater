@@ -488,3 +488,39 @@ def test_dispense_has_bfcache_guard():
         # Defense-in-depth on visibilitychange
         assert "addEventListener('visibilitychange'" in html, f'{fn}: visibilitychange missing'
 
+# ══════════════════════════════════════════════════════════════════════
+# Logout confirm — mirror billing pattern, disqualify bfcache
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_logout_has_confirm():
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        assert "if (!confirm('Log out of the dispensing panel?')) return;" in html, (
+            f'{fn}: missing confirm() before logout'
+        )
+
+
+def test_dispense_logout_uses_server_redirect():
+    """Both handlers must use server-provided tenant-aware redirect URL."""
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        assert "(d && d.redirect) || fallback" in html, (
+            f'{fn}: missing server-redirect usage'
+        )
+        assert "'/admin/login?__tenant={{tenant_slug}}'" in html, (
+            f'{fn}: missing tenant-aware fallback'
+        )
+
+
+def test_dispense_drawer_logout_still_delegates():
+    """Drawer logout must still delegate to header button (no duplicate handler)."""
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        # Drawer click -> closeDrawer + click #logoutBtn
+        assert "var hdr = document.getElementById('logoutBtn');" in html, (
+            f'{fn}: drawer delegation to header logout broken'
+        )
+        assert "if (hdr) hdr.click();" in html, (
+            f'{fn}: drawer must click header button (no duplicate confirm)'
+        )
+

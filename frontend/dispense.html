@@ -795,6 +795,10 @@
         }
         const lo = document.getElementById('logoutBtn');
         if (lo) lo.addEventListener('click', async () => {
+          // Confirmation mirrors billing portal + disqualifies the page
+          // from bfcache: Chrome does not snapshot pages that had a
+          // confirm() active at navigation time (bfcache exclusion rule).
+          if (!confirm('Log out of the dispensing panel?')) return;
           // Tenant-aware logout — backend returns /admin/login?__tenant=<slug>
           // for this session's tenant. Fall back to templated slug if the
           // response is missing (e.g. network failure).
