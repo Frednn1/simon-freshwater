@@ -565,3 +565,15 @@ def test_dispense_menu_flush_with_brand_top():
         assert html.count('align-items: flex-start;') >= 2, \
             f'{fn}: expected >= 2 align-items:flex-start, got {html.count("align-items: flex-start;")}'
 
+# ══════════════════════════════════════════════════════════════════════
+# Menu icon off left edge (Option 1a — margin-left on mobile toggle)
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_menu_off_left_edge():
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        assert '/* Off the left edge — matches billing-style breathing room */' in html, \
+            f'{fn}: menu off-edge comment missing'
+        assert 'margin-left: .5rem;' in html, \
+            f'{fn}: margin-left on menu-toggle missing'
+
