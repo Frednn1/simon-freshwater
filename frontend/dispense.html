@@ -448,7 +448,10 @@
         display: flex;
         align-items: flex-start;
         justify-content: flex-start;
-        gap: .5rem;
+        /* Final adjustment (pre-merge): push brand 10px right from menu.
+           Menu is order:-1 first child — its left edge unchanged at padding-left.
+           Brand is second child — gap increase shifts it exactly 10px right. */
+        gap: calc(.5rem + 10px);
         padding: .9rem 1.2rem;
       }
       .settings-body .site-header .menu-toggle {

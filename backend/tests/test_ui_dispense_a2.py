@@ -622,3 +622,17 @@ def test_dispense_header_flex_top_align():
         assert 'position: static' in html, \
             f'{fn}: menu position:static missing'
 
+# ══════════════════════════════════════════════════════════════════════
+# Brand offset 10px right of menu (final pre-merge adjustment)
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_brand_offset_10px_right_of_menu():
+    """Brand (logo + org name) sits 10px further from menu than baseline
+    .5rem. Menu itself is unchanged — only the inter-child gap grew."""
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        assert 'gap: calc(.5rem + 10px);' in html, \
+            f'{fn}: brand offset gap missing'
+        assert 'Final adjustment (pre-merge)' in html, \
+            f'{fn}: adjustment comment missing'
+
