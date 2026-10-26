@@ -395,32 +395,7 @@ def test_dispense_today_alert_link_targets_yesterday():
 # Header overlap fix — dynamic header height → body padding-top
 # ══════════════════════════════════════════════════════════════════════
 
-def test_dispense_header_pad_sync():
-    for fn in ('dispense.html', 'dispense_analytics.html'):
-        html = _read(fn)
-        assert 'syncHeaderPad' in html, f'{fn}: syncHeaderPad missing'
-        assert "getBoundingClientRect().height" in html, f'{fn}: measurement missing'
-        assert "document.body.style.paddingTop" in html, f'{fn}: padding set missing'
-        assert "addEventListener('resize', syncHeaderPad)" in html, f'{fn}: resize listener missing'
-        assert "addEventListener('orientationchange', syncHeaderPad)" in html, f'{fn}: orientation listener missing'
 
-
-def test_dispense_header_pad_runs_before_main_content():
-    """The sync script must appear after </header> and before <main>."""
-    for fn in ('dispense.html', 'dispense_analytics.html'):
-        html = _read(fn)
-        hdr_close = html.find('</header>')
-        sync_pos  = html.find('function syncHeaderPad')
-        main_open = html.find('<main class="settings-wrap"')
-        assert hdr_close > 0 and sync_pos > 0 and main_open > 0, f'{fn}: positions invalid'
-        assert hdr_close < sync_pos < main_open, (
-            f'{fn}: sync script must be between </header> ({hdr_close}) '
-            f'and <main> ({main_open}), found at {sync_pos}'
-        )
-
-# ══════════════════════════════════════════════════════════════════════
-# Send button — enabled for all reading statuses
-# ══════════════════════════════════════════════════════════════════════
 
 def test_dispense_send_button_all_statuses():
     html = _read('dispense.html')
@@ -555,27 +530,18 @@ def test_dispense_banner_uses_whoami_and_can_switch():
 # Banner top fix — banner is topmost visual block, above sticky header
 # ══════════════════════════════════════════════════════════════════════
 
-def test_dispense_banner_above_header():
+# ══════════════════════════════════════════════════════════════════════
+# billing-matching-header — syncHeaderPad removed, banner flush at top
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_matches_billing_header_pattern():
     for fn in ('dispense.html', 'dispense_analytics.html'):
         html = _read(fn)
-        # CSS override: settings-body padding-top removed
-        assert 'body.settings-body { padding-top: 0; }' in html, (
-            f'{fn}: missing padding-top override'
-        )
-        # Banner z-index above header
-        assert 'z-index: 101;' in html, (
-            f'{fn}: banner must be above header z-index'
-        )
-        # JS: syncHeaderPad measures banner + header
-        assert "document.getElementById('profileBanner')" in html, (
-            f'{fn}: syncHeaderPad must query banner'
-        )
-        assert 'banner height + header height' in html or \
-               'Combined offset must include banner height' in html, (
-            f'{fn}: syncHeaderPad comment missing'
-        )
-        # Still measures header (regression)
-        assert "document.querySelector('.site-header')" in html, (
-            f'{fn}: header lookup must remain'
-        )
+        # syncHeaderPad and its IIFE are fully removed
+        assert 'syncHeaderPad' not in html, f'{fn}: syncHeaderPad must be removed'
+        # CSS override + marker present
+        assert 'billing-matching-header' in html, f'{fn}: marker missing'
+        assert 'body.settings-body { padding-top: 0; }' in html, f'{fn}: padding-top override missing'
+        # Banner markup intact
+        assert 'id="profileBanner"' in html, f'{fn}: profileBanner missing'
 
