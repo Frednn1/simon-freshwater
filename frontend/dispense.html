@@ -392,6 +392,12 @@
       }
       .settings-body .site-header .brand {
         padding: 0 0 0 60px;
+        /* Logo top-aligns with brand content top so it aligns with menu-toggle
+           at top: 0. Menu and logo are BOTH absolutely positioned at header-inner
+           padding-box top → both should start at same y. Brand's base rule
+           `align-items: center` was pushing logo 9px down into a taller flex
+           block; flex-start makes logo top = brand content top = menu top. */
+        align-items: flex-start;
       }
     }
     /* Phase B: missing previous closing alert (top of today card) */

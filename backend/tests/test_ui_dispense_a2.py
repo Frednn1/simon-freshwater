@@ -589,3 +589,17 @@ def test_dispense_menu_off_left_edge():
         assert 'transform: none;' in html, \
             f'{fn}: menu-toggle transform:none missing'
 
+# ══════════════════════════════════════════════════════════════════════
+# Menu icon ↔ logo top alignment — brand must top-align within its block
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_brand_top_aligned_for_menu_flush():
+    """Brand content (logo + text) must be top-aligned within the brand
+    block so the logo's top edge matches the menu-toggle's top edge."""
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        assert 'align-items: flex-start;' in html, \
+            f'{fn}: brand align-items:flex-start missing'
+        assert 'Logo top-aligns with brand content top' in html, \
+            f'{fn}: alignment comment missing'
+
