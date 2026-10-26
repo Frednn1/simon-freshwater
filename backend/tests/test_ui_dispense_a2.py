@@ -555,25 +555,31 @@ def test_dispense_matches_billing_header_pattern():
 # ══════════════════════════════════════════════════════════════════════
 
 def test_dispense_menu_flush_with_brand_top():
+    """Mobile header matches billing: brand centered, menu icon vertically
+    centered via its own top:50%;translateY(-50%) — same as billing portal."""
     for fn in ('dispense.html', 'dispense_analytics.html'):
         html = _read(fn)
-        assert '/* Top-align brand + menu icon' in html, \
-            f'{fn}: header-inner flex-start comment missing'
-        assert '/* Top-align logo + text block within brand */' in html, \
-            f'{fn}: brand flex-start comment missing'
-        # Count align-items: flex-start occurrences — at least 2 in the mobile media block
-        assert html.count('align-items: flex-start;') >= 2, \
-            f'{fn}: expected >= 2 align-items:flex-start, got {html.count("align-items: flex-start;")}'
+        assert '/* Match billing: vertically center icon inside header-inner' in html, \
+            f'{fn}: billing-match comment missing'
+        assert 'top: 50%;' in html and 'transform: translateY(-50%);' in html, \
+            f'{fn}: menu-toggle centering CSS missing'
+        assert 'margin-left: .5rem;' in html, \
+            f'{fn}: menu left margin missing'
 
 # ══════════════════════════════════════════════════════════════════════
 # Menu icon off left edge (Option 1a — margin-left on mobile toggle)
 # ══════════════════════════════════════════════════════════════════════
 
 def test_dispense_menu_off_left_edge():
+    """Menu icon has .5rem left offset on mobile (still matches billing's
+    breathing room). Comment updated to reflect new billing-match design."""
     for fn in ('dispense.html', 'dispense_analytics.html'):
         html = _read(fn)
-        assert '/* Off the left edge — matches billing-style breathing room */' in html, \
-            f'{fn}: menu off-edge comment missing'
         assert 'margin-left: .5rem;' in html, \
             f'{fn}: margin-left on menu-toggle missing'
+        # New design: menu-toggle vertically centered via top:50%, matches billing
+        assert 'top: 50%;' in html, \
+            f'{fn}: menu-toggle vertical centering missing'
+        assert 'transform: translateY(-50%);' in html, \
+            f'{fn}: menu-toggle transform missing'
 

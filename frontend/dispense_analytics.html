@@ -49,9 +49,10 @@
           portion that appeared as a floating block not spanning full width. */
     @media (max-width: 600px) {
       .settings-body .site-header .menu-toggle {
-        top: 0;
-        transform: none;
-        /* Off the left edge — matches billing-style breathing room */
+        /* Match billing: vertically center icon inside header-inner
+           (billing style: top:50%; translateY(-50%)) + small left margin */
+        top: 50%;
+        transform: translateY(-50%);
         margin-left: .5rem;
       }
       .settings-body .site-header {
@@ -159,15 +160,14 @@
        width changes when wide tab content pushes the layout viewport.
        Menu is absolute at left:0; brand clears it with left padding. */
     @media (max-width: 600px) {
+      /* Match billing: brand centered, menu icon vertical-centered via
+         its own top:50%;translateY(-50%). No flex-start overrides — the
+         natural flex center aligns logo, h1, and menu button on one row. */
       .settings-body .site-header .header-inner {
         justify-content: flex-start;
-        /* Top-align brand + menu icon (was center -> 2px vertical offset) */
-        align-items: flex-start;
       }
       .settings-body .site-header .brand {
         padding: 0 0 0 60px;
-        /* Top-align logo + text block within brand */
-        align-items: flex-start;
       }
     }
 
