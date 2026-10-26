@@ -608,34 +608,27 @@ def test_dispense_brand_top_aligned_for_menu_flush():
 # ══════════════════════════════════════════════════════════════════════
 
 def test_dispense_header_flex_top_align():
-    """Header uses grid: menu at left (col 1), brand centered (col 2),
-    all top-aligned. Equal 1fr cols ensure brand is at viewport center."""
+    """Header uses flex with absolute-positioned menu. Menu top:.9rem
+    matches header-inner padding-top; brand top = flex content-top = same Y."""
     for fn in ('dispense.html', 'dispense_analytics.html'):
         html = _read(fn)
-        assert 'HEADER: menu at left, brand centered on viewport (final)' in html, \
-            f'{fn}: header grid fix block missing'
-        assert 'grid-template-columns: 1fr auto 1fr' in html, \
-            f'{fn}: grid template missing'
-        assert 'grid-column: 1' in html, \
-            f'{fn}: menu grid-column missing'
-        assert 'grid-column: 2' in html, \
-            f'{fn}: brand grid-column missing'
-        assert 'justify-self: center' in html, \
-            f'{fn}: brand center justify missing'
-
-# ══════════════════════════════════════════════════════════════════════
-# Brand offset 10px right of menu (final pre-merge adjustment)
-# ══════════════════════════════════════════════════════════════════════
+        assert 'HEADER: menu absolute at top-left, brand flex-centered' in html, \
+            f'{fn}: header fix block missing'
+        assert 'position: absolute' in html, \
+            f'{fn}: menu absolute positioning missing'
+        assert 'top: .9rem' in html, \
+            f'{fn}: menu top offset missing'
+        assert 'left: 1.2rem' in html, \
+            f'{fn}: menu left offset missing'
 
 def test_dispense_brand_centered_on_viewport():
-    """Brand (logo + org name) is horizontally centered on viewport via
-    1fr auto 1fr grid. Menu occupies col 1, brand-link col 2."""
+    """Brand centered horizontally via full-width brand-link +
+    justify-content:center inside it."""
     for fn in ('dispense.html', 'dispense_analytics.html'):
         html = _read(fn)
-        assert 'grid-template-columns: 1fr auto 1fr' in html, \
-            f'{fn}: center-align grid missing'
-        assert 'grid-column: 2' in html, \
-            f'{fn}: brand grid-column missing'
-        assert 'justify-self: center' in html, \
-            f'{fn}: brand justify-self:center missing'
-
+        assert 'justify-content: center' in html, \
+            f'{fn}: brand center justify missing'
+        assert 'width: 100%' in html, \
+            f'{fn}: brand-link full-width missing'
+        assert 'position: relative' in html, \
+            f'{fn}: header-inner position:relative missing'

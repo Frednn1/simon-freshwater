@@ -434,43 +434,41 @@
 
 
     /* ═══════════════════════════════════════════════════════════
-       HEADER: menu at left, brand centered on viewport (final)
-       3-column grid: [1fr] [auto: brand] [1fr]
-       Equal 1fr columns mean the auto (brand) column's center equals
-       viewport center. Menu explicitly placed in column 1 so it stays
-       left-aligned regardless of brand width. Vertical alignment via
-       align-items: flex-start — all children top-align.
+       HEADER: menu absolute at top-left, brand flex-centered
+       Flex + position:relative on header-inner so absolute menu
+       anchors to header-inner (not site-header). Menu top:.9rem
+       matches header-inner padding-top; brand top = flex line
+       content-top (.9rem) → same Y. Brand centered via full-width
+       brand-link + justify-content:center inside it → viewport center.
        ═══════════════════════════════════════════════════════════ */
     @media (max-width: 600px) {
       .settings-body .site-header .header-inner {
-        display: grid;
-        grid-template-columns: 1fr auto 1fr;
+        display: flex;
         align-items: flex-start;
+        justify-content: center;
         gap: 0;
         padding: .9rem 1.2rem;
+        position: relative;
       }
       .settings-body .site-header .menu-toggle {
-        position: static;
-        top: auto;
-        left: auto;
+        position: absolute;
+        top: .9rem;
+        left: 1.2rem;
         transform: none;
         margin: 0;
         padding: .55rem .8rem;
-        align-self: start;
-        grid-column: 1;
-        justify-self: start;
       }
       .settings-body .site-header .brand-link {
-        grid-column: 2;
-        justify-self: center;
-        min-width: 0;
-        max-width: 100%;
+        display: flex;
+        justify-content: center;
+        width: 100%;
+        margin: 0;
+        padding: 0;
       }
       .settings-body .site-header .brand {
         align-items: flex-start;
-        padding: 0;
         gap: .7rem;
-        min-width: 0;
+        padding: 0;
       }
       .settings-body .site-header .brand-logo {
         align-self: flex-start;
