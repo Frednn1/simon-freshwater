@@ -894,7 +894,17 @@
           // response is missing (e.g. network failure).
           const fallback = '/admin/login?__tenant={{tenant_slug}}';
           try {
-            const r = await fetch('/api/admin/logout', { method: 'POST', credentials: 'same-origin' });
+            // keepalive:true — guarantees the POST completes and the browser
+            // processes the Set-Cookie (session.clear()) even if a navigation
+            // races with this fetch. Without it, an aborted logout leaves the
+            // browser's signed cookie intact — the user appears logged out but
+            // the session is still valid, causing Case 2 (back-to-site lands
+            // on an authenticated /dispense page).
+            const r = await fetch('/api/admin/logout', {
+              method: 'POST',
+              credentials: 'same-origin',
+              keepalive: true,
+            });
             const d = await r.json();
             location.href = (d && d.redirect) || fallback;
           } catch (_) {
