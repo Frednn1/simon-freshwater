@@ -180,24 +180,19 @@
 
 
     /* ═══════════════════════════════════════════════════════════
-       CONSOLIDATED HEADER TOP-ALIGNMENT FIX
-       Menu, logo, and org name all align at header-inner content top.
-       Root cause of prior failures: menu was position:absolute (style.css
-       mobile rule) with top:0 — this anchored to site-header (which has
-       a #profileBanner sibling), causing menu to render at site-header
-       top instead of header-inner content top. Solution: remove absolute
-       positioning; make menu a normal flex child with order:-1; align
-       everything via flex align-items:flex-start on header-inner.
+       HEADER: menu at left, brand centered on viewport (final)
+       3-column grid: [1fr] [auto: brand] [1fr]
+       Equal 1fr columns mean the auto (brand) column's center equals
+       viewport center. Menu explicitly placed in column 1 so it stays
+       left-aligned regardless of brand width. Vertical alignment via
+       align-items: flex-start — all children top-align.
        ═══════════════════════════════════════════════════════════ */
     @media (max-width: 600px) {
       .settings-body .site-header .header-inner {
-        display: flex;
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
         align-items: flex-start;
-        justify-content: flex-start;
-        /* Final adjustment (pre-merge): push brand 10px right from menu.
-           Menu is order:-1 first child — its left edge unchanged at padding-left.
-           Brand is second child — gap increase shifts it exactly 10px right. */
-        gap: calc(.5rem + 10px);
+        gap: 0;
         padding: .9rem 1.2rem;
       }
       .settings-body .site-header .menu-toggle {
@@ -207,15 +202,20 @@
         transform: none;
         margin: 0;
         padding: .55rem .8rem;
-        align-self: flex-start;
-        order: -1;
-        flex: 0 0 auto;
+        align-self: start;
+        grid-column: 1;
+        justify-self: start;
+      }
+      .settings-body .site-header .brand-link {
+        grid-column: 2;
+        justify-self: center;
+        min-width: 0;
+        max-width: 100%;
       }
       .settings-body .site-header .brand {
         align-items: flex-start;
         padding: 0;
         gap: .7rem;
-        flex: 0 1 auto;
         min-width: 0;
       }
       .settings-body .site-header .brand-logo {
