@@ -182,8 +182,11 @@ def test_header_explicit_full_width_rule():
         assert 'top: 0;' in html and 'left: 0;' in html and 'right: 0;' in html, \
             f'{fn}: fixed inset missing'
         assert 'z-index: 100;' in html, f'{fn}: z-index missing'
-        # Body reserves space so fixed header does not overlap content
-        assert 'padding-top: 92px;' in html, f'{fn}: body padding-top missing'
+        # Body reserves space for banner + header via CSS vars (calc sum)
+        assert 'padding-top: calc(var(--dispense-banner-h) + var(--dispense-header-h))' in html, \
+            f'{fn}: body padding-top calc missing'
+        assert '--dispense-banner-h: 32px;' in html, f'{fn}: banner-h CSS var missing'
+        assert '--dispense-header-h: 92px;' in html, f'{fn}: header-h CSS var missing'
         # html preserves existing hidden overflow + blue-900 background
         assert 'html {' in html and 'overflow-x: hidden;' in html, \
             f'{fn}: html overflow-x hidden missing'
@@ -539,9 +542,11 @@ def test_dispense_matches_billing_header_pattern():
         html = _read(fn)
         # syncHeaderPad and its IIFE are fully removed
         assert 'syncHeaderPad' not in html, f'{fn}: syncHeaderPad must be removed'
-        # CSS override + marker present
-        assert 'billing-matching-header' in html, f'{fn}: marker missing'
-        assert 'body.settings-body { padding-top: 0; }' in html, f'{fn}: padding-top override missing'
+        # Banner-inside-header architecture
+        assert 'body.settings-body .site-header #profileBanner {' in html, f'{fn}: banner-in-header CSS missing'
+        assert '--dispense-banner-h' in html, f'{fn}: banner height CSS var missing'
+        assert '--dispense-header-h' in html, f'{fn}: header height CSS var missing'
+        assert 'padding-top: calc(var(--dispense-banner-h) + var(--dispense-header-h))' in html, f'{fn}: calc padding-top missing'
         # Banner markup intact
         assert 'id="profileBanner"' in html, f'{fn}: profileBanner missing'
 

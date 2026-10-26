@@ -303,16 +303,6 @@
       box-sizing: border-box;
       z-index: 100;
     }
-    /* Reserve space for the fixed header. Approximate values; can be tuned
-       by visual inspection if header height changes. */
-    body.settings-body {
-      padding-top: 92px;
-    }
-    @media (max-width: 600px) {
-      body.settings-body {
-        padding-top: 78px;
-      }
-    }
     /* Safety net: hide any horizontal overflow created by 100vw extending
        under a desktop scrollbar. Applied to html (not body) to preserve
        position:sticky behavior — tested across modern browsers. */
@@ -333,6 +323,46 @@
     }
     body.settings-body .site-header {
       background: var(--blue-900);
+    }
+
+    /* Banner-inside-header architecture:
+       - Banner is first child of fixed header -> both pinned as one unit
+       - body padding-top reserves banner+header height via CSS vars
+       - Header padding moves to .header-inner so banner touches edges
+       - Banner keeps light blue + full width */
+
+    :root {
+      --dispense-banner-h: 32px;
+      --dispense-header-h: 92px;
+    }
+    body.settings-body {
+      padding-top: calc(var(--dispense-banner-h) + var(--dispense-header-h));
+    }
+    @media (max-width: 600px) {
+      :root { --dispense-header-h: 78px; }
+    }
+
+    /* Header: remove padding so banner touches viewport edges */
+    .settings-body .site-header {
+      padding: 0;
+    }
+    .settings-body .site-header .header-inner {
+      padding: .9rem 1.2rem;
+    }
+
+    /* Banner inside fixed header — full width, own padding, light blue */
+    body.settings-body .site-header #profileBanner {
+      position: static;
+      z-index: auto;
+      margin: 0;
+      padding: .5rem 1rem;
+      width: 100%;
+      box-sizing: border-box;
+      background: #e3f2fd;
+      color: #0d47a1;
+      border-bottom: 1px solid #90caf9;
+      text-align: center;
+      font-size: .85rem;
     }
 
     /* Prevent .settings-wrap (a flex item of body) from expanding beyond
@@ -389,24 +419,9 @@
     }
     .today-alert-link:hover { background: #e65100; }
 
-    /* billing-matching-header: emulate billing portal exactly.
-       - body padding-top: 0 -> banner sits flush at viewport top
-       - banner in natural flow -> header follows below at scroll 0
-       - sticky header sticks to top when scrolled (as billing does)
-       No JS padding compensation needed -- banner + header are both
-       non-overlapping in natural flow at scroll 0. */
-    body.settings-body { padding-top: 0; }
-    body.settings-body #profileBanner {
-      position: relative;
-      z-index: 101;
-    }
   </style>
 </head>
 <body class="settings-body">
-  <div id="profileBanner" style="display:none;background:#e3f2fd;padding:.5rem 1rem;font-size:.85rem;text-align:center;border-bottom:1px solid #90caf9;color:#0d47a1;">
-    <span id="profileBannerText"></span>
-    <span id="profileSwitchLink" style="display:none;"> &middot; <a href="#" id="switchProfileLink" style="color:#0d47a1;font-weight:600;text-decoration:underline;"></a></span>
-  </div>
   <script>
   (async function () {
     try {
@@ -449,6 +464,10 @@
   })();
   </script>
   <header class="site-header">
+    <div id="profileBanner" style="display:none;background:#e3f2fd;padding:.5rem 1rem;font-size:.85rem;text-align:center;border-bottom:1px solid #90caf9;color:#0d47a1;">
+      <span id="profileBannerText"></span>
+      <span id="profileSwitchLink" style="display:none;"> &middot; <a href="#" id="switchProfileLink" style="color:#0d47a1;font-weight:600;text-decoration:underline;"></a></span>
+    </div>
     <div class="header-inner">
       <a href="/?__tenant={{tenant_slug}}" class="brand-link" aria-label="Go to home"><div class="brand">
         <img class="brand-logo" src="{{brand_logo_url}}" alt="{{brand_name}}">
