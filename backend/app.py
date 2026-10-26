@@ -1078,6 +1078,29 @@ def _current_admin():
         except (ValueError, TypeError):
             pass
 
+    # Tier B: session_version check — server-side invalidation across devices.
+    # A logout on ANY device bumps the user's session_version, which invalidates
+    # every existing cookie for that user (defense-in-depth against the Case 2
+    # race where a delayed /dispense response revived the cookie after logout).
+    # Missing sv (legacy cookie) is also treated as invalid — one-time forced
+    # re-login on rollout, after which all sessions carry sv.
+    _session_sv = session.get("sv")
+    _user_sv = int(getattr(a, "session_version", 0) or 0)
+    _sv_ok = False
+    if _session_sv is not None:
+        try:
+            _sv_ok = (int(_session_sv) == _user_sv)
+        except (ValueError, TypeError):
+            _sv_ok = False
+    if not _sv_ok:
+        _uname_sv = session.get("admin_username")
+        _aid_sv = session.get("admin_id")
+        _clear_session_preserve_tenant()
+        if _uname_sv:
+            _audit("session_invalidated_by_version",
+                   _admin_id=_aid_sv, _admin_username=_uname_sv)
+        return None
+
     # Self-heal: session slug must equal the admin's own tenant slug.
     # If they disagree (stale cookie, tampering, tenant slug changed),
     # silently correct the session rather than locking the admin out.
@@ -1379,6 +1402,8 @@ def _ensure_all_columns():
             a_alters.append("ADD COLUMN permissions_json TEXT NULL")
         if "profiles_json" not in existing:
             a_alters.append("ADD COLUMN profiles_json TEXT NULL")
+        if "session_version" not in existing:
+            a_alters.append("ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0")
         for alt in a_alters:
             db.session.execute(text(f"ALTER TABLE admin_users {alt}"))
         if a_alters:
@@ -4737,6 +4762,8 @@ def admin_setup_route():
         session["admin_id"] = result["admin_id"]
         session["admin_username"] = result["username"]
         session["last_activity"] = datetime.utcnow().isoformat()
+        _sv_setup = AdminUser.query.filter_by(id=result["admin_id"]).first()
+        session["sv"] = int(getattr(_sv_setup, "session_version", 0) or 0) if _sv_setup else 0
         if _slug:
             session["__tenant_slug"] = _slug
         return jsonify({"ok": True, "username": result["username"]}), 200
@@ -4864,6 +4891,8 @@ def admin_login_route():
     session["admin_id"] = result["admin_id"]
     session["admin_username"] = result["username"]
     session["last_activity"] = datetime.utcnow().isoformat()
+    _sv_login = AdminUser.query.filter_by(id=result["admin_id"]).first()
+    session["sv"] = int(getattr(_sv_login, "session_version", 0) or 0) if _sv_login else 0
     session["login_at"] = datetime.utcnow().isoformat()
     session["__tenant_slug"] = _admin_slug
     session["active_profile"] = _initial_profile
@@ -4936,6 +4965,7 @@ def admin_login_verify_otp():
     session["admin_id"] = admin.id
     session["admin_username"] = admin.username
     session["last_activity"] = datetime.utcnow().isoformat()
+    session["sv"] = int(getattr(admin, "session_version", 0) or 0)
     session["login_at"] = datetime.utcnow().isoformat()
     _audit("login_2fa_ok")
     _verify_role = getattr(admin, "user_role", "admin") or "admin"
@@ -6641,7 +6671,21 @@ def admin_logout_route():
     # a tenant-scoped login URL so the post-logout redirect stays on the
     # correct tenant's portal. Default tenant → plain /admin/login.
     _slug = session.get("__tenant_slug") or _DEFAULT_TENANT_SLUG
-    _audit("logout")
+    # Tier B: bump session_version BEFORE audit + clear so any lingering
+    # cookie (from a delayed /dispense response racing this request) is
+    # invalidated on next use. Session vars captured first for audit.
+    _aid_logout = session.get("admin_id")
+    _uname_logout = session.get("admin_username")
+    if _aid_logout:
+        try:
+            _u_logout = AdminUser.query.filter_by(id=_aid_logout).first()
+            if _u_logout:
+                _u_logout.session_version = (int(getattr(_u_logout, "session_version", 0) or 0)) + 1
+                db.session.commit()
+        except Exception:
+            try: db.session.rollback()
+            except Exception: pass
+    _audit("logout", _admin_id=_aid_logout, _admin_username=_uname_logout)
     session.clear()
     redirect_url = "/admin/login"
     if _slug and _slug != _DEFAULT_TENANT_SLUG:

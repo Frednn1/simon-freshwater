@@ -144,6 +144,11 @@ class AdminUser(db.Model):
     # Set whenever the password is changed (via settings or forgot flow).
     # Sessions created before this timestamp are invalidated on next request.
     password_changed_at = db.Column(db.DateTime, nullable=True)
+    # Tier B: session_version — bumped on logout, invalidates ALL that
+    # user's session cookies across devices (defense-in-depth against the
+    # Case 2 race where a delayed /dispense response revived the cookie
+    # after logout). Any request with a stale sv -> forced re-login.
+    session_version = db.Column(db.Integer, nullable=False, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
