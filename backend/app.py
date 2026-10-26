@@ -673,6 +673,30 @@ def _serve_template(filename):
     return html, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 
+def _no_store_html(resp):
+    """Force browsers not to cache this HTML — disables HTTP cache AND
+    bfcache for the returned page. Used by dispense HTML page routes so a
+    logged-out user cannot back-navigate to a stale portal shell.
+    Accepts the (html, status, headers) tuple that _serve_frontend returns
+    OR a flask Response object."""
+    if isinstance(resp, tuple):
+        # (html, status, headers)
+        html, status, headers = resp
+        headers = dict(headers) if headers else {}
+        headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        headers["Pragma"] = "no-cache"
+        headers["Expires"] = "0"
+        return html, status, headers
+    # Flask Response
+    try:
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+    except Exception:
+        pass
+    return resp
+
+
 def _serve_frontend(filename):
     """Serve a frontend HTML file with tenant-brand substitution.
 
@@ -1653,7 +1677,7 @@ def dispense_analytics_page():
     enabled = _tenant_profiles_dict(admin.tenant_id) if admin.tenant_id else {}
     if not enabled.get("dispensing"):
         return redirect("/")
-    return _serve_frontend("dispense_analytics.html")
+    return _no_store_html(_serve_frontend("dispense_analytics.html"))
 
 
 @app.route("/api/admin/dispense/analytics", methods=["GET"])
@@ -1807,7 +1831,8 @@ def dispense_home():
     enabled = _tenant_profiles_dict(admin.tenant_id) if admin.tenant_id else {}
     if not enabled.get("dispensing"):
         return redirect("/")
-    return _serve_frontend("dispense.html")
+    # Step 2: no-store on the HTML itself — prevents bfcache restore after logout.
+    return _no_store_html(_serve_frontend("dispense.html"))
 
 
 @app.route("/")
