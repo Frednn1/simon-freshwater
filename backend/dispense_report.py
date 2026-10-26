@@ -56,32 +56,24 @@ def _status_color(status):
     return (0.38, 0.49, 0.55)
 
 
-def _try_insert_logo(page, x, y_baseline, logo_bytes, size=48, name_ascender=13):
-    """Insert logo with TOP EDGE aligned to the org name's top edge.
-    Preserves aspect ratio (via Pixmap). No-op when logo_bytes is None/empty."""
+def _try_insert_logo(page, x, y_top, draw_h, logo_bytes):
+    """Insert logo with top at y_top and height draw_h.
+    Preserves aspect ratio (width scaled from height).
+    No-op when logo_bytes is None/empty."""
     if not logo_bytes:
         return x, False
     try:
         import fitz
-        # Read actual image dimensions to preserve aspect ratio
         try:
             pix = fitz.Pixmap(logo_bytes)
             iw, ih = pix.width, pix.height
         except Exception:
-            iw, ih = size, size
+            return x, False
         if ih <= 0 or iw <= 0:
             return x, False
         aspect = iw / ih
-        # Fit inside a `size` x `size` box, preserving aspect
-        if aspect >= 1.0:
-            draw_w = size
-            draw_h = size / aspect
-        else:
-            draw_h = size
-            draw_w = size * aspect
-        # TOP of image = name's top edge (baseline - ascender)
-        y0 = y_baseline - name_ascender
-        rect = fitz.Rect(x, y0, x + draw_w, y0 + draw_h)
+        draw_w = draw_h * aspect
+        rect = fitz.Rect(x, y_top, x + draw_w, y_top + draw_h)
         page.insert_image(rect, stream=logo_bytes, keep_proportion=False)
         return x + draw_w + 12, True
     except Exception:
@@ -92,9 +84,36 @@ def _draw_header(page, tenant, d_from, d_to, days, logo_bytes=None):
     import fitz
     W = page.rect.width
     x = 40
-    y = 52
+    y = 52  # org name baseline
 
-    text_x, _ok = _try_insert_logo(page, x, y, logo_bytes, size=48)
+    # Compute sub list early — needed for logo height calculation.
+    sub = []
+    if tenant and tenant.address: sub.append(tenant.address)
+    if tenant and tenant.phone:   sub.append(tenant.phone)
+    if tenant and tenant.email:   sub.append(tenant.email)
+
+    # Logo sizing: top edge = org-name glyph top (preserved at
+    # y-13 as before), bottom edge = tagline glyph bottom. This makes
+    # the logo span the full text block height (name top → tagline
+    # bottom) instead of extending 48pt past the tagline.
+    _logo_top = y - 13
+    if sub:
+        # Tagline baseline is at y+20 (matches `y += 20` after name)
+        try:
+            _font_sub = fitz.Font(fontname="helv")
+            _tagline_bottom = (y + 20) + abs(_font_sub.descender) * 9
+        except Exception:
+            _tagline_bottom = (y + 20) + 2
+    else:
+        # No tagline — logo matches just the name height
+        try:
+            _font_name = fitz.Font(fontname="hebo")
+            _tagline_bottom = y - _font_name.descender * 18
+        except Exception:
+            _tagline_bottom = y + 3
+    _logo_height = max(_tagline_bottom - _logo_top, 20)
+
+    text_x, _ok = _try_insert_logo(page, x, _logo_top, _logo_height, logo_bytes)
     if not _ok:
         text_x = x
 
@@ -103,10 +122,6 @@ def _draw_header(page, tenant, d_from, d_to, days, logo_bytes=None):
                      color=_THEME_INK_RGB)
     y += 20
 
-    sub = []
-    if tenant and tenant.address: sub.append(tenant.address)
-    if tenant and tenant.phone:   sub.append(tenant.phone)
-    if tenant and tenant.email:   sub.append(tenant.email)
     if sub:
         page.insert_text((text_x, y), " | ".join(sub), fontsize=9,
                          fontname="helv", color=(0.42, 0.42, 0.42))

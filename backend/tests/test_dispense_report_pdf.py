@@ -182,3 +182,40 @@ def test_window_stats_range_filter_preserves_data(client):
         DispenseMeterReading.query.filter_by(tenant_id=1, reading_date=d45).delete()
         db.session.commit()
 
+# ══════════════════════════════════════════════════════════════════════
+# Logo height = text block height (name top → tagline bottom)
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_report_logo_height_matches_text_block():
+    """Logo is sized to span from org-name top to tagline bottom, not the
+    old fixed 48pt box."""
+    import inspect
+    import dispense_report as dr
+    src = inspect.getsource(dr._draw_header)
+    assert '_tagline_bottom' in src, "tagline_bottom computation missing"
+    assert '_logo_height' in src, "logo_height computation missing"
+    assert 'abs(_font_sub.descender)' in src, "font descender usage missing"
+    assert 'size=48' not in src, "old fixed size=48 still present"
+
+
+def test_dispense_report_logo_top_preserved():
+    """Logo top edge must stay at y - 13 (name ascender preserved)."""
+    import inspect
+    import dispense_report as dr
+    src = inspect.getsource(dr._draw_header)
+    assert '_logo_top = y - 13' in src, "logo top preservation removed"
+    assert '_try_insert_logo(page, x, _logo_top, _logo_height, logo_bytes)' in src, \
+        "logo helper call shape changed"
+
+
+def test_dispense_report_header_drawing_preserved():
+    """Verify name / tagline / report title / period / timestamp all still drawn."""
+    import inspect
+    import dispense_report as dr
+    src = inspect.getsource(dr._draw_header)
+    assert 'fontsize=18' in src, "name fontsize missing"
+    assert 'fontsize=9' in src, "tagline fontsize missing"
+    assert 'Dispensing Activity Report' in src, "report title missing"
+    assert 'Period:' in src, "period line missing"
+    assert 'Generated:' in src, "generated line missing"
+
