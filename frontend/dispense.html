@@ -432,6 +432,48 @@
     }
     .today-alert-link:hover { background: #e65100; }
 
+
+    /* ═══════════════════════════════════════════════════════════
+       CONSOLIDATED HEADER TOP-ALIGNMENT FIX
+       Menu, logo, and org name all align at header-inner content top.
+       Root cause of prior failures: menu was position:absolute (style.css
+       mobile rule) with top:0 — this anchored to site-header (which has
+       a #profileBanner sibling), causing menu to render at site-header
+       top instead of header-inner content top. Solution: remove absolute
+       positioning; make menu a normal flex child with order:-1; align
+       everything via flex align-items:flex-start on header-inner.
+       ═══════════════════════════════════════════════════════════ */
+    @media (max-width: 600px) {
+      .settings-body .site-header .header-inner {
+        display: flex;
+        align-items: flex-start;
+        justify-content: flex-start;
+        gap: .5rem;
+        padding: .9rem 1.2rem;
+      }
+      .settings-body .site-header .menu-toggle {
+        position: static;
+        top: auto;
+        left: auto;
+        transform: none;
+        margin: 0;
+        padding: .55rem .8rem;
+        align-self: flex-start;
+        order: -1;
+        flex: 0 0 auto;
+      }
+      .settings-body .site-header .brand {
+        align-items: flex-start;
+        padding: 0;
+        gap: .7rem;
+        flex: 0 1 auto;
+        min-width: 0;
+      }
+      .settings-body .site-header .brand-logo {
+        align-self: flex-start;
+        flex-shrink: 0;
+      }
+    }
   </style>
 </head>
 <body class="settings-body">

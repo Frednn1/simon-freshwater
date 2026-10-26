@@ -603,3 +603,22 @@ def test_dispense_brand_top_aligned_for_menu_flush():
         assert 'Logo top-aligns with brand content top' in html, \
             f'{fn}: alignment comment missing'
 
+# ══════════════════════════════════════════════════════════════════════
+# Header top-alignment via flex (not absolute positioning)
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_header_flex_top_align():
+    """Menu, logo, org name must be flex-aligned at header-inner top.
+    Menu must be in flex flow (position: static) with order:-1 so it
+    appears leftmost, and align-self:flex-start to top-align."""
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        assert 'CONSOLIDATED HEADER TOP-ALIGNMENT FIX' in html, \
+            f'{fn}: fix block missing'
+        assert 'align-items: flex-start' in html, \
+            f'{fn}: header-inner top alignment missing'
+        assert 'order: -1' in html, \
+            f'{fn}: menu order missing'
+        assert 'position: static' in html, \
+            f'{fn}: menu position:static missing'
+
