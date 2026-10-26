@@ -49,10 +49,11 @@
           portion that appeared as a floating block not spanning full width. */
     @media (max-width: 600px) {
       .settings-body .site-header .menu-toggle {
-        /* Match billing: vertically center icon inside header-inner
-           (billing style: top:50%; translateY(-50%)) + small left margin */
-        top: 50%;
-        transform: translateY(-50%);
+        /* Top-flush with brand top (brand is taller than icon, so vertical
+           center pushed the icon 10px below brand top — this reverts to
+           top alignment matching logo/h1/tagline top edge). */
+        top: 0;
+        transform: none;
         margin-left: .5rem;
       }
       .settings-body .site-header {

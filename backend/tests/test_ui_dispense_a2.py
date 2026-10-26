@@ -555,14 +555,17 @@ def test_dispense_matches_billing_header_pattern():
 # ══════════════════════════════════════════════════════════════════════
 
 def test_dispense_menu_flush_with_brand_top():
-    """Mobile header matches billing: brand centered, menu icon vertically
-    centered via its own top:50%;translateY(-50%) — same as billing portal."""
+    """Mobile header: menu icon top edge flush with brand top edge (logo +
+    org name). Brand is taller than icon, so vertical centering pushed the
+    icon below brand top — this asserts the top-flush correction."""
     for fn in ('dispense.html', 'dispense_analytics.html'):
         html = _read(fn)
-        assert '/* Match billing: vertically center icon inside header-inner' in html, \
-            f'{fn}: billing-match comment missing'
-        assert 'top: 50%;' in html and 'transform: translateY(-50%);' in html, \
-            f'{fn}: menu-toggle centering CSS missing'
+        assert 'Top-flush with brand top' in html, \
+            f'{fn}: top-flush comment missing'
+        assert 'top: 0;' in html, \
+            f'{fn}: menu-toggle top:0 missing'
+        assert 'transform: none;' in html, \
+            f'{fn}: menu-toggle transform:none missing'
         assert 'margin-left: .5rem;' in html, \
             f'{fn}: menu left margin missing'
 
@@ -571,15 +574,18 @@ def test_dispense_menu_flush_with_brand_top():
 # ══════════════════════════════════════════════════════════════════════
 
 def test_dispense_menu_off_left_edge():
-    """Menu icon has .5rem left offset on mobile (still matches billing's
-    breathing room). Comment updated to reflect new billing-match design."""
+    """Menu icon has .5rem left offset + top-flush with brand content.
+    Brand is taller than the icon, so vertical centering pushed the icon
+    below brand top — this asserts top-alignment instead."""
     for fn in ('dispense.html', 'dispense_analytics.html'):
         html = _read(fn)
         assert 'margin-left: .5rem;' in html, \
             f'{fn}: margin-left on menu-toggle missing'
-        # New design: menu-toggle vertically centered via top:50%, matches billing
-        assert 'top: 50%;' in html, \
-            f'{fn}: menu-toggle vertical centering missing'
-        assert 'transform: translateY(-50%);' in html, \
-            f'{fn}: menu-toggle transform missing'
+        # New design: menu-toggle top-flush with brand top edge
+        assert 'Top-flush with brand top' in html, \
+            f'{fn}: top-flush comment missing'
+        assert 'top: 0;' in html, \
+            f'{fn}: menu-toggle top:0 missing'
+        assert 'transform: none;' in html, \
+            f'{fn}: menu-toggle transform:none missing'
 
