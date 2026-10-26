@@ -524,3 +524,30 @@ def test_dispense_drawer_logout_still_delegates():
             f'{fn}: drawer must click header button (no duplicate confirm)'
         )
 
+# ══════════════════════════════════════════════════════════════════════
+# Steps 1+2 — billing-style banner replaces switch button
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_has_profile_banner():
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        assert 'id="profileBanner"' in html, f'{fn}: missing profileBanner'
+        assert 'id="profileBannerText"' in html, f'{fn}: missing banner text'
+        assert 'id="profileSwitchLink"' in html, f'{fn}: missing switch link span'
+        assert 'id="switchProfileLink"' in html, f'{fn}: missing switch anchor'
+
+
+def test_dispense_switch_button_removed():
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        assert 'id="switchBtn"' not in html, f'{fn}: header switchBtn still present'
+        assert 'id="drawerSwitchBtn"' not in html, f'{fn}: drawer switchBtn still present'
+
+
+def test_dispense_banner_uses_whoami_and_can_switch():
+    for fn in ('dispense.html', 'dispense_analytics.html'):
+        html = _read(fn)
+        assert 'd.can_switch_to_billing' in html, f'{fn}: banner must check can_switch_to_billing'
+        assert "Signed in as " in html, f'{fn}: banner must show signed-in text'
+        assert "Dispensing portal" in html, f'{fn}: banner must show Dispensing portal label'
+

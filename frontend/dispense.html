@@ -391,6 +391,51 @@
   </style>
 </head>
 <body class="settings-body">
+  <div id="profileBanner" style="display:none;background:#e3f2fd;padding:.5rem 1rem;font-size:.85rem;text-align:center;border-bottom:1px solid #90caf9;color:#0d47a1;">
+    <span id="profileBannerText"></span>
+    <span id="profileSwitchLink" style="display:none;"> &middot; <a href="#" id="switchProfileLink" style="color:#0d47a1;font-weight:600;text-decoration:underline;"></a></span>
+  </div>
+  <script>
+  (async function () {
+    try {
+      var r = await fetch('/api/admin/whoami', {credentials: 'same-origin'});
+      if (!r.ok) return;
+      var d = await r.json();
+      if (!d.authenticated) return;
+      var banner = document.getElementById('profileBanner');
+      var text = document.getElementById('profileBannerText');
+      var switchSpan = document.getElementById('profileSwitchLink');
+      var switchLink = document.getElementById('switchProfileLink');
+      if (!banner || !text) return;
+      banner.style.display = 'block';
+      text.textContent = 'Signed in as ' + d.username + ' \u00b7 Dispensing portal';
+      var canSwitch = !!d.can_switch_to_billing;
+      if (canSwitch && switchSpan && switchLink) {
+        switchSpan.style.display = 'inline';
+        switchLink.textContent = 'Switch to Billing';
+        switchLink.addEventListener('click', async function (e) {
+          e.preventDefault();
+          switchLink.style.pointerEvents = 'none';
+          var orig = switchLink.textContent;
+          switchLink.textContent = 'Switching\u2026';
+          try {
+            var r2 = await fetch('/api/admin/profile/switch', {
+              method: 'POST', credentials: 'same-origin',
+              headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ to: 'billing' })
+            });
+            var j = await r2.json();
+            if (r2.ok && j.ok && j.redirect) { location.href = j.redirect; }
+            else { alert('\u274c ' + (j.error || 'Switch failed.')); switchLink.style.pointerEvents = ''; switchLink.textContent = orig; }
+          } catch (_) {
+            alert('\u274c Network error.');
+            switchLink.style.pointerEvents = ''; switchLink.textContent = orig;
+          }
+        });
+      }
+    } catch (_) {}
+  })();
+  </script>
   <header class="site-header">
     <div class="header-inner">
       <a href="/?__tenant={{tenant_slug}}" class="brand-link" aria-label="Go to home"><div class="brand">
@@ -401,7 +446,6 @@
         </div>
       </div></a>
       <nav class="header-actions desktop-only">
-        <button id="switchBtn" type="button" class="tab-btn" style="display:none;">Switch to Billing</button>
         <a id="tabAnalyticsDisp" href="/dispense/analytics" class="tab-btn">Analytics</a>
         <a id="tabTeamDisp" href="/admin/team" class="tab-btn">Team</a>
         <a id="tabMpesaDisp" href="/admin/mpesa/dispensing" class="tab-btn">M-Pesa</a>
@@ -455,10 +499,6 @@
       <button class="drawer-close" id="drawerClose" type="button" aria-label="Close menu">×</button>
     </div>
     <nav class="drawer-nav">
-      <button class="drawer-item" id="drawerSwitchBtn" type="button" style="display:none;">
-        <span class="drawer-item-icon">↔</span>
-        <span class="drawer-item-label">Switch to Billing</span>
-      </button>
       <a class="drawer-item" id="drawerAnalyticsDisp" href="/dispense/analytics">
         <span class="drawer-item-icon">📊</span>
         <span class="drawer-item-label">Analytics</span>
@@ -770,29 +810,6 @@
         if (!me.ok) return;
         const m = await me.json();
         if (!m.authenticated) { location.href = '/admin/login'; return; }
-        const profiles = m.enabled_profiles || {};
-        const switchBtn = document.getElementById('switchBtn');
-        // Step 4: switch must respect employee assignment (can_switch_to_billing
-        // = tenant-enabled AND employee-assigned). Backend enforces independently.
-        if (m.can_switch_to_billing && switchBtn) {
-          switchBtn.style.display = 'inline-flex';
-          switchBtn.addEventListener('click', async () => {
-            switchBtn.disabled = true;
-            switchBtn.textContent = 'Switching\u2026';
-            try {
-              const r = await fetch('/api/admin/profile/switch', {
-                method: 'POST', credentials: 'same-origin',
-                headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({ to: 'billing' })
-              });
-              const j = await r.json();
-              if (r.ok && j.ok && j.redirect) { location.href = j.redirect; }
-              else { alert('\u274c ' + (j.error || 'Switch failed.')); switchBtn.disabled = false; switchBtn.textContent = 'Switch to Billing'; }
-            } catch (_) {
-              alert('\u274c Network error.'); switchBtn.disabled = false; switchBtn.textContent = 'Switch to Billing';
-            }
-          });
-        }
         const lo = document.getElementById('logoutBtn');
         if (lo) lo.addEventListener('click', async () => {
           // Confirmation mirrors billing portal + disqualifies the page
@@ -2123,14 +2140,6 @@
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') closeDrawer();
     });
-    var dSwitch = document.getElementById('drawerSwitchBtn');
-    if (dSwitch) {
-      dSwitch.addEventListener('click', function () {
-        closeDrawer();
-        var hdr = document.getElementById('switchBtn');
-        if (hdr && hdr.style.display !== 'none') hdr.click();
-      });
-    }
     var dLogout = document.getElementById('drawerLogoutBtn');
     if (dLogout) {
       dLogout.addEventListener('click', function () {

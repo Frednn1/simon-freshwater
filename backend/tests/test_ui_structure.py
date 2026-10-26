@@ -82,7 +82,7 @@ def test_dispense_drawer_dom():
     required = [
         'menuToggle', 'drawerBackdrop', 'mobileDrawer', 'drawerClose',
         'drawerAnalyticsDisp', 'drawerTeamDisp', 'drawerSettingsDisp',
-        'drawerSwitchBtn', 'drawerLogoutBtn',
+        'drawerLogoutBtn',
     ]
     missing = [i for i in required if f'id="{i}"' not in html]
     assert not missing, f"dispense.html missing drawer IDs: {missing}"
@@ -93,7 +93,7 @@ def test_dispense_analytics_drawer_dom():
     required = [
         'menuToggle', 'drawerBackdrop', 'mobileDrawer', 'drawerClose',
         'drawerDispensing', 'drawerTeamDisp', 'drawerSettingsDisp',
-        'drawerSwitchBtn', 'drawerLogoutBtn',
+        'drawerLogoutBtn',
     ]
     missing = [i for i in required if f'id="{i}"' not in html]
     assert not missing, f"dispense_analytics.html missing drawer IDs: {missing}"
