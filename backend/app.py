@@ -4488,6 +4488,46 @@ def submit_reading():
     }}), 201
 
 
+def _bill_details_enrichment(consumer, info):
+    """Enrich an `info` dict with per-bill fields used by build_bill_message.
+
+    Extracted verbatim from the /notify route's inline block so that
+    /bulk_sms/overdue (preview) and /bulk_sms/send (actual SMS) can
+    produce IDENTICAL message bodies — previously they shipped bare
+    get_consumer_status() dicts, causing build_bill_message to silently
+    render 0.00 for every MTR/charge/outstanding field.
+
+    No-op when the consumer has no readings. Returns the same dict
+    (mutated in place, also returned for convenience).
+    """
+    readings_desc = _all_readings(consumer.id)   # DESC
+    if readings_desc:
+        latest = readings_desc[0]
+        previous = readings_desc[1] if len(readings_desc) > 1 else None
+        previous_m3 = (
+            previous.reading_m3 if previous
+            else float(consumer.meter_initial_reading_m3 or 0.0)
+        )
+        current_charges = float(latest.amount_kes or 0.0)
+        _asc = list(reversed(readings_desc))
+        _pays = _consumer_payments(consumer.id)
+        _disp_map = _carry_forward_display(_asc, _pays)
+        _d = _disp_map.get(latest.id, {})
+        total_out = round(sum(r.balance for r in readings_desc), 2)
+        current_display_balance = _d.get("balance", latest.balance)
+        prev_out = round(total_out - current_display_balance, 2)
+        info["current_reading_m3"]    = latest.reading_m3
+        info["previous_reading_m3"]   = previous_m3
+        info["current_charges"]       = current_charges
+        info["paid"]                  = _d.get("paid", latest.amount_paid)
+        info["payment_carried_forward"] = _d.get("prepaid_credit", 0.0)
+        info["previous_outstanding"]  = prev_out
+        info["total_outstanding"]     = total_out
+        info["bill_month"]            = latest.reading_date.strftime("%B %Y")
+        info["is_current_cleared"]    = current_display_balance <= 0
+    return info
+
+
 @app.route("/api/consumer/<int:consumer_id>/notify", methods=["POST"])
 def notify_consumer(consumer_id):
     if not _rate_limit("notify", 20, 60):
@@ -4516,39 +4556,7 @@ def notify_consumer(consumer_id):
 
     # Total M3 consumed across all readings whose bill is not yet fully paid
     info["consumption_m3"] = _total_uncleared_consumption(consumer)
-
-    # ─── Current bill breakdown (for the SMS) ───
-    readings_desc = _all_readings(consumer.id)   # DESC
-    if readings_desc:
-        latest = readings_desc[0]
-        previous = readings_desc[1] if len(readings_desc) > 1 else None
-        previous_m3 = (
-            previous.reading_m3 if previous
-            else float(consumer.meter_initial_reading_m3 or 0.0)
-        )
-        current_charges = float(latest.amount_kes or 0.0)
-
-        # Carry-forward display values for the billed (newest) reading
-        _asc = list(reversed(readings_desc))
-        _pays = _consumer_payments(consumer.id)
-        _disp_map = _carry_forward_display(_asc, _pays)
-        _d = _disp_map.get(latest.id, {})
-
-        # Total Outstanding = signed net position (Option B)
-        total_out = round(sum(r.balance for r in readings_desc), 2)
-        current_display_balance = _d.get("balance", latest.balance)
-        # Previous Outstanding = Total − current bill's display balance
-        prev_out = round(total_out - current_display_balance, 2)
-
-        info["current_reading_m3"]    = latest.reading_m3
-        info["previous_reading_m3"]   = previous_m3
-        info["current_charges"]       = current_charges
-        info["paid"]                  = _d.get("paid", latest.amount_paid)
-        info["payment_carried_forward"] = _d.get("prepaid_credit", 0.0)
-        info["previous_outstanding"]  = prev_out
-        info["total_outstanding"]     = total_out
-        info["bill_month"]            = latest.reading_date.strftime("%B %Y")
-        info["is_current_cleared"]    = current_display_balance <= 0
+    info = _bill_details_enrichment(consumer, info)
 
     cutoff = datetime.utcnow() - timedelta(seconds=NOTIFY_COOLDOWN_SECONDS)
     recent = (NotificationLog.query
@@ -7885,7 +7893,10 @@ def admin_bulk_sms_overdue():
         info = get_consumer_status(readings, latest_balance_override=_disp)
         if info["status"] not in allowed:
             continue
+        info["consumption_m3"] = _total_uncleared_consumption(c)
+        info = _bill_details_enrichment(c, info)
         _pay = _payment_info(c, tenant=g.tenant)
+        _preview = build_bill_message(c, info, channel="sms", tenant=g.tenant)
         out.append({
             "id": c.id,
             "cust_name": c.cust_name,
@@ -7896,6 +7907,7 @@ def admin_bulk_sms_overdue():
             "total_due": round(float(info.get("total_due", 0.0)), 2),
             "paybill": _pay["paybill"],
             "payment_account": _pay["account"],
+            "preview_body": _preview["body"],
         })
 
     return jsonify({"consumers": out, "count": len(out)})
@@ -7941,6 +7953,8 @@ def admin_bulk_sms_send():
         if info["status"] not in ("DUE", "OVERDUE"):
             missing.append(cid)
             continue
+        info["consumption_m3"] = _total_uncleared_consumption(c)
+        info = _bill_details_enrichment(c, info)
         items.append({"consumer": c, "info": info})
 
     if not items:

@@ -182,12 +182,14 @@
       // Show one example message
       const first = CONSUMERS.find(c => SELECTED.has(c.id));
       if (first) {
-        preview.textContent =
-          `SIMON FRESH WATER - Kikuyu\n` +
+        // Use server-built body — matches the actual SMS sent to customers 1:1.
+        // Fallback (older deploy): legacy short template without MTR breakdown.
+        preview.textContent = first.preview_body || (
           `Dear ${first.cust_name},\n` +
           `Your water bill (${first.meter_acc_no}) status: ${first.status_label}. ` +
           `Outstanding: KES ${fmt(first.total_due)}. ` +
-          `Pay via Paybill ${first.paybill || '—'}, Acc ${first.payment_account || first.meter_acc_no}. Thank you.`;
+          `Pay via Paybill ${first.paybill || '—'}, Acc ${first.payment_account || first.meter_acc_no}. Thank you.`
+        );
       }
     }
 
