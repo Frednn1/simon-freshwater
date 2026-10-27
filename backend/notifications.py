@@ -136,6 +136,20 @@ def _wa_api_url_for(phone_number_id: str) -> str:
     return f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
 
 
+def _auto_detect_tenant_row():
+    """Return current request's Tenant row from Flask g, or None.
+    Phase 4.5: mirrors _auto_detect_tenant_slug but returns the full row
+    so send_sms can read smsgate_device_id / smsgate_sim_number DB overrides.
+    Never raises."""
+    try:
+        from flask import g, has_request_context
+        if not has_request_context():
+            return None
+        return getattr(g, "tenant", None)
+    except Exception:
+        return None
+
+
 def _auto_detect_tenant_slug() -> str:
     """Best-effort: get current request's tenant slug from Flask g.
     Returns None when not in a request context or g.tenant is unset.
@@ -167,7 +181,7 @@ def _slug_to_env_suffix(slug: str) -> str:
         return ""
 
 
-def smsgate_credentials_for_tenant(slug: str = None) -> dict:
+def smsgate_credentials_for_tenant(slug: str = None, tenant_row=None) -> dict:
     """Resolve SMSGate credentials for a tenant, with global fallback.
 
     Per-tenant env vars (only when BOTH user+pass are set):
@@ -189,26 +203,46 @@ def smsgate_credentials_for_tenant(slug: str = None) -> dict:
         "source": "global",
     }
     if not slug:
-        return globals_
+        return _apply_db_smsgate_overrides(globals_, tenant_row)
     try:
         suffix = _slug_to_env_suffix(slug)
         if not suffix:
-            return globals_
+            return _apply_db_smsgate_overrides(globals_, tenant_row)
         t_user = os.environ.get(f"SMSGATE_{suffix}_USERNAME", "").strip()
         t_pass = os.environ.get(f"SMSGATE_{suffix}_PASSWORD", "").strip()
         t_dev  = os.environ.get(f"SMSGATE_{suffix}_DEVICE_ID", "").strip()
         t_sim  = os.environ.get(f"SMSGATE_{suffix}_SIM_NUMBER", "").strip()
         if t_user and t_pass:
-            return {
+            result = {
                 "username": t_user,
                 "password": t_pass,
                 "device_id": t_dev or globals_["device_id"],
                 "sim_number": t_sim or globals_["sim_number"],
                 "source": "tenant",
             }
+            return _apply_db_smsgate_overrides(result, tenant_row)
     except Exception:
         pass
-    return globals_
+    return _apply_db_smsgate_overrides(globals_, tenant_row)
+
+
+def _apply_db_smsgate_overrides(result: dict, tenant_row) -> dict:
+    """Apply per-tenant DB overrides from Tenant row (Phase 4.5).
+    Priority: DB column > env-suffix > global env. Never raises."""
+    if tenant_row is None:
+        return result
+    try:
+        db_dev = getattr(tenant_row, "smsgate_device_id", None)
+        db_sim = getattr(tenant_row, "smsgate_sim_number", None)
+        if db_dev:
+            result["device_id"] = db_dev
+            result["source"] = "tenant"
+        if db_sim is not None:
+            result["sim_number"] = str(db_sim)
+            result["source"] = "tenant"
+    except Exception:
+        pass
+    return result
 
 
 def wa_credentials_for_tenant(slug: str = None) -> dict:
@@ -354,18 +388,19 @@ def _normalize_phone_wa(phone: str) -> str:
 
 
 # ─── SMS sender ───
-def send_sms(to_phone: str, message: str, tenant_slug: str = None) -> dict:
+def send_sms(to_phone: str, message: str, tenant_slug: str = None,
+             tenant_row=None) -> dict:
     """Send SMS via SMSGate using JWT auth. Returns {ok, provider_id?, error?}.
 
-    Phase 3 (GAP-CRIT-2 + GAP-NEW-1 + D4): resolves credentials via
-    smsgate_credentials_for_tenant(tenant_slug). If tenant_slug is None,
-    auto-detects from Flask g.tenant (when in a request context); falls
-    back to global env credentials when no tenant context exists (e.g.
-    background OTP flows).
+    Phase 3: tenant-aware credential resolution.
+    Phase 4.5: also applies Tenant.smsgate_device_id / smsgate_sim_number
+    DB overrides (masked in API responses, applied here for send).
     """
-    if tenant_slug is None:
-        tenant_slug = _auto_detect_tenant_slug()
-    creds = smsgate_credentials_for_tenant(tenant_slug)
+    if tenant_row is None:
+        tenant_row = _auto_detect_tenant_row()
+    if tenant_slug is None and tenant_row is not None:
+        tenant_slug = getattr(tenant_row, "slug", None)
+    creds = smsgate_credentials_for_tenant(tenant_slug, tenant_row=tenant_row)
     if not creds["username"] or not creds["password"]:
         return {"ok": False,
                 "error": "SMS provider not configured (set SMSGATE_USERNAME & SMSGATE_PASSWORD)"}
@@ -652,11 +687,12 @@ def send_whatsapp_document(to_phone: str,
 
 # ─── SMS retry wrapper (unchanged) ───
 def send_sms_with_retry(to_phone: str, message: str, max_attempts: int = 3,
-                         tenant_slug: str = None) -> dict:
+                         tenant_slug: str = None, tenant_row=None) -> dict:
     import time as _time
     last = {"ok": False, "error": "no attempts"}
     for attempt in range(1, max_attempts + 1):
-        last = send_sms(to_phone, message, tenant_slug=tenant_slug)
+        last = send_sms(to_phone, message, tenant_slug=tenant_slug,
+                        tenant_row=tenant_row)
         if last.get("ok"):
             return last
         if attempt < max_attempts:

@@ -359,3 +359,65 @@ def test_notify_consumer_wa_allowed_by_tenant_override(client, monkeypatch):
     err = (r.get_json() or {}).get("error", "").lower()
     assert "disabled" not in err, f"wa gate wrongly blocked: {r.get_json()}"
 
+# ══════════════════════════════════════════════════════════════════════
+# Phase 4.5 — SMSGate DB overrides (device_id + sim_number)
+# ══════════════════════════════════════════════════════════════════════
+
+def test_smsgate_resolver_db_overrides_env(monkeypatch):
+    """Phase 4.5: DB values (via tenant_row) beat env-suffix."""
+    monkeypatch.setenv("SMSGATE_DEMO_USERNAME", "tu")
+    monkeypatch.setenv("SMSGATE_DEMO_PASSWORD", "tp")
+    monkeypatch.setenv("SMSGATE_DEMO_DEVICE_ID", "env-dev")
+    monkeypatch.setenv("SMSGATE_DEMO_SIM_NUMBER", "1")
+
+    class _Row:
+        smsgate_device_id = "db-dev"
+        smsgate_sim_number = 2
+
+    c = notif.smsgate_credentials_for_tenant("demo", tenant_row=_Row())
+    assert c["device_id"] == "db-dev"     # DB wins
+    assert c["sim_number"] == "2"          # DB wins
+    assert c["username"] == "tu"           # env-suffix still wins for credentials
+    assert c["source"] == "tenant"
+
+
+def test_smsgate_resolver_db_overrides_global(monkeypatch):
+    """Phase 4.5: DB values beat global env too."""
+    monkeypatch.setattr(notif, "SMSGATE_USERNAME", "gu")
+    monkeypatch.setattr(notif, "SMSGATE_PASSWORD", "gp")
+    monkeypatch.setattr(notif, "SMSGATE_DEVICE_ID", "global-dev")
+    monkeypatch.setattr(notif, "SMSGATE_SIM_NUMBER", "0")
+
+    class _Row:
+        smsgate_device_id = "db-dev"
+        smsgate_sim_number = 1
+
+    c = notif.smsgate_credentials_for_tenant(None, tenant_row=_Row())
+    assert c["device_id"] == "db-dev"
+    assert c["sim_number"] == "1"
+    assert c["source"] == "tenant"
+
+
+def test_smsgate_resolver_db_null_falls_back(monkeypatch):
+    """Phase 4.5: NULL DB columns preserve env fallback."""
+    monkeypatch.setattr(notif, "SMSGATE_USERNAME", "gu")
+    monkeypatch.setattr(notif, "SMSGATE_PASSWORD", "gp")
+    monkeypatch.setattr(notif, "SMSGATE_DEVICE_ID", "global-dev")
+    monkeypatch.setattr(notif, "SMSGATE_SIM_NUMBER", "0")
+
+    class _Row:
+        smsgate_device_id = None
+        smsgate_sim_number = None
+
+    c = notif.smsgate_credentials_for_tenant(None, tenant_row=_Row())
+    assert c["device_id"] == "global-dev"    # env used (DB NULL)
+    assert c["sim_number"] == "0"
+    assert c["source"] == "global"
+
+
+def test_send_sms_accepts_tenant_row(monkeypatch):
+    """Phase 4.5: send_sms accepts tenant_row kwarg (backward compat)."""
+    import inspect
+    sig = inspect.signature(notif.send_sms)
+    assert "tenant_row" in sig.parameters
+

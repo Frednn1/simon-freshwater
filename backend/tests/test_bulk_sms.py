@@ -119,8 +119,9 @@ def test_send_passes_enriched_info(client, monkeypatch):
     cid, _ = _make_consumer_with_bill(age_days=25)
 
     captured = {}
-    def fake_send(phone, body, tenant_slug=None):
-        # Phase 3: bulk_sms.py now passes tenant_slug — accept the kwarg
+    def fake_send(phone, body, tenant_slug=None, tenant_row=None):
+        # Phase 3: bulk_sms.py passes tenant_slug
+        # Phase 4.5: bulk_sms.py also passes tenant_row — accept both
         captured["body"] = body
         return {"ok": True, "provider_id": "test"}
 

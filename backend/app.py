@@ -1393,6 +1393,11 @@ def _ensure_all_columns():
                 t_alters.append("ADD COLUMN wa_enabled BOOLEAN NULL")
         if "wa_template_lang" not in existing:
             t_alters.append("ADD COLUMN wa_template_lang VARCHAR(10) NULL")
+        # Phase 4.5: SMSGate device routing columns
+        if "smsgate_device_id" not in existing:
+            t_alters.append("ADD COLUMN smsgate_device_id VARCHAR(60) NULL")
+        if "smsgate_sim_number" not in existing:
+            t_alters.append("ADD COLUMN smsgate_sim_number INTEGER NULL")
         for alt in t_alters:
             db.session.execute(text(f"ALTER TABLE tenants {alt}"))
         if t_alters:
@@ -2077,6 +2082,21 @@ def _current_active_profile():
     return "billing"
 
 
+def _tenant_smsgate_device_id(t):
+    """Return tenant's SMSGate DEVICE_ID override or None (NULL = env fallback)."""
+    if t is None:
+        return None
+    return getattr(t, "smsgate_device_id", None) or None
+
+
+def _tenant_smsgate_sim_number(t):
+    """Return tenant's SMSGate SIM_NUMBER override or None (NULL = env fallback)."""
+    if t is None:
+        return None
+    v = getattr(t, "smsgate_sim_number", None)
+    return v if v is not None else None
+
+
 def _tenant_wa_enabled(t):
     """Return tenant WA_ENABLED override (True/False) or None if unset
     (NULL = fall back to env WA_ENABLED)."""
@@ -2119,6 +2139,17 @@ def _tenant_to_dict(t):
         "theme_primary": t.theme_primary,
         "wa_enabled": (None if t.wa_enabled is None else bool(t.wa_enabled)),
         "wa_template_lang": t.wa_template_lang,
+        # Phase 4.5: DEVICE_ID is masked — never returned in full to any
+        # response (list, create, update, toggle). Admin enters new value
+        # to change; the tail hints what's currently set.
+        "has_smsgate_device_id": bool(getattr(t, "smsgate_device_id", None)),
+        "smsgate_device_id_tail": (
+            f"\u2026{getattr(t, 'smsgate_device_id', '')[-4:]}"
+            if getattr(t, "smsgate_device_id", None)
+            and len(getattr(t, "smsgate_device_id", "")) >= 4
+            else (("\u2026" if getattr(t, "smsgate_device_id", None) else None))
+        ),
+        "smsgate_sim_number": getattr(t, "smsgate_sim_number", None),
         "is_active": bool(t.is_active),
         "enabled_profiles": _tenant_profiles_dict(t.id),
         "created_at": t.created_at.isoformat() if t.created_at else None,
@@ -2723,6 +2754,14 @@ def admin_tenants_create():
                     else bool(str(data.get("wa_enabled")).strip().lower()
                               in ("1", "true", "yes", "on"))),
         wa_template_lang=((data.get("wa_template_lang") or "").strip() or None),
+        smsgate_device_id=((data.get("smsgate_device_id") or "").strip() or None),
+        smsgate_sim_number=(
+            int(data.get("smsgate_sim_number"))
+            if data.get("smsgate_sim_number") not in (None, "")
+            and str(data.get("smsgate_sim_number")).strip().lstrip("-").isdigit()
+            and 0 <= int(data.get("smsgate_sim_number")) <= 3
+            else None
+        ),
         is_active=False,
     )
     db.session.add(t)
@@ -2753,7 +2792,8 @@ def admin_tenants_update(tenant_id):
                "dispensing_paybill", "dispensing_account",
                "mpesa_shortcode", "mpesa_env",
                "logo_key", "theme_primary",
-               "wa_template_lang", "wa_enabled")
+               "wa_template_lang", "wa_enabled",
+               "smsgate_device_id", "smsgate_sim_number")
     updated = []
     for f in allowed:
         if f not in data:
@@ -2811,6 +2851,39 @@ def admin_tenants_update(tenant_id):
             else:
                 return jsonify({"error": f"Unsupported template language '{v}'. "
                                         f"Use en, en_US, sw, or sw_KE."}), 400
+            updated.append(f)
+            continue
+        if f == "smsgate_device_id":
+            # Empty -> NULL (env fallback). Non-empty must be unique per active tenant.
+            if not v:
+                setattr(t, f, None)
+            else:
+                if len(v) > 60:
+                    return jsonify({"error": "smsgate_device_id too long (max 60)."}), 400
+                clash = (Tenant.query
+                         .filter(Tenant.smsgate_device_id == v,
+                                 Tenant.id != t.id,
+                                 Tenant.is_active == True)  # noqa: E712
+                         .first())
+                if clash:
+                    return jsonify({
+                        "error": f"Device ID already used by active tenant '{clash.slug}'."
+                    }), 409
+                setattr(t, f, v)
+            updated.append(f)
+            continue
+        if f == "smsgate_sim_number":
+            # Empty -> NULL (env fallback). Non-empty must be int 0..3.
+            if v in ("", None):
+                setattr(t, f, None)
+            else:
+                try:
+                    n = int(v)
+                except (ValueError, TypeError):
+                    return jsonify({"error": "smsgate_sim_number must be an integer."}), 400
+                if n < 0 or n > 3:
+                    return jsonify({"error": "smsgate_sim_number must be 0..3."}), 400
+                setattr(t, f, n)
             updated.append(f)
             continue
         setattr(t, f, v or None)

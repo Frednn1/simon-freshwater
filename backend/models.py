@@ -280,6 +280,12 @@ class Tenant(db.Model):
     # NULL default is REQUIRED so existing tenants keep current behaviour.
     wa_enabled = db.Column(db.Boolean, nullable=True)
     wa_template_lang = db.Column(db.String(10), nullable=True)
+    # Phase 4.5: SMSGate device routing (per-tenant DB overrides).
+    # NULL = "no override" -> env-suffix > global env fallback.
+    # DEVICE_ID is a ROUTING identifier, not a credential (safe in DB + backup).
+    # Username/password remain env-only — never stored in DB.
+    smsgate_device_id = db.Column(db.String(60), nullable=True)
+    smsgate_sim_number = db.Column(db.Integer, nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 

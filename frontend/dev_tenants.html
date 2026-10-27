@@ -148,6 +148,15 @@
             </select>
           </div>
           <div class="form-row">
+            <label for="tfSmsgateDeviceId">SMSGate Device ID (leave blank to inherit env default)</label>
+            <input type="text" id="tfSmsgateDeviceId" placeholder="Admin-entered value overwrites env">
+            <div id="tfSmsgateDeviceIdHint" class="form-hint-small" style="font-size:.75rem;opacity:.7;margin-top:.25rem;">Inherits global env if blank.</div>
+          </div>
+          <div class="form-row">
+            <label for="tfSmsgateSimNumber">SMSGate SIM Number (0..3 — leave blank to inherit env)</label>
+            <input type="number" id="tfSmsgateSimNumber" min="0" max="3" step="1" placeholder="e.g. 0">
+          </div>
+          <div class="form-row">
             <label for="tfThemePrimary">Theme Primary Colour</label>
             <input type="text" id="tfThemePrimary" placeholder="#0d47a1">
           </div>
@@ -424,6 +433,21 @@
       }
       const _waLangSel = document.getElementById('tfWaTemplateLang');
       if (_waLangSel) _waLangSel.value = t.wa_template_lang || '';
+      // Phase 4.5: DEVICE_ID always blank (admin enters new to change)
+      const _devInp = document.getElementById('tfSmsgateDeviceId');
+      const _devHint = document.getElementById('tfSmsgateDeviceIdHint');
+      if (_devInp) _devInp.value = '';
+      if (_devHint) {
+        if (t.has_smsgate_device_id && t.smsgate_device_id_tail) {
+          _devHint.textContent = 'Currently set: ' + t.smsgate_device_id_tail + ' (enter new value to change)';
+          _devHint.style.color = '#1976d2';
+        } else {
+          _devHint.textContent = 'Inherits global env if blank.';
+          _devHint.style.color = '#888';
+        }
+      }
+      const _simInp = document.getElementById('tfSmsgateSimNumber');
+      if (_simInp) _simInp.value = t.smsgate_sim_number != null ? String(t.smsgate_sim_number) : '';
       document.getElementById('tfThemePrimary').value = t.theme_primary || '';
       document.getElementById('tenantModal').classList.remove('hidden');
     }
@@ -459,6 +483,13 @@
         wa_template_lang: (document.getElementById('tfWaTemplateLang') || {}).value || '',
         // Send boolean explicitly — false when unchecked
         wa_enabled: !!(document.getElementById('tfWaEnabled') || {}).checked,
+        smsgate_device_id: (document.getElementById('tfSmsgateDeviceId') || {}).value || '',
+        smsgate_sim_number: (() => {
+          const v = (document.getElementById('tfSmsgateSimNumber') || {}).value;
+          if (v === '' || v == null) return null;
+          const n = parseInt(v, 10);
+          return Number.isFinite(n) && n >= 0 && n <= 3 ? n : null;
+        })(),
       };
 
       const url = _editingId
