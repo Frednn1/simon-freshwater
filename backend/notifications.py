@@ -260,7 +260,12 @@ def get_available_channels(tenant_slug: str = None,
       - wa_enabled_override (True/False from Tenant.wa_enabled; None = env fallback)
     """
     channels = []
-    if SMSGATE_USERNAME and SMSGATE_PASSWORD:
+    # Phase 4: SMS availability uses per-tenant resolver
+    # (mirrors the WhatsApp check below). Backward-compatible: with
+    # tenant_slug=None, smsgate_credentials_for_tenant returns the globals,
+    # so tenants without per-tenant creds behave exactly as before.
+    _sms_creds = smsgate_credentials_for_tenant(tenant_slug)
+    if _sms_creds["username"] and _sms_creds["password"]:
         channels.append("sms")
 
     if wa_enabled_override is None:

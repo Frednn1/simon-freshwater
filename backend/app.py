@@ -3942,7 +3942,11 @@ def get_consumer_details(consumer_id):
         } for r in latest12],
         "payments": payments_out,
         "overall_status": info,
-        "available_channels": get_available_channels(),
+        # Phase 4: pass tenant context to channel detection
+        "available_channels": get_available_channels(
+            tenant_slug=_tenant_slug(),
+            wa_enabled_override=_tenant_wa_enabled(g.tenant),
+        ),
         "last_notifications": {
             "sms": last_sms.sent_at.isoformat() if last_sms else None,
             "email": last_email.sent_at.isoformat() if last_email else None,
@@ -4602,6 +4606,18 @@ def notify_consumer(consumer_id):
     channel = (data.get("channel") or "").lower().strip()
     if channel not in ("sms", "whatsapp"):
         return jsonify({"error": "channel must be 'sms' or 'whatsapp'"}), 400
+
+    # Phase 4: tenant-aware WA_ENABLED check (mirrors send_whatsapp_bill + admin_bulk_sms_send)
+    if channel == "whatsapp":
+        _wa_override = _tenant_wa_enabled(g.tenant)
+        if _wa_override is None:
+            _wa_toggle = os.environ.get("WA_ENABLED", "false").strip().lower()
+            _wa_on = _wa_toggle in ("1", "true", "yes", "on")
+        else:
+            _wa_on = _wa_override
+        if not _wa_on:
+            return jsonify({"error": "WhatsApp sending is currently disabled."}), 403
+
     send_to_alt = bool(data.get("send_to_alt"))
 
     consumer = _tenant_query(Consumer).filter_by(id=consumer_id).first_or_404()

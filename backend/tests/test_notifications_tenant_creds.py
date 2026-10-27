@@ -269,3 +269,93 @@ def test_bulk_whatsapp_send_bill_passes_tenant_slug():
     body = src[idx:nxt if nxt > 0 else idx+6000]
     assert "tenant_slug=(tenant.slug if tenant else None)" in body
 
+# ══════════════════════════════════════════════════════════════════════
+# Phase 4 — SMS availability per-tenant + notify_consumer WA gate
+# ══════════════════════════════════════════════════════════════════════
+
+def test_get_available_channels_sms_per_tenant_when_globals_unset(monkeypatch):
+    """Phase 4: SMS detected via per-tenant env creds when globals are empty."""
+    monkeypatch.setattr(notif, "SMSGATE_USERNAME", "")
+    monkeypatch.setattr(notif, "SMSGATE_PASSWORD", "")
+    monkeypatch.setenv("SMSGATE_DEMO_TENANT_USERNAME", "tu")
+    monkeypatch.setenv("SMSGATE_DEMO_TENANT_PASSWORD", "tp")
+    channels = notif.get_available_channels(tenant_slug="demo-tenant")
+    assert "sms" in channels
+
+
+def test_get_available_channels_sms_backward_compat_globals(monkeypatch):
+    """Phase 4: with tenant_slug=None and globals set, SMS still returned (unchanged)."""
+    monkeypatch.setattr(notif, "SMSGATE_USERNAME", "gu")
+    monkeypatch.setattr(notif, "SMSGATE_PASSWORD", "gp")
+    channels = notif.get_available_channels()
+    assert "sms" in channels
+
+
+def test_notify_consumer_wa_blocked_by_tenant_override(client, monkeypatch):
+    """Phase 4: notify_consumer blocked when tenant wa_enabled=False even if env is true."""
+    import app as app_module
+    from helpers import make_admin, login
+    from models import Consumer, db
+    from datetime import date
+
+    make_admin("admin_nc_blk_XX")
+    login(client, "admin_nc_blk_XX")
+    if client.get("/api/admin/whoami").get_json().get("pending_profile_choice"):
+        client.post("/api/admin/profile/switch", json={"to": "billing"})
+
+    with app_module.app.app_context():
+        c = Consumer(
+            tenant_id=1, cust_name="NC Blk XX",
+            acc_name="NC Blk XX", meter_acc_no="MTR-NCBLK-XX",
+            contact="0700000000", is_active=True,
+        )
+        db.session.add(c)
+        db.session.commit()
+        cid = c.id
+        # Set tenant wa_enabled = False
+        t = app_module.Tenant.query.get(1)
+        t.wa_enabled = False
+        db.session.commit()
+
+    # Also enable WA_ENABLED env so this test proves tenant override wins
+    monkeypatch.setenv("WA_ENABLED", "true")
+
+    r = client.post(f"/api/consumer/{cid}/notify", json={"channel": "whatsapp"})
+    assert r.status_code == 403, f"expected 403, got {r.status_code}: {r.get_json()}"
+    assert "disabled" in (r.get_json().get("error") or "").lower()
+
+
+def test_notify_consumer_wa_allowed_by_tenant_override(client, monkeypatch):
+    """Phase 4: notify_consumer NOT blocked by WA gate when tenant wa_enabled=True."""
+    import app as app_module
+    from helpers import make_admin, login
+    from models import Consumer, db
+
+    make_admin("admin_nc_ok_XX")
+    login(client, "admin_nc_ok_XX")
+    if client.get("/api/admin/whoami").get_json().get("pending_profile_choice"):
+        client.post("/api/admin/profile/switch", json={"to": "billing"})
+
+    with app_module.app.app_context():
+        c = Consumer(
+            tenant_id=1, cust_name="NC Ok XX",
+            acc_name="NC Ok XX", meter_acc_no="MTR-NCOK-XX",
+            contact="0700000000", is_active=True,
+        )
+        db.session.add(c)
+        db.session.commit()
+        cid = c.id
+        t = app_module.Tenant.query.get(1)
+        t.wa_enabled = True
+        db.session.commit()
+
+    # Env is disabled — tenant override must allow it
+    monkeypatch.setenv("WA_ENABLED", "false")
+
+    # The endpoint will likely fail later for other reasons (no readings),
+    # but the WA gate must NOT return the disabled error.
+    r = client.post(f"/api/consumer/{cid}/notify", json={"channel": "whatsapp"})
+    # Should not be the WA-disabled gate
+    err = (r.get_json() or {}).get("error", "").lower()
+    assert "disabled" not in err, f"wa gate wrongly blocked: {r.get_json()}"
+
