@@ -118,6 +118,16 @@ WA_API_URL = (
 )
 
 
+def _wa_api_url_for(phone_number_id: str) -> str:
+    """Build the Meta Cloud API URL for a given phone_number_id.
+    Phase 2 (GAP-CRIT-1): replaces reliance on the module-level
+    WA_API_URL constant so per-tenant phone_number_id works correctly.
+    Returns "" if phone_number_id is falsy."""
+    if not phone_number_id:
+        return ""
+    return f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
+
+
 def _slug_to_env_suffix(slug: str) -> str:
     """Convert tenant slug to env var suffix: 'demo-tenant' -> 'DEMO_TENANT'.
     Returns '' for falsy/empty input. Never raises."""
@@ -209,14 +219,29 @@ def wa_credentials_for_tenant(slug: str = None) -> dict:
     return globals_
 
 
-def get_available_channels() -> list:
+def get_available_channels(tenant_slug: str = None,
+                          wa_enabled_override=None) -> list:
+    """List channels available for the (optional) tenant.
+
+    Backward compatible: get_available_channels() with no args returns the
+    global behaviour (env-only WA_ENABLED + global creds).
+
+    Phase 2: callers that know the current tenant should pass:
+      - tenant_slug (for per-tenant credential resolution)
+      - wa_enabled_override (True/False from Tenant.wa_enabled; None = env fallback)
+    """
     channels = []
     if SMSGATE_USERNAME and SMSGATE_PASSWORD:
         channels.append("sms")
 
-    wa_toggle = os.environ.get("WA_ENABLED", "false").strip().lower()
-    wa_on = wa_toggle in ("1", "true", "yes", "on")
-    if wa_on and WA_PHONE_NUMBER_ID and WA_ACCESS_TOKEN:
+    if wa_enabled_override is None:
+        wa_toggle = os.environ.get("WA_ENABLED", "false").strip().lower()
+        wa_on = wa_toggle in ("1", "true", "yes", "on")
+    else:
+        wa_on = bool(wa_enabled_override)
+
+    _creds = wa_credentials_for_tenant(tenant_slug)
+    if wa_on and _creds["access_token"] and _creds["phone_number_id"]:
         channels.append("whatsapp")
 
     return channels
@@ -351,8 +376,11 @@ def send_sms(to_phone: str, message: str) -> dict:
 
 
 # ─── WhatsApp sender (unchanged) ───
-def send_whatsapp(to_phone: str, message: str) -> dict:
-    if not WA_PHONE_NUMBER_ID or not WA_ACCESS_TOKEN:
+def send_whatsapp(to_phone: str, message: str, tenant_slug: str = None,
+                  template_lang_override: str = None) -> dict:
+    # Phase 2: per-tenant credential resolution (falls back to global).
+    creds = wa_credentials_for_tenant(tenant_slug)
+    if not creds["phone_number_id"] or not creds["access_token"]:
         return {"ok": False,
                 "error": "WhatsApp provider not configured (set WA_PHONE_NUMBER_ID & WA_ACCESS_TOKEN)"}
 
@@ -360,8 +388,10 @@ def send_whatsapp(to_phone: str, message: str) -> dict:
     if not recipient:
         return {"ok": False, "error": "Invalid phone number"}
 
+    _wa_url = _wa_api_url_for(creds["phone_number_id"])
+    _lang = template_lang_override or WA_TEMPLATE_LANG
     headers = {
-        "Authorization": f"Bearer {WA_ACCESS_TOKEN}",
+        "Authorization": f"Bearer {creds['access_token']}",
         "Content-Type": "application/json",
     }
 
@@ -372,7 +402,7 @@ def send_whatsapp(to_phone: str, message: str) -> dict:
             "type": "template",
             "template": {
                 "name": WA_TEMPLATE_NAME,
-                "language": {"code": WA_TEMPLATE_LANG},
+                "language": {"code": _lang},
                 "components": [
                     {"type": "body",
                      "parameters": [{"type": "text", "text": message}]}
@@ -388,7 +418,7 @@ def send_whatsapp(to_phone: str, message: str) -> dict:
         }
 
     try:
-        r = requests.post(WA_API_URL, json=payload, headers=headers, timeout=20)
+        r = requests.post(_wa_url, json=payload, headers=headers, timeout=20)
         if r.status_code in (200, 201):
             body = r.json()
             msgs = body.get("messages", [])
@@ -484,13 +514,18 @@ def send_whatsapp_document(to_phone: str,
                            filename: str,
                            body_params: list,
                            template_name: str = None,
-                           language: str = None) -> dict:
-    if not WA_PHONE_NUMBER_ID or not WA_ACCESS_TOKEN:
+                           language: str = None,
+                           tenant_slug: str = None,
+                           template_lang_override: str = None) -> dict:
+    # Phase 2: per-tenant credential resolution (falls back to global).
+    creds = wa_credentials_for_tenant(tenant_slug)
+    if not creds["phone_number_id"] or not creds["access_token"]:
         return {"ok": False,
                 "error": "WhatsApp provider not configured (set WA_PHONE_NUMBER_ID & WA_ACCESS_TOKEN)"}
 
     tpl_name = template_name or WA_TEMPLATE_NAME
-    tpl_lang = language or WA_TEMPLATE_LANG
+    # Language precedence: explicit arg > caller override > env default
+    tpl_lang = language or template_lang_override or WA_TEMPLATE_LANG
 
     if not tpl_name:
         return {"ok": False,
@@ -533,13 +568,14 @@ def send_whatsapp_document(to_phone: str,
         },
     }
 
+    _wa_url = _wa_api_url_for(creds["phone_number_id"])
     headers = {
-        "Authorization": f"Bearer {WA_ACCESS_TOKEN}",
+        "Authorization": f"Bearer {creds['access_token']}",
         "Content-Type": "application/json",
     }
 
     try:
-        r = requests.post(WA_API_URL, json=payload, headers=headers, timeout=30)
+        r = requests.post(_wa_url, json=payload, headers=headers, timeout=30)
         if r.status_code in (200, 201):
             body = r.json()
             msgs = body.get("messages", [])

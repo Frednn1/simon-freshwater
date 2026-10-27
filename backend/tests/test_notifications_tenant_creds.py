@@ -105,3 +105,45 @@ def test_resolvers_never_raise(monkeypatch):
     assert _n.smsgate_credentials_for_tenant(123)["source"] == "global"
     assert _n.wa_credentials_for_tenant({})["source"] == "global"
     assert _n.smsgate_credentials_for_tenant("")["source"] == "global"
+
+# ══════════════════════════════════════════════════════════════════════
+# Phase 2 — WA per-call URL + per-tenant resolution
+# ══════════════════════════════════════════════════════════════════════
+
+def test_wa_api_url_per_phone_id():
+    """GAP-CRIT-1: URL is built per-call from phone_number_id, not cached."""
+    assert notif._wa_api_url_for("123") == "https://graph.facebook.com/v21.0/123/messages"
+    assert notif._wa_api_url_for("") == ""
+    assert notif._wa_api_url_for(None) == ""
+
+
+def test_get_available_channels_no_args_backward_compat(monkeypatch):
+    """Backward compat: get_available_channels() with no args preserves today's behavior."""
+    monkeypatch.setattr(notif, "SMSGATE_USERNAME", "u")
+    monkeypatch.setattr(notif, "SMSGATE_PASSWORD", "p")
+    monkeypatch.setattr(notif, "WA_PHONE_NUMBER_ID", "pid")
+    monkeypatch.setattr(notif, "WA_ACCESS_TOKEN", "tok")
+    monkeypatch.setenv("WA_ENABLED", "true")
+    # no tenant, no override -> env only
+    channels = notif.get_available_channels()
+    assert "sms" in channels
+    assert "whatsapp" in channels
+
+
+def test_get_available_channels_tenant_override_false(monkeypatch):
+    """Tenant wa_enabled=False overrides env WA_ENABLED=true."""
+    monkeypatch.setattr(notif, "WA_PHONE_NUMBER_ID", "pid")
+    monkeypatch.setattr(notif, "WA_ACCESS_TOKEN", "tok")
+    monkeypatch.setenv("WA_ENABLED", "true")
+    channels = notif.get_available_channels(wa_enabled_override=False)
+    assert "whatsapp" not in channels
+
+
+def test_get_available_channels_tenant_override_true(monkeypatch):
+    """Tenant wa_enabled=True forces WA on even when env says false."""
+    monkeypatch.setattr(notif, "WA_PHONE_NUMBER_ID", "pid")
+    monkeypatch.setattr(notif, "WA_ACCESS_TOKEN", "tok")
+    monkeypatch.setenv("WA_ENABLED", "false")
+    channels = notif.get_available_channels(wa_enabled_override=True)
+    assert "whatsapp" in channels
+

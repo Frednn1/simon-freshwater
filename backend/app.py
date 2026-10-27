@@ -1385,6 +1385,14 @@ def _ensure_all_columns():
             t_alters.append("ADD COLUMN dispensing_paybill VARCHAR(30) NULL")
         if "dispensing_account" not in existing:
             t_alters.append("ADD COLUMN dispensing_account VARCHAR(60) NULL")
+        # Phase 2: per-tenant WhatsApp overrides (NULL = env fallback)
+        if "wa_enabled" not in existing:
+            if dialect == "sqlite":
+                t_alters.append("ADD COLUMN wa_enabled INTEGER NULL")
+            else:
+                t_alters.append("ADD COLUMN wa_enabled BOOLEAN NULL")
+        if "wa_template_lang" not in existing:
+            t_alters.append("ADD COLUMN wa_template_lang VARCHAR(10) NULL")
         for alt in t_alters:
             db.session.execute(text(f"ALTER TABLE tenants {alt}"))
         if t_alters:
@@ -2069,6 +2077,27 @@ def _current_active_profile():
     return "billing"
 
 
+def _tenant_wa_enabled(t):
+    """Return tenant WA_ENABLED override (True/False) or None if unset
+    (NULL = fall back to env WA_ENABLED)."""
+    if t is None:
+        return None
+    v = getattr(t, "wa_enabled", None)
+    if v is None:
+        return None
+    return bool(v)
+
+
+def _tenant_wa_template_lang(t):
+    """Return tenant WA_TEMPLATE_LANG override or None."""
+    if t is None:
+        return None
+    v = getattr(t, "wa_template_lang", None)
+    if not v:
+        return None
+    return v
+
+
 def _tenant_to_dict(t):
     return {
         "id": t.id,
@@ -2088,6 +2117,8 @@ def _tenant_to_dict(t):
         "mpesa_env": t.mpesa_env or "sandbox",
         "logo_key": t.logo_key,
         "theme_primary": t.theme_primary,
+        "wa_enabled": (None if t.wa_enabled is None else bool(t.wa_enabled)),
+        "wa_template_lang": t.wa_template_lang,
         "is_active": bool(t.is_active),
         "enabled_profiles": _tenant_profiles_dict(t.id),
         "created_at": t.created_at.isoformat() if t.created_at else None,
@@ -2688,6 +2719,10 @@ def admin_tenants_create():
         mpesa_env=mpesa_env,
         logo_key=(data.get("logo_key") or "").strip() or None,
         theme_primary=(data.get("theme_primary") or "").strip() or "#0d47a1",
+        wa_enabled=(None if (data.get("wa_enabled") is None or data.get("wa_enabled") == "")
+                    else bool(str(data.get("wa_enabled")).strip().lower()
+                              in ("1", "true", "yes", "on"))),
+        wa_template_lang=((data.get("wa_template_lang") or "").strip() or None),
         is_active=False,
     )
     db.session.add(t)
@@ -2717,7 +2752,8 @@ def admin_tenants_update(tenant_id):
                "address", "location", "paybill", "payment_account",
                "dispensing_paybill", "dispensing_account",
                "mpesa_shortcode", "mpesa_env",
-               "logo_key", "theme_primary")
+               "logo_key", "theme_primary",
+               "wa_template_lang", "wa_enabled")
     updated = []
     for f in allowed:
         if f not in data:
@@ -2750,6 +2786,31 @@ def admin_tenants_update(tenant_id):
             if v not in ("sandbox", "production"):
                 v = "sandbox"
             setattr(t, f, v)
+            updated.append(f)
+            continue
+        if f == "wa_enabled":
+            # Accept true/false/1/0/yes/no/'true'/'false'; empty string = NULL (env fallback)
+            if v == "" or v is None:
+                setattr(t, f, None)
+            else:
+                _b = str(v).strip().lower()
+                if _b in ("1", "true", "yes", "on"):
+                    setattr(t, f, True)
+                elif _b in ("0", "false", "no", "off"):
+                    setattr(t, f, False)
+                else:
+                    return jsonify({"error": f"Invalid boolean for '{f}'."}), 400
+            updated.append(f)
+            continue
+        if f == "wa_template_lang":
+            # Only allow known Meta-supported codes; empty = NULL (env fallback)
+            if v in ("", None):
+                setattr(t, f, None)
+            elif v in ("en", "en_US", "sw", "sw_KE"):
+                setattr(t, f, v)
+            else:
+                return jsonify({"error": f"Unsupported template language '{v}'. "
+                                        f"Use en, en_US, sw, or sw_KE."}), 400
             updated.append(f)
             continue
         setattr(t, f, v or None)
@@ -4231,10 +4292,14 @@ def send_whatsapp_bill(consumer_id):
     if u:
         return u
 
-    # Honor the WA_ENABLED toggle — refuse if disabled, even if the
-    # request bypasses the UI.
-    wa_toggle = os.environ.get("WA_ENABLED", "false").strip().lower()
-    if wa_toggle not in ("1", "true", "yes", "on"):
+    # Phase 2: tenant-aware WA_ENABLED — DB override > env fallback
+    _wa_override = _tenant_wa_enabled(g.tenant)
+    if _wa_override is None:
+        _wa_toggle = os.environ.get("WA_ENABLED", "false").strip().lower()
+        _wa_on = _wa_toggle in ("1", "true", "yes", "on")
+    else:
+        _wa_on = _wa_override
+    if not _wa_on:
         return jsonify({"error": "WhatsApp sending is currently disabled."}), 403
 
     data = request.get_json(silent=True) or {}
@@ -8021,7 +8086,10 @@ def admin_bulk_sms_overdue():
     return jsonify({
         "consumers": out,
         "count": len(out),
-        "whatsapp_available": "whatsapp" in get_available_channels(),
+        "whatsapp_available": "whatsapp" in get_available_channels(
+            tenant_slug=_tenant_slug(),
+            wa_enabled_override=_tenant_wa_enabled(g.tenant),
+        ),
     })
 
 
@@ -8056,8 +8124,14 @@ def admin_bulk_sms_send():
     # Honor WA_ENABLED at request time (defense-in-depth — frontend may
     # have a stale state). Matches send_whatsapp_bill's pattern.
     if channel == "whatsapp":
-        _wa_toggle = os.environ.get("WA_ENABLED", "false").strip().lower()
-        if _wa_toggle not in ("1", "true", "yes", "on"):
+        # Phase 2: tenant-aware WA_ENABLED — DB override > env fallback
+        _wa_override = _tenant_wa_enabled(g.tenant)
+        if _wa_override is None:
+            _wa_toggle = os.environ.get("WA_ENABLED", "false").strip().lower()
+            _wa_on = _wa_toggle in ("1", "true", "yes", "on")
+        else:
+            _wa_on = _wa_override
+        if not _wa_on:
             return jsonify({"error": "WhatsApp sending is currently disabled."}), 403
 
     # Fetch consumers + compute info

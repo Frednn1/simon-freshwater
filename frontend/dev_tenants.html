@@ -128,6 +128,26 @@
             </select>
           </div>
           <div class="form-row">
+            <label for="tfWaEnabled">WhatsApp Enabled (leave unchecked to inherit env default)</label>
+            <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-weight:normal;">
+              <input type="checkbox" id="tfWaEnabled" style="width:1.05rem;height:1.05rem;cursor:pointer;">
+              <span>Enable WhatsApp for this tenant</span>
+            </label>
+            <div class="form-hint-small" style="font-size:.75rem;opacity:.7;margin-top:.25rem;">
+              Unchecked = inherit global env WA_ENABLED. Checked = force on. To force off, save then re-open.
+            </div>
+          </div>
+          <div class="form-row">
+            <label for="tfWaTemplateLang">WhatsApp Template Language (leave blank to inherit env)</label>
+            <select id="tfWaTemplateLang">
+              <option value="">Inherit (env default)</option>
+              <option value="en">English (en)</option>
+              <option value="en_US">English US (en_US)</option>
+              <option value="sw">Swahili (sw)</option>
+              <option value="sw_KE">Swahili KE (sw_KE)</option>
+            </select>
+          </div>
+          <div class="form-row">
             <label for="tfThemePrimary">Theme Primary Colour</label>
             <input type="text" id="tfThemePrimary" placeholder="#0d47a1">
           </div>
@@ -396,6 +416,14 @@
       document.getElementById('tfLogoKey').value = t.logo_key || '';
       document.getElementById('tfMpesaShortcode').value = t.mpesa_shortcode || '';
       document.getElementById('tfMpesaEnv').value = t.mpesa_env || 'sandbox';
+      // Phase 2: WA overrides (NULL = leave checkbox unchecked, select = inherit)
+      const _waCb = document.getElementById('tfWaEnabled');
+      if (_waCb) {
+        // NULL/undefined => unchecked (inherit env). Only true => checked.
+        _waCb.checked = (t.wa_enabled === true);
+      }
+      const _waLangSel = document.getElementById('tfWaTemplateLang');
+      if (_waLangSel) _waLangSel.value = t.wa_template_lang || '';
       document.getElementById('tfThemePrimary').value = t.theme_primary || '';
       document.getElementById('tenantModal').classList.remove('hidden');
     }
@@ -428,6 +456,9 @@
         mpesa_env:       document.getElementById('tfMpesaEnv').value,
         logo_key:      document.getElementById('tfLogoKey').value.trim(),
         theme_primary: document.getElementById('tfThemePrimary').value.trim(),
+        wa_template_lang: (document.getElementById('tfWaTemplateLang') || {}).value || '',
+        // Send boolean explicitly — false when unchecked
+        wa_enabled: !!(document.getElementById('tfWaEnabled') || {}).checked,
       };
 
       const url = _editingId

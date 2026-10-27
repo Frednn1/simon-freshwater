@@ -275,6 +275,11 @@ class Tenant(db.Model):
     mpesa_env = db.Column(db.String(20), default="sandbox")
     logo_key = db.Column(db.String(255))
     theme_primary = db.Column(db.String(10), default="#0d47a1")
+    # Phase 2: per-tenant WhatsApp feature flag + template language override.
+    # NULL = "no override" -> falls back to env WA_ENABLED / WA_TEMPLATE_LANG.
+    # NULL default is REQUIRED so existing tenants keep current behaviour.
+    wa_enabled = db.Column(db.Boolean, nullable=True)
+    wa_template_lang = db.Column(db.String(10), nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
