@@ -7860,6 +7860,112 @@ def admin_recompute_amounts():
 #  ADMIN — BULK SMS
 # ═══════════════════════════════════════════════
 
+def _bulk_whatsapp_send_bill(consumer, info, tenant):
+    """Generate and send a PDF bill for the bulk WhatsApp path.
+
+    Mirrors send_whatsapp_bill's core (PDF generation + WhatsApp document
+    template send). Does NOT touch send_whatsapp_bill itself.
+
+    Does NOT write NotificationLog — bulk_sms.py's per-recipient loop does.
+    Writes SentBillArchive with kind='bill_pdf' (same shape as the
+    single-consumer flow).
+
+    Returns {ok, error, provider_id} — same shape as send_sms/send_whatsapp.
+    Never raises; catches all exceptions and returns {ok: False, error: str}.
+    """
+    try:
+        # Latest reading — needed for reading.id, reading_date, reading_m3
+        readings_desc = _all_readings(consumer.id)
+        if not readings_desc:
+            return {"ok": False, "error": "No readings on file"}
+        reading = readings_desc[0]
+
+        _pay = _payment_info(consumer, tenant=tenant)
+
+        # Carry-forward display values (same computation as send_whatsapp_bill)
+        _asc = list(reversed(readings_desc))
+        _pays = _consumer_payments(consumer.id)
+        _disp_map = _carry_forward_display(_asc, _pays)
+        _d = _disp_map.get(reading.id, {})
+
+        total_outstanding = round(sum(r.balance for r in readings_desc), 2)
+        current_display_balance = _d.get("balance", reading.balance)
+        prev_outstanding = round(total_outstanding - current_display_balance, 2)
+
+        snapshot = {
+            "bill_no":                 f"{reading.id:06d}",
+            "date":                    reading.reading_date.strftime("%d %b %Y"),
+            "bill_month":              reading.reading_date.strftime("%B %Y"),
+            "cust_name":               consumer.cust_name,
+            "meter_acc_no":            consumer.meter_acc_no,
+            "reading_m3":              f"{reading.reading_m3:.2f}",
+            "previous_reading":        f"{float(info.get('previous_reading_m3', 0)):.2f}",
+            "amount_kes":              _fmt_money(float(reading.amount_kes or 0)),
+            "payment_carried_forward": f"KES {_fmt_money(_d.get('prepaid_credit', 0.0))}",
+            "paid":                    f"KES {_fmt_money(_d.get('paid', 0.0))}",
+            "previous_outstanding":    _fmt_money(prev_outstanding),
+            "total_outstanding":       _fmt_money(total_outstanding),
+            "status_label":            _d.get("status", get_reading_bill_status(reading)).upper(),
+            "paybill":                 _pay["paybill"],
+            "payment_account":         _pay["account"],
+        }
+        snapshot.update(_brand_context())
+        snapshot["template_r2_key"] = _resolve_template_key(tenant, "water_bill")
+
+        pdf_buf = generate_water_bill_pdf(snapshot)
+        pdf_bytes = bytes(pdf_buf.getvalue())
+
+        token = secrets.token_urlsafe(32)
+        _PUBLIC_BILL_TOKENS[token] = pdf_bytes
+        public_url = request.host_url.rstrip("/") + f"/public/bill/{token}.pdf"
+        filename = f"{_safe_filename(consumer.cust_name)}_bill_{reading.id:06d}.pdf"
+
+        r = send_whatsapp_document(
+            to_phone=consumer.contact,
+            pdf_public_url=public_url,
+            filename=filename,
+            body_params=[consumer.cust_name, consumer.meter_acc_no],
+        )
+
+        # Best-effort archive (matches send_whatsapp_bill behaviour)
+        if r.get("ok"):
+            try:
+                sent_at = datetime.utcnow()
+                key = None
+                if archive.is_configured():
+                    key = archive.make_key(consumer.id, reading.id, sent_at,
+                                           tenant_slug=_tenant_slug())
+                    if not archive.upload_pdf(key, pdf_bytes):
+                        key = None
+                row = SentBillArchive(
+                    consumer_id=consumer.id,
+                    tenant_id=consumer.tenant_id,
+                    reading_id=reading.id,
+                    channel="whatsapp",
+                    kind="bill_pdf",
+                    recipient_phone=consumer.contact,
+                    template_name=os.environ.get("WA_TEMPLATE_NAME", ""),
+                    provider_message_id=r.get("provider_id", ""),
+                    sent_at=sent_at,
+                    status="sent",
+                    error=None,
+                    body_text=None,
+                    storage_key=key,
+                    file_size=len(pdf_bytes),
+                    snapshot_json=json.dumps(snapshot),
+                )
+                db.session.add(row)
+                db.session.commit()
+            except Exception:
+                app.logger.exception("[Bulk WhatsApp] archive insert failed")
+                db.session.rollback()
+
+        return r
+    except Exception as e:
+        app.logger.exception("[Bulk WhatsApp] send failed")
+        return {"ok": False, "error": str(e)}
+
+
 @app.route("/api/admin/bulk_sms/overdue", methods=["GET"])
 def admin_bulk_sms_overdue():
     """
@@ -7981,9 +8087,10 @@ def admin_bulk_sms_send():
     admin = _current_admin()
     operator = (admin.username if admin else "admin")[:60]
 
+    _wa_sender = _bulk_whatsapp_send_bill if channel == "whatsapp" else None
     try:
         result = send_bulk_sms(items, operator=operator, tenant=g.tenant,
-                               channel=channel)
+                               channel=channel, whatsapp_sender=_wa_sender)
     except Exception as e:
         app.logger.exception("[BulkSMS] failed")
         return jsonify({"error": f"Send failed: {e}"}), 500

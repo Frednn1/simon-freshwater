@@ -14,7 +14,7 @@ import time
 import logging
 
 from models import db, NotificationLog
-from notifications import send_sms, send_whatsapp, build_bill_message
+from notifications import send_sms, build_bill_message
 
 
 BULK_SMS_DELAY = float(os.environ.get("BULK_SMS_DELAY_SECONDS", "0.5"))
@@ -24,10 +24,16 @@ _log = logging.getLogger(__name__)
 
 
 def send_bulk_sms(items: list, operator: str = "admin", tenant=None,
-                   channel: str = "sms") -> dict:
+                   channel: str = "sms", whatsapp_sender=None) -> dict:
     """
     Send the bill-reminder to each item in `items` via the given channel
     ("sms" or "whatsapp"), with a delay between each.
+
+    whatsapp_sender: optional callable (consumer, info, tenant) -> {ok, error, provider_id}.
+    Required for channel="whatsapp" — the endpoint injects a helper that
+    builds PDFs and uses the document template (WA_TEMPLATE_NAME). If None
+    when channel="whatsapp", the batch fails with a clear error rather
+    than falling back to the wrong (text) template which Meta rejects.
 
     items = [
         {"consumer": <Consumer object>, "info": <status dict>},
@@ -72,7 +78,11 @@ def send_bulk_sms(items: list, operator: str = "admin", tenant=None,
         # Send via the correct provider
         try:
             if _ch == "whatsapp":
-                res = send_whatsapp(c.contact, body)
+                if whatsapp_sender is None:
+                    res = {"ok": False,
+                           "error": "WhatsApp sender not configured for this batch"}
+                else:
+                    res = whatsapp_sender(c, info, tenant)
             else:
                 res = send_sms(c.contact, body)
         except Exception as e:

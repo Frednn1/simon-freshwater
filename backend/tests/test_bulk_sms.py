@@ -162,31 +162,30 @@ def test_notify_unchanged_after_refactor(client, monkeypatch):
 # ══════════════════════════════════════════════════════════════════════
 
 def test_bulk_send_whatsapp_channel(client, monkeypatch):
-    """POST with channel=whatsapp → send_whatsapp called, send_sms not called."""
+    """POST with channel=whatsapp → injected whatsapp_sender called, send_sms not called."""
     _admin_login(client, "wa")
     cid, _ = _make_consumer_with_bill(age_days=25)
 
     monkeypatch.setenv("WA_ENABLED", "true")
-    monkeypatch.setenv("WA_PHONE_NUMBER_ID", "test_id")
-    monkeypatch.setenv("WA_ACCESS_TOKEN", "test_token")
 
     sms_calls = []
     wa_calls = []
     def fake_sms(phone, body):
         sms_calls.append((phone, body)); return {"ok": True, "provider_id": "sms"}
-    def fake_wa(phone, body):
-        wa_calls.append((phone, body)); return {"ok": True, "provider_id": "wa"}
+    def fake_wa_sender(consumer, info, tenant):
+        wa_calls.append((consumer.id, info.get("total_due")))
+        return {"ok": True, "provider_id": "wa-doc"}
 
-    import bulk_sms
+    import bulk_sms, app as app_module
     monkeypatch.setattr(bulk_sms, "send_sms", fake_sms)
-    monkeypatch.setattr(bulk_sms, "send_whatsapp", fake_wa)
+    monkeypatch.setattr(app_module, "_bulk_whatsapp_send_bill", fake_wa_sender)
 
     r = client.post("/api/admin/bulk_sms/send",
                     json={"consumer_ids": [cid], "channel": "whatsapp"})
     assert r.status_code == 200, f"body={r.get_json()}"
-    assert len(wa_calls) == 1, f"expected 1 send_whatsapp call, got {len(wa_calls)}"
+    assert len(wa_calls) == 1, f"expected 1 whatsapp_sender call, got {len(wa_calls)}"
+    assert wa_calls[0][0] == cid
     assert len(sms_calls) == 0, f"expected 0 send_sms calls, got {len(sms_calls)}"
-    # Verify response reflects channel
     results = r.get_json().get("results", [])
     assert results and results[0].get("channel") == "whatsapp"
 
@@ -215,14 +214,12 @@ def test_bulk_whatsapp_writes_whatsapp_notification_log(client, monkeypatch):
     _admin_login(client, "wl")
     cid, _ = _make_consumer_with_bill(age_days=25)
     monkeypatch.setenv("WA_ENABLED", "true")
-    monkeypatch.setenv("WA_PHONE_NUMBER_ID", "test_id")
-    monkeypatch.setenv("WA_ACCESS_TOKEN", "test_token")
 
-    def fake_wa(phone, body):
+    def fake_wa_sender(consumer, info, tenant):
         return {"ok": True, "provider_id": "wa-test"}
 
-    import bulk_sms
-    monkeypatch.setattr(bulk_sms, "send_whatsapp", fake_wa)
+    import app as app_module
+    monkeypatch.setattr(app_module, "_bulk_whatsapp_send_bill", fake_wa_sender)
 
     r = client.post("/api/admin/bulk_sms/send",
                     json={"consumer_ids": [cid], "channel": "whatsapp"})
@@ -274,4 +271,71 @@ def test_overdue_returns_whatsapp_preview_body(client):
     wa_body = tgt["preview_body_wa"]
     assert "Dear" in wa_body
     assert tgt["meter_acc_no"] in wa_body
+
+# ══════════════════════════════════════════════════════════════════════
+# Bulk WhatsApp — document template flow (uses _bulk_whatsapp_send_bill)
+# ══════════════════════════════════════════════════════════════════════
+
+def test_bulk_whatsapp_uses_document_template(client, monkeypatch):
+    """The injected whatsapp_sender must call send_whatsapp_document with
+    body_params=[cust_name, meter_acc_no] — matching the WA_TEMPLATE_NAME
+    template that has 2 body params + document header."""
+    _admin_login(client, "wtpl")
+    cid, _ = _make_consumer_with_bill(age_days=25)
+    monkeypatch.setenv("WA_ENABLED", "true")
+
+    captured = {}
+    def fake_doc_sender(to_phone, pdf_public_url, filename,
+                        body_params, template_name=None, language=None):
+        captured["to_phone"] = to_phone
+        captured["filename"] = filename
+        captured["body_params"] = body_params
+        return {"ok": True, "provider_id": "test"}
+
+    # Stub PDF gen + archive config so this test doesn't depend on
+    # template files or R2 credentials — we're testing the WhatsApp
+    # document call shape, not PDF rendering or archiving.
+    import io
+    def fake_pdf(snapshot):
+        return io.BytesIO(b"%PDF-1.4 test")
+
+    import app as app_module
+    import archive
+    monkeypatch.setattr(app_module, "send_whatsapp_document", fake_doc_sender)
+    monkeypatch.setattr(app_module, "generate_water_bill_pdf", fake_pdf)
+    monkeypatch.setattr(archive, "is_configured", lambda: False)
+
+    r = client.post("/api/admin/bulk_sms/send",
+                    json={"consumer_ids": [cid], "channel": "whatsapp"})
+    assert r.status_code == 200, f"body={r.get_json()}"
+
+    resp = r.get_json() or {}
+    assert "to_phone" in captured, (
+        f"send_whatsapp_document not called. "
+        f"results={resp.get('results')}, "
+        f"error={resp.get('error')}"
+    )
+    assert len(captured["body_params"]) == 2, \
+        f"expected 2 body params (name, meter), got {captured['body_params']}"
+    assert captured["filename"].endswith(".pdf"), \
+        f"filename should be a PDF: {captured['filename']}"
+
+
+def test_bulk_whatsapp_sender_missing_fails_cleanly(client):
+    """If endpoint injects None for whatsapp_sender (should not happen in prod),
+    batch must fail with a clear error rather than silently falling back."""
+    import bulk_sms as bs_mod
+    import app as app_module
+    from models import Consumer
+    cid, _ = _make_consumer_with_bill()
+    with app_module.app.app_context():
+        consumer = Consumer.query.get(cid)
+        info = {"total_due": 100, "label": "Due", "status": "DUE",
+                "previous_reading_m3": 100}
+        items = [{"consumer": consumer, "info": info}]
+        # send_bulk_sms writes a NotificationLog row → needs app context
+        result = bs_mod.send_bulk_sms(items, channel="whatsapp", whatsapp_sender=None)
+    assert result["failed"] == 1
+    assert result["sent"] == 0
+    assert "WhatsApp sender not configured" in result["results"][0]["error"]
 
