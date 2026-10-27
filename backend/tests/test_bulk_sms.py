@@ -119,7 +119,8 @@ def test_send_passes_enriched_info(client, monkeypatch):
     cid, _ = _make_consumer_with_bill(age_days=25)
 
     captured = {}
-    def fake_send(phone, body):
+    def fake_send(phone, body, tenant_slug=None):
+        # Phase 3: bulk_sms.py now passes tenant_slug — accept the kwarg
         captured["body"] = body
         return {"ok": True, "provider_id": "test"}
 
@@ -286,7 +287,9 @@ def test_bulk_whatsapp_uses_document_template(client, monkeypatch):
 
     captured = {}
     def fake_doc_sender(to_phone, pdf_public_url, filename,
-                        body_params, template_name=None, language=None):
+                        body_params, template_name=None, language=None,
+                        tenant_slug=None, template_lang_override=None):
+        # Phase 3: _bulk_whatsapp_send_bill now passes tenant_slug — accept
         captured["to_phone"] = to_phone
         captured["filename"] = filename
         captured["body_params"] = body_params

@@ -7990,6 +7990,7 @@ def _bulk_whatsapp_send_bill(consumer, info, tenant):
             pdf_public_url=public_url,
             filename=filename,
             body_params=[consumer.cust_name, consumer.meter_acc_no],
+            tenant_slug=(tenant.slug if tenant else None),
         )
 
         # Best-effort archive (matches send_whatsapp_bill behaviour)

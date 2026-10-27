@@ -28,9 +28,10 @@ SMSGATE_SIM_NUMBER = os.environ.get("SMSGATE_SIM_NUMBER", "").strip()
 
 # ─── JWT token cache ───
 _token_lock         = threading.Lock()
-_access_token       = None
-_refresh_token      = None
-_access_expires_at  = 0.0        # unix epoch
+# Phase 3 (GAP-CRIT-5): per-username token cache. Different tenants
+# authenticate against their own SMSGate accounts, so tokens cannot be
+# shared. Keyed by username; protected by _token_lock.
+_tokens             = {}         # {username: {access_token, refresh_token, expires_at}}
 _REFRESH_SAFETY     = 60         # refresh 60 s before expiry
 _jwt_supported      = True       # flipped to False if server lacks JWT
 
@@ -54,12 +55,12 @@ def _parse_expiry(expires_at):
         return time.time() + 14 * 60
 
 
-def _fetch_token_pair() -> dict:
-    """Exchange Basic auth for a JWT access + refresh pair."""
+def _fetch_token_pair(username: str, password: str) -> dict:
+    """Exchange Basic auth for a JWT access + refresh pair (per-account)."""
     global _jwt_supported
     r = requests.post(
         _api("/auth/token"),
-        auth=(SMSGATE_USERNAME, SMSGATE_PASSWORD),
+        auth=(username, password),
         headers={"Content-Type": "application/json"},
         json={"scopes": ["messages:send"]},
         timeout=15,
@@ -71,40 +72,47 @@ def _fetch_token_pair() -> dict:
     return r.json()
 
 
-def _refresh_access_token() -> dict:
-    """Rotate the access token using the refresh token."""
+def _refresh_access_token(refresh_token: str) -> dict:
+    """Rotate the access token using the given refresh token."""
     r = requests.post(
         _api("/auth/token/refresh"),
-        headers={"Authorization": f"Bearer {_refresh_token}"},
+        headers={"Authorization": f"Bearer {refresh_token}"},
         timeout=15,
     )
     r.raise_for_status()
     return r.json()
 
 
-def _get_access_token(force: bool = False) -> str:
-    global _access_token, _refresh_token, _access_expires_at
+def _get_access_token(username: str, password: str, force: bool = False) -> str:
+    """Get (or refresh) the SMSGate JWT access token for a specific username.
+    Per-username cache — different tenants maintain independent tokens.
+    Protected by _token_lock for thread safety."""
     with _token_lock:
         now = time.time()
-        if (not force and _access_token
-                and now < _access_expires_at - _REFRESH_SAFETY):
-            return _access_token
+        cached = _tokens.get(username) or {}
+        if (not force and cached.get("access_token")
+                and now < cached.get("expires_at", 0) - _REFRESH_SAFETY):
+            return cached["access_token"]
 
-        if _refresh_token:
+        if cached.get("refresh_token"):
             try:
-                data = _refresh_access_token()
-                _access_token      = data["access_token"]
-                _refresh_token     = data.get("refresh_token", _refresh_token)
-                _access_expires_at = _parse_expiry(data.get("expires_at"))
-                return _access_token
+                data = _refresh_access_token(cached["refresh_token"])
+                _tokens[username] = {
+                    "access_token":  data["access_token"],
+                    "refresh_token": data.get("refresh_token", cached["refresh_token"]),
+                    "expires_at":    _parse_expiry(data.get("expires_at")),
+                }
+                return data["access_token"]
             except Exception:
                 pass
 
-        data = _fetch_token_pair()
-        _access_token      = data["access_token"]
-        _refresh_token     = data["refresh_token"]
-        _access_expires_at = _parse_expiry(data.get("expires_at"))
-        return _access_token
+        data = _fetch_token_pair(username, password)
+        _tokens[username] = {
+            "access_token":  data["access_token"],
+            "refresh_token": data["refresh_token"],
+            "expires_at":    _parse_expiry(data.get("expires_at")),
+        }
+        return data["access_token"]
 
 
 # ─── WhatsApp: Meta Cloud API ───
@@ -126,6 +134,26 @@ def _wa_api_url_for(phone_number_id: str) -> str:
     if not phone_number_id:
         return ""
     return f"https://graph.facebook.com/v21.0/{phone_number_id}/messages"
+
+
+def _auto_detect_tenant_slug() -> str:
+    """Best-effort: get current request's tenant slug from Flask g.
+    Returns None when not in a request context or g.tenant is unset.
+
+    Phase 3 (GAP-NEW-1): enables tenant-aware credential resolution in
+    send_sms / send_whatsapp / send_whatsapp_document without requiring
+    every caller to pass tenant_slug. Background callers (OTP, scheduled
+    tasks) get None -> global credentials, which is correct for those
+    admin-level flows. Never raises.
+    """
+    try:
+        from flask import g, has_request_context
+        if not has_request_context():
+            return None
+        t = getattr(g, "tenant", None)
+        return (getattr(t, "slug", None) if t is not None else None)
+    except Exception:
+        return None
 
 
 def _slug_to_env_suffix(slug: str) -> str:
@@ -169,12 +197,13 @@ def smsgate_credentials_for_tenant(slug: str = None) -> dict:
         t_user = os.environ.get(f"SMSGATE_{suffix}_USERNAME", "").strip()
         t_pass = os.environ.get(f"SMSGATE_{suffix}_PASSWORD", "").strip()
         t_dev  = os.environ.get(f"SMSGATE_{suffix}_DEVICE_ID", "").strip()
+        t_sim  = os.environ.get(f"SMSGATE_{suffix}_SIM_NUMBER", "").strip()
         if t_user and t_pass:
             return {
                 "username": t_user,
                 "password": t_pass,
                 "device_id": t_dev or globals_["device_id"],
-                "sim_number": globals_["sim_number"],
+                "sim_number": t_sim or globals_["sim_number"],
                 "source": "tenant",
             }
     except Exception:
@@ -320,9 +349,19 @@ def _normalize_phone_wa(phone: str) -> str:
 
 
 # ─── SMS sender ───
-def send_sms(to_phone: str, message: str) -> dict:
-    """Send SMS via SMSGate using JWT auth. Returns {ok, provider_id?, error?}."""
-    if not SMSGATE_USERNAME or not SMSGATE_PASSWORD:
+def send_sms(to_phone: str, message: str, tenant_slug: str = None) -> dict:
+    """Send SMS via SMSGate using JWT auth. Returns {ok, provider_id?, error?}.
+
+    Phase 3 (GAP-CRIT-2 + GAP-NEW-1 + D4): resolves credentials via
+    smsgate_credentials_for_tenant(tenant_slug). If tenant_slug is None,
+    auto-detects from Flask g.tenant (when in a request context); falls
+    back to global env credentials when no tenant context exists (e.g.
+    background OTP flows).
+    """
+    if tenant_slug is None:
+        tenant_slug = _auto_detect_tenant_slug()
+    creds = smsgate_credentials_for_tenant(tenant_slug)
+    if not creds["username"] or not creds["password"]:
         return {"ok": False,
                 "error": "SMS provider not configured (set SMSGATE_USERNAME & SMSGATE_PASSWORD)"}
 
@@ -331,26 +370,26 @@ def send_sms(to_phone: str, message: str) -> dict:
         return {"ok": False, "error": "Invalid phone number"}
 
     payload = {"textMessage": {"text": message}, "phoneNumbers": [recipient]}
-    if SMSGATE_DEVICE_ID:
-        payload["deviceId"] = SMSGATE_DEVICE_ID
-    if SMSGATE_SIM_NUMBER:
+    if creds["device_id"]:
+        payload["deviceId"] = creds["device_id"]
+    if creds["sim_number"]:
         try:
-            payload["simNumber"] = int(SMSGATE_SIM_NUMBER)
-        except ValueError:
+            payload["simNumber"] = int(creds["sim_number"])
+        except (ValueError, TypeError):
             pass
 
     for attempt in (1, 2):
         try:
-            # If the server lacks JWT support, fall back to Basic auth
             if not _jwt_supported:
                 r = requests.post(
                     _api("/messages"),
                     json=payload,
-                    auth=(SMSGATE_USERNAME, SMSGATE_PASSWORD),
+                    auth=(creds["username"], creds["password"]),
                     timeout=20,
                 )
             else:
-                token = _get_access_token(force=(attempt == 2))
+                token = _get_access_token(creds["username"], creds["password"],
+                                           force=(attempt == 2))
                 r = requests.post(
                     _api("/messages"),
                     json=payload,
@@ -378,6 +417,9 @@ def send_sms(to_phone: str, message: str) -> dict:
 # ─── WhatsApp sender (unchanged) ───
 def send_whatsapp(to_phone: str, message: str, tenant_slug: str = None,
                   template_lang_override: str = None) -> dict:
+    # Phase 3 (GAP-NEW-1): auto-detect tenant when not passed explicitly.
+    if tenant_slug is None:
+        tenant_slug = _auto_detect_tenant_slug()
     # Phase 2: per-tenant credential resolution (falls back to global).
     creds = wa_credentials_for_tenant(tenant_slug)
     if not creds["phone_number_id"] or not creds["access_token"]:
@@ -517,6 +559,9 @@ def send_whatsapp_document(to_phone: str,
                            language: str = None,
                            tenant_slug: str = None,
                            template_lang_override: str = None) -> dict:
+    # Phase 3 (GAP-NEW-1): auto-detect tenant when not passed explicitly.
+    if tenant_slug is None:
+        tenant_slug = _auto_detect_tenant_slug()
     # Phase 2: per-tenant credential resolution (falls back to global).
     creds = wa_credentials_for_tenant(tenant_slug)
     if not creds["phone_number_id"] or not creds["access_token"]:
@@ -601,11 +646,12 @@ def send_whatsapp_document(to_phone: str,
 
 
 # ─── SMS retry wrapper (unchanged) ───
-def send_sms_with_retry(to_phone: str, message: str, max_attempts: int = 3) -> dict:
+def send_sms_with_retry(to_phone: str, message: str, max_attempts: int = 3,
+                         tenant_slug: str = None) -> dict:
     import time as _time
     last = {"ok": False, "error": "no attempts"}
     for attempt in range(1, max_attempts + 1):
-        last = send_sms(to_phone, message)
+        last = send_sms(to_phone, message, tenant_slug=tenant_slug)
         if last.get("ok"):
             return last
         if attempt < max_attempts:

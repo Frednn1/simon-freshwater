@@ -147,3 +147,125 @@ def test_get_available_channels_tenant_override_true(monkeypatch):
     channels = notif.get_available_channels(wa_enabled_override=True)
     assert "whatsapp" in channels
 
+# ══════════════════════════════════════════════════════════════════════
+# Phase 3 — JWT cache per user + auto-detect + tenant threading + SIM
+# ══════════════════════════════════════════════════════════════════════
+
+def test_auto_detect_tenant_slug_no_request_context():
+    """Outside request context -> None."""
+    assert notif._auto_detect_tenant_slug() is None
+
+
+def test_auto_detect_tenant_slug_with_context():
+    """Inside request context with g.tenant -> slug."""
+    from flask import g
+    import app as app_module
+    with app_module.app.test_request_context():
+        class _T:
+            slug = "demo-tenant"
+        g.tenant = _T()
+        assert notif._auto_detect_tenant_slug() == "demo-tenant"
+
+
+def test_auto_detect_tenant_slug_context_no_tenant():
+    """Inside request context, no g.tenant -> None."""
+    import app as app_module
+    with app_module.app.test_request_context():
+        assert notif._auto_detect_tenant_slug() is None
+
+
+def test_tokens_cache_is_per_username(monkeypatch):
+    """GAP-CRIT-5: token cache keyed by username -> no cross-tenant leak."""
+    from datetime import datetime, timezone, timedelta
+    notif._tokens.clear()
+    notif._jwt_supported = True
+
+    def fake_fetch(user, pw):
+        return {
+            "access_token":  f"tok_{user}",
+            "refresh_token": f"ref_{user}",
+            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+        }
+    def fake_refresh(_rt):
+        raise AssertionError("refresh should not fire on fresh cache")
+    monkeypatch.setattr(notif, "_fetch_token_pair", fake_fetch)
+    monkeypatch.setattr(notif, "_refresh_access_token", fake_refresh)
+
+    t1 = notif._get_access_token("alice", "pw1")
+    t2 = notif._get_access_token("bob", "pw2")
+    assert t1 == "tok_alice"
+    assert t2 == "tok_bob"
+
+    # Cache hit for alice -> no re-fetch
+    calls = []
+    def spy_fetch(user, pw):
+        calls.append(user); return fake_fetch(user, pw)
+    monkeypatch.setattr(notif, "_fetch_token_pair", spy_fetch)
+    assert notif._get_access_token("alice", "pw1") == "tok_alice"
+    assert calls == []
+
+
+def test_send_sms_signature_accepts_tenant_slug():
+    import inspect
+    assert "tenant_slug" in inspect.signature(notif.send_sms).parameters
+
+
+def test_send_sms_with_retry_signature_accepts_tenant_slug():
+    import inspect
+    assert "tenant_slug" in inspect.signature(notif.send_sms_with_retry).parameters
+
+
+def test_smsgate_sim_number_per_tenant(monkeypatch):
+    """D4: SIM_NUMBER per-tenant via env suffix."""
+    monkeypatch.setattr(notif, "SMSGATE_SIM_NUMBER", "0")
+    monkeypatch.setenv("SMSGATE_DEMO_USERNAME", "tu")
+    monkeypatch.setenv("SMSGATE_DEMO_PASSWORD", "tp")
+    monkeypatch.setenv("SMSGATE_DEMO_SIM_NUMBER", "2")
+    c = notif.smsgate_credentials_for_tenant("demo")
+    assert c["sim_number"] == "2"
+    assert c["source"] == "tenant"
+
+
+def test_send_whatsapp_auto_detects_tenant(monkeypatch):
+    """Phase 3: send_whatsapp auto-detects from g.tenant."""
+    seen = []
+    def fake_resolve(slug):
+        seen.append(slug)
+        return {"phone_number_id": "gpid", "access_token": "gtok", "source": "global"}
+    monkeypatch.setattr(notif, "wa_credentials_for_tenant", fake_resolve)
+    class _R:
+        status_code = 200
+        def json(self): return {"messages": [{"id": "x"}]}
+    monkeypatch.setattr(notif.requests, "post", lambda *a, **k: _R())
+    monkeypatch.setattr(notif, "_auto_detect_tenant_slug", lambda: "auto-slug")
+    notif.send_whatsapp("+254700000000", "hi")
+    assert seen == ["auto-slug"]
+
+
+def test_bulk_sms_passes_tenant_slug_to_send_sms():
+    """GAP-CRIT-2: verified via source inspection (avoids heavy DB mocking).
+
+    Path uses _BACKEND (absolute) instead of "backend/..." relative —
+    pytest runs with CWD=backend/, so relative "backend/..." would look
+    for backend/backend/...
+    """
+    with open(os.path.join(_BACKEND, "bulk_sms.py")) as f:
+        src = f.read()
+    assert "send_sms(c.contact, body," in src
+    assert "tenant_slug=(tenant.slug if tenant else None)" in src
+
+
+def test_bulk_whatsapp_send_bill_passes_tenant_slug():
+    """GAP-6: _bulk_whatsapp_send_bill passes tenant_slug to send_whatsapp_document.
+
+    Path uses _BACKEND (absolute) instead of "backend/..." relative —
+    pytest runs with CWD=backend/.
+    """
+    with open(os.path.join(_BACKEND, "app.py")) as f:
+        src = f.read()
+    idx = src.find("def _bulk_whatsapp_send_bill")
+    assert idx > 0
+    nxt = src.find("\ndef ", idx + 50)
+    body = src[idx:nxt if nxt > 0 else idx+6000]
+    assert "tenant_slug=(tenant.slug if tenant else None)" in body
+

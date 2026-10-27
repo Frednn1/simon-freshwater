@@ -84,7 +84,8 @@ def send_bulk_sms(items: list, operator: str = "admin", tenant=None,
                 else:
                     res = whatsapp_sender(c, info, tenant)
             else:
-                res = send_sms(c.contact, body)
+                res = send_sms(c.contact, body,
+                               tenant_slug=(tenant.slug if tenant else None))
         except Exception as e:
             res = {"ok": False, "error": str(e)}
 
