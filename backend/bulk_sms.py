@@ -23,7 +23,7 @@ BULK_SMS_MAX_BATCH = int(os.environ.get("BULK_SMS_MAX_BATCH", "30"))
 _log = logging.getLogger(__name__)
 
 
-def send_bulk_sms(items: list, operator: str = "admin") -> dict:
+def send_bulk_sms(items: list, operator: str = "admin", tenant=None) -> dict:
     """
     Send the bill-reminder SMS to each item in `items`, with a delay between.
 
@@ -62,7 +62,7 @@ def send_bulk_sms(items: list, operator: str = "admin") -> dict:
             continue
 
         # Build the message (same template as the individual SMS button)
-        payload = build_bill_message(c, info, channel="sms")
+        payload = build_bill_message(c, info, channel="sms", tenant=tenant)
         body = payload["body"]
 
         # Send

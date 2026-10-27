@@ -187,7 +187,7 @@
           `Dear ${first.cust_name},\n` +
           `Your water bill (${first.meter_acc_no}) status: ${first.status_label}. ` +
           `Outstanding: KES ${fmt(first.total_due)}. ` +
-          `Pay via Paybill <PAYBILL>, Acc ${first.meter_acc_no}. Thank you.`;
+          `Pay via Paybill ${first.paybill || '—'}, Acc ${first.payment_account || first.meter_acc_no}. Thank you.`;
       }
     }
 

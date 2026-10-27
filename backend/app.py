@@ -7885,6 +7885,7 @@ def admin_bulk_sms_overdue():
         info = get_consumer_status(readings, latest_balance_override=_disp)
         if info["status"] not in allowed:
             continue
+        _pay = _payment_info(c, tenant=g.tenant)
         out.append({
             "id": c.id,
             "cust_name": c.cust_name,
@@ -7893,6 +7894,8 @@ def admin_bulk_sms_overdue():
             "status": info["status"],
             "status_label": info["label"],
             "total_due": round(float(info.get("total_due", 0.0)), 2),
+            "paybill": _pay["paybill"],
+            "payment_account": _pay["account"],
         })
 
     return jsonify({"consumers": out, "count": len(out)})
@@ -7947,7 +7950,7 @@ def admin_bulk_sms_send():
     operator = (admin.username if admin else "admin")[:60]
 
     try:
-        result = send_bulk_sms(items, operator=operator)
+        result = send_bulk_sms(items, operator=operator, tenant=g.tenant)
     except Exception as e:
         app.logger.exception("[BulkSMS] failed")
         return jsonify({"error": f"Send failed: {e}"}), 500
