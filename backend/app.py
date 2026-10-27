@@ -7896,7 +7896,8 @@ def admin_bulk_sms_overdue():
         info["consumption_m3"] = _total_uncleared_consumption(c)
         info = _bill_details_enrichment(c, info)
         _pay = _payment_info(c, tenant=g.tenant)
-        _preview = build_bill_message(c, info, channel="sms", tenant=g.tenant)
+        _preview    = build_bill_message(c, info, channel="sms", tenant=g.tenant)
+        _preview_wa = build_bill_message(c, info, channel="whatsapp", tenant=g.tenant)
         out.append({
             "id": c.id,
             "cust_name": c.cust_name,
@@ -7907,18 +7908,24 @@ def admin_bulk_sms_overdue():
             "total_due": round(float(info.get("total_due", 0.0)), 2),
             "paybill": _pay["paybill"],
             "payment_account": _pay["account"],
-            "preview_body": _preview["body"],
+            "preview_body": _preview["body"],            # SMS body
+            "preview_body_wa": _preview_wa["body"],      # WhatsApp body
         })
 
-    return jsonify({"consumers": out, "count": len(out)})
+    return jsonify({
+        "consumers": out,
+        "count": len(out),
+        "whatsapp_available": "whatsapp" in get_available_channels(),
+    })
 
 
 @app.route("/api/admin/bulk_sms/send", methods=["POST"])
 def admin_bulk_sms_send():
     """
-    Send the bill-reminder SMS to a selected list of consumer IDs.
+    Send the bill-reminder to a selected list of consumer IDs.
     Body:
-      {"consumer_ids": [1, 2, 3]}
+      {"consumer_ids": [1, 2, 3],
+       "channel": "sms" | "whatsapp"}     # default: "sms"
     Hard cap: BULK_SMS_MAX_BATCH (default 30) per call.
     """
     u = _require_admin()
@@ -7928,6 +7935,7 @@ def admin_bulk_sms_send():
 
     data = request.get_json(silent=True) or {}
     ids = data.get("consumer_ids") or []
+    channel = (data.get("channel") or "sms").strip().lower()
 
     if not isinstance(ids, list) or not ids:
         return jsonify({"error": "consumer_ids must be a non-empty list"}), 400
@@ -7935,6 +7943,16 @@ def admin_bulk_sms_send():
         return jsonify({
             "error": f"Too many recipients. Max {BULK_SMS_MAX_BATCH} per batch."
         }), 400
+
+    if channel not in ("sms", "whatsapp"):
+        return jsonify({"error": "channel must be 'sms' or 'whatsapp'"}), 400
+
+    # Honor WA_ENABLED at request time (defense-in-depth — frontend may
+    # have a stale state). Matches send_whatsapp_bill's pattern.
+    if channel == "whatsapp":
+        _wa_toggle = os.environ.get("WA_ENABLED", "false").strip().lower()
+        if _wa_toggle not in ("1", "true", "yes", "on"):
+            return jsonify({"error": "WhatsApp sending is currently disabled."}), 403
 
     # Fetch consumers + compute info
     items = []
@@ -7964,7 +7982,8 @@ def admin_bulk_sms_send():
     operator = (admin.username if admin else "admin")[:60]
 
     try:
-        result = send_bulk_sms(items, operator=operator, tenant=g.tenant)
+        result = send_bulk_sms(items, operator=operator, tenant=g.tenant,
+                               channel=channel)
     except Exception as e:
         app.logger.exception("[BulkSMS] failed")
         return jsonify({"error": f"Send failed: {e}"}), 500
@@ -7972,11 +7991,11 @@ def admin_bulk_sms_send():
     if missing:
         result["skipped_ids"] = missing
 
-    _audit("bulk_sms_send",
+    _audit(f"bulk_{channel}_send",
            detail=f"recipients={len(items)}, "
                   f"ok={result.get('sent', result.get('ok_count', 0))}, "
                   f"failed={result.get('failed', result.get('fail_count', 0))}, "
-                  f"skipped={len(missing)}")
+                  f"skipped={len(missing)}, channel={channel}")
 
     return jsonify(result), 200
 

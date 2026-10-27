@@ -14,7 +14,7 @@ import time
 import logging
 
 from models import db, NotificationLog
-from notifications import send_sms, build_bill_message
+from notifications import send_sms, send_whatsapp, build_bill_message
 
 
 BULK_SMS_DELAY = float(os.environ.get("BULK_SMS_DELAY_SECONDS", "0.5"))
@@ -23,9 +23,11 @@ BULK_SMS_MAX_BATCH = int(os.environ.get("BULK_SMS_MAX_BATCH", "30"))
 _log = logging.getLogger(__name__)
 
 
-def send_bulk_sms(items: list, operator: str = "admin", tenant=None) -> dict:
+def send_bulk_sms(items: list, operator: str = "admin", tenant=None,
+                   channel: str = "sms") -> dict:
     """
-    Send the bill-reminder SMS to each item in `items`, with a delay between.
+    Send the bill-reminder to each item in `items` via the given channel
+    ("sms" or "whatsapp"), with a delay between each.
 
     items = [
         {"consumer": <Consumer object>, "info": <status dict>},
@@ -61,13 +63,18 @@ def send_bulk_sms(items: list, operator: str = "admin", tenant=None) -> dict:
             failed += 1
             continue
 
-        # Build the message (same template as the individual SMS button)
-        payload = build_bill_message(c, info, channel="sms", tenant=tenant)
+        # Build the message using the chosen channel (SMS = rich body,
+        # WhatsApp = concise body — matches notify_consumer behaviour)
+        _ch = channel if channel in ("sms", "whatsapp") else "sms"
+        payload = build_bill_message(c, info, channel=_ch, tenant=tenant)
         body = payload["body"]
 
-        # Send
+        # Send via the correct provider
         try:
-            res = send_sms(c.contact, body)
+            if _ch == "whatsapp":
+                res = send_whatsapp(c.contact, body)
+            else:
+                res = send_sms(c.contact, body)
         except Exception as e:
             res = {"ok": False, "error": str(e)}
 
@@ -78,7 +85,7 @@ def send_bulk_sms(items: list, operator: str = "admin", tenant=None) -> dict:
         try:
             log = NotificationLog(
                 consumer_id=c.id,
-                channel="sms",
+                channel=_ch,
                 status="sent" if ok else "failed",
                 detail=("BULK · " + (err or res.get("provider_id") or ""))[:255],
             )
@@ -94,6 +101,7 @@ def send_bulk_sms(items: list, operator: str = "admin", tenant=None) -> dict:
             "meter_acc_no": c.meter_acc_no,
             "ok": ok,
             "error": err,
+            "channel": _ch,
         })
 
         if ok:

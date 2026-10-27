@@ -48,17 +48,31 @@
 
     <!-- Send action -->
     <div class="settings-card">
-      <h2>📤 Send SMS</h2>
+      <h2>📤 Send Reminder</h2>
       <p class="form-hint-small" style="margin-bottom:.6rem;">
-        Each recipient gets their own personalised bill-reminder SMS (with their
+        Each recipient gets their own personalised bill-reminder (with their
         name, meter no., and outstanding balance).
       </p>
+
+      <!-- Preview channel toggle -->
+      <div id="previewToggleRow" style="display:none;margin-bottom:.5rem;gap:.35rem;align-items:center;">
+        <span style="font-size:.78rem;color:#666;font-weight:600;">Preview:</span>
+        <button type="button" id="previewSmsBtn" class="btn-secondary" style="font-size:.75rem;padding:.3rem .7rem;background:#1976d2;color:#fff;border-color:#1976d2;">SMS</button>
+        <button type="button" id="previewWaBtn" class="btn-secondary" style="font-size:.75rem;padding:.3rem .7rem;">WhatsApp</button>
+      </div>
+
       <div id="previewBox" style="background:#f5faff;border:1px solid #bbdefb;border-radius:6px;padding:.7rem .9rem;font-size:.82rem;color:#1c2b36;white-space:pre-line;margin-bottom:.8rem;">
         Select consumers above to preview the message.
       </div>
-      <button id="sendBtn" class="btn-primary" type="button" disabled>
-        <span class="btn-icon">📢</span> Send SMS to Selected
-      </button>
+
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
+        <button id="sendBtn" class="btn-primary" type="button" disabled>
+          <span class="btn-icon">📢</span> Send SMS to Selected
+        </button>
+        <button id="sendWaBtn" class="btn-primary" type="button" disabled style="display:none;background:#25D366;border-color:#1ea855;">
+          <span class="btn-icon">📱</span> Send WhatsApp to Selected
+        </button>
+      </div>
       <div id="sendMsg" class="alert hidden" style="margin-top:.75rem;"></div>
       <div id="sendResults" style="margin-top:.75rem;"></div>
     </div>
@@ -90,6 +104,8 @@
 
     let CONSUMERS = [];
     let SELECTED = new Set();
+    let WHATSAPP_AVAILABLE = false;
+    let PREVIEW_CHANNEL = 'sms';   // 'sms' | 'whatsapp'
 
     async function loadList() {
       const wrap = document.getElementById('listWrap');
@@ -107,6 +123,10 @@
         CONSUMERS = d.consumers || [];
         SELECTED.clear();
         badge.textContent = `(${CONSUMERS.length})`;
+
+        // Populate WhatsApp availability from response
+        WHATSAPP_AVAILABLE = d.whatsapp_available === true;
+        _applyWhatsAppAvailability();
 
         if (CONSUMERS.length === 0) {
           wrap.innerHTML = '<p class="form-hint-small">No consumers match this filter.</p>';
@@ -164,37 +184,77 @@
       }
     }
 
+    function _applyWhatsAppAvailability() {
+      const waBtn = document.getElementById('sendWaBtn');
+      const toggleRow = document.getElementById('previewToggleRow');
+      if (WHATSAPP_AVAILABLE) {
+        waBtn.style.display = '';
+        toggleRow.style.display = 'flex';
+      } else {
+        waBtn.style.display = 'none';
+        toggleRow.style.display = 'none';
+        // Force SMS preview if WA not available
+        PREVIEW_CHANNEL = 'sms';
+      }
+    }
+
+    function _updatePreviewChannelButtons() {
+      const smsBtn = document.getElementById('previewSmsBtn');
+      const waBtn = document.getElementById('previewWaBtn');
+      if (!smsBtn || !waBtn) return;
+      if (PREVIEW_CHANNEL === 'sms') {
+        smsBtn.style.background = '#1976d2'; smsBtn.style.color = '#fff'; smsBtn.style.borderColor = '#1976d2';
+        waBtn.style.background = ''; waBtn.style.color = ''; waBtn.style.borderColor = '';
+      } else {
+        waBtn.style.background = '#25D366'; waBtn.style.color = '#fff'; waBtn.style.borderColor = '#1ea855';
+        smsBtn.style.background = ''; smsBtn.style.color = ''; smsBtn.style.borderColor = '';
+      }
+    }
+
     function updateSendButton() {
       const btn = document.getElementById('sendBtn');
+      const waBtn = document.getElementById('sendWaBtn');
       const preview = document.getElementById('previewBox');
       const n = SELECTED.size;
 
       if (n === 0) {
         btn.disabled = true;
         btn.innerHTML = '<span class="btn-icon">📢</span> Send SMS to Selected';
+        if (waBtn) {
+          waBtn.disabled = true;
+          waBtn.innerHTML = '<span class="btn-icon">📱</span> Send WhatsApp to Selected';
+        }
         preview.textContent = 'Select consumers above to preview the message.';
         return;
       }
 
       btn.disabled = false;
       btn.innerHTML = `<span class="btn-icon">📢</span> Send SMS to ${n} selected`;
+      if (waBtn) {
+        waBtn.disabled = false;
+        waBtn.innerHTML = `<span class="btn-icon">📱</span> Send WhatsApp to ${n} selected`;
+      }
 
-      // Show one example message
+      // Show one example message based on selected preview channel
       const first = CONSUMERS.find(c => SELECTED.has(c.id));
       if (first) {
-        // Use server-built body — matches the actual SMS sent to customers 1:1.
-        // Fallback (older deploy): legacy short template without MTR breakdown.
-        preview.textContent = first.preview_body || (
-          `Dear ${first.cust_name},\n` +
-          `Your water bill (${first.meter_acc_no}) status: ${first.status_label}. ` +
-          `Outstanding: KES ${fmt(first.total_due)}. ` +
-          `Pay via Paybill ${first.paybill || '—'}, Acc ${first.payment_account || first.meter_acc_no}. Thank you.`
-        );
+        if (PREVIEW_CHANNEL === 'whatsapp' && first.preview_body_wa) {
+          preview.textContent = first.preview_body_wa;
+        } else {
+          preview.textContent = first.preview_body || (
+            `Dear ${first.cust_name},\n` +
+            `Your water bill (${first.meter_acc_no}) status: ${first.status_label}. ` +
+            `Outstanding: KES ${fmt(first.total_due)}. ` +
+            `Pay via Paybill ${first.paybill || '—'}, Acc ${first.payment_account || first.meter_acc_no}. Thank you.`
+          );
+        }
       }
+      _updatePreviewChannelButtons();
     }
 
-    async function sendBulk() {
+    async function sendBulk(channel) {
       const btn = document.getElementById('sendBtn');
+      const waBtn = document.getElementById('sendWaBtn');
       const msg = document.getElementById('sendMsg');
       const res = document.getElementById('sendResults');
       hide(msg);
@@ -202,17 +262,21 @@
 
       const ids = Array.from(SELECTED);
       if (ids.length === 0) return;
-      if (!confirm(`Send SMS to ${ids.length} consumer(s)? This action cannot be undone.`)) return;
+      const chLabel = channel === 'whatsapp' ? 'WhatsApp' : 'SMS';
+      if (!confirm(`Send ${chLabel} to ${ids.length} consumer(s)? This action cannot be undone.`)) return;
 
-      btn.disabled = true;
-      btn.innerHTML = '<span class="btn-icon">⏳</span> Sending…';
+      const _disableBtns = () => { btn.disabled = true; if (waBtn) waBtn.disabled = true; };
+      const _enableBtns  = () => { btn.disabled = false; if (waBtn) waBtn.disabled = false; };
+      _disableBtns();
+      const sender = channel === 'whatsapp' ? waBtn : btn;
+      sender.innerHTML = '<span class="btn-icon">⏳</span> Sending…';
 
       try {
         const r = await fetch('/api/admin/bulk_sms/send', {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ consumer_ids: ids }),
+          body: JSON.stringify({ consumer_ids: ids, channel: channel }),
         });
         const d = await r.json();
 
@@ -220,14 +284,14 @@
 
         if (!r.ok || d.error) {
           showMsg(msg, 'error', '❌ ' + (d.error || 'Send failed.'));
-          btn.disabled = false;
+          _enableBtns();
           updateSendButton();
           return;
         }
 
         const color = d.failed === 0 ? 'success' : 'error';
         showMsg(msg, color,
-          `✅ Sent ${d.sent} · ❌ Failed ${d.failed}` +
+          `✅ Sent ${d.sent} via ${chLabel} · ❌ Failed ${d.failed}` +
           (d.skipped_ids ? ` · Skipped ${d.skipped_ids.length}` : ''));
 
         res.innerHTML = `
@@ -250,7 +314,7 @@
       } catch (e) {
         showMsg(msg, 'error', '❌ Network error.');
       } finally {
-        btn.disabled = false;
+        _enableBtns();
         updateSendButton();
       }
     }
@@ -275,7 +339,19 @@
       updateSendButton();
     });
 
-    document.getElementById('sendBtn').addEventListener('click', sendBulk);
+    document.getElementById('sendBtn').addEventListener('click', () => sendBulk('sms'));
+    document.getElementById('sendWaBtn').addEventListener('click', () => sendBulk('whatsapp'));
+
+    // Preview channel toggle
+    document.getElementById('previewSmsBtn').addEventListener('click', () => {
+      PREVIEW_CHANNEL = 'sms';
+      updateSendButton();
+    });
+    document.getElementById('previewWaBtn').addEventListener('click', () => {
+      if (!WHATSAPP_AVAILABLE) return;
+      PREVIEW_CHANNEL = 'whatsapp';
+      updateSendButton();
+    });
 
     // Initial load
     loadList();

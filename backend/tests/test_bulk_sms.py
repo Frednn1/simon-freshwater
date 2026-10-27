@@ -156,3 +156,122 @@ def test_notify_unchanged_after_refactor(client, monkeypatch):
         f"notify SMS has zero Current MTR: {captured['body'][:300]}"
     assert not re.search(r"Previous \(MTR\)\s+: 0\.00 M3\b", captured["body"]), \
         f"notify SMS has zero Previous MTR: {captured['body'][:300]}"
+
+# ══════════════════════════════════════════════════════════════════════
+# Bulk SMS — WhatsApp channel support
+# ══════════════════════════════════════════════════════════════════════
+
+def test_bulk_send_whatsapp_channel(client, monkeypatch):
+    """POST with channel=whatsapp → send_whatsapp called, send_sms not called."""
+    _admin_login(client, "wa")
+    cid, _ = _make_consumer_with_bill(age_days=25)
+
+    monkeypatch.setenv("WA_ENABLED", "true")
+    monkeypatch.setenv("WA_PHONE_NUMBER_ID", "test_id")
+    monkeypatch.setenv("WA_ACCESS_TOKEN", "test_token")
+
+    sms_calls = []
+    wa_calls = []
+    def fake_sms(phone, body):
+        sms_calls.append((phone, body)); return {"ok": True, "provider_id": "sms"}
+    def fake_wa(phone, body):
+        wa_calls.append((phone, body)); return {"ok": True, "provider_id": "wa"}
+
+    import bulk_sms
+    monkeypatch.setattr(bulk_sms, "send_sms", fake_sms)
+    monkeypatch.setattr(bulk_sms, "send_whatsapp", fake_wa)
+
+    r = client.post("/api/admin/bulk_sms/send",
+                    json={"consumer_ids": [cid], "channel": "whatsapp"})
+    assert r.status_code == 200, f"body={r.get_json()}"
+    assert len(wa_calls) == 1, f"expected 1 send_whatsapp call, got {len(wa_calls)}"
+    assert len(sms_calls) == 0, f"expected 0 send_sms calls, got {len(sms_calls)}"
+    # Verify response reflects channel
+    results = r.get_json().get("results", [])
+    assert results and results[0].get("channel") == "whatsapp"
+
+
+def test_bulk_send_invalid_channel_rejected(client):
+    _admin_login(client, "bad")
+    cid, _ = _make_consumer_with_bill(age_days=25)
+    r = client.post("/api/admin/bulk_sms/send",
+                    json={"consumer_ids": [cid], "channel": "telegram"})
+    assert r.status_code == 400
+    err = (r.get_json().get("error") or "").lower()
+    assert "channel" in err
+
+
+def test_bulk_send_whatsapp_disabled_rejected(client, monkeypatch):
+    _admin_login(client, "wd")
+    cid, _ = _make_consumer_with_bill(age_days=25)
+    monkeypatch.setenv("WA_ENABLED", "false")
+    r = client.post("/api/admin/bulk_sms/send",
+                    json={"consumer_ids": [cid], "channel": "whatsapp"})
+    assert r.status_code == 403
+    assert "disabled" in (r.get_json().get("error") or "").lower()
+
+
+def test_bulk_whatsapp_writes_whatsapp_notification_log(client, monkeypatch):
+    _admin_login(client, "wl")
+    cid, _ = _make_consumer_with_bill(age_days=25)
+    monkeypatch.setenv("WA_ENABLED", "true")
+    monkeypatch.setenv("WA_PHONE_NUMBER_ID", "test_id")
+    monkeypatch.setenv("WA_ACCESS_TOKEN", "test_token")
+
+    def fake_wa(phone, body):
+        return {"ok": True, "provider_id": "wa-test"}
+
+    import bulk_sms
+    monkeypatch.setattr(bulk_sms, "send_whatsapp", fake_wa)
+
+    r = client.post("/api/admin/bulk_sms/send",
+                    json={"consumer_ids": [cid], "channel": "whatsapp"})
+    assert r.status_code == 200
+
+    from models import NotificationLog
+    with app_module.app.app_context():
+        log = (NotificationLog.query
+               .filter_by(consumer_id=cid)
+               .order_by(NotificationLog.id.desc())
+               .first())
+        assert log is not None
+        assert log.channel == "whatsapp"
+
+
+def test_overdue_returns_whatsapp_available_flag(client, monkeypatch):
+    _admin_login(client, "wav")
+    # WA_PHONE_NUMBER_ID / WA_ACCESS_TOKEN are captured as module-level
+    # constants at import time (not read from os.environ on each call),
+    # so patching env vars alone is insufficient — patch the constants.
+    # WA_ENABLED is read fresh on each call, so env monkeypatch works.
+    import notifications
+    monkeypatch.setenv("WA_ENABLED", "true")
+    monkeypatch.setattr(notifications, "WA_PHONE_NUMBER_ID", "test_id")
+    monkeypatch.setattr(notifications, "WA_ACCESS_TOKEN", "test_token")
+    r = client.get("/api/admin/bulk_sms/overdue")
+    assert r.status_code == 200
+    d = r.get_json()
+    assert "whatsapp_available" in d
+    assert d["whatsapp_available"] is True
+
+    # Also verify with WA disabled
+    monkeypatch.setenv("WA_ENABLED", "false")
+    r2 = client.get("/api/admin/bulk_sms/overdue")
+    d2 = r2.get_json()
+    assert d2["whatsapp_available"] is False
+
+
+def test_overdue_returns_whatsapp_preview_body(client):
+    _admin_login(client, "wpb")
+    cid, _ = _make_consumer_with_bill(age_days=25)
+    r = client.get("/api/admin/bulk_sms/overdue")
+    assert r.status_code == 200
+    d = r.get_json()
+    tgt = next((c for c in d.get("consumers", []) if c["id"] == cid), None)
+    assert tgt is not None
+    assert "preview_body_wa" in tgt
+    # WhatsApp body contains name and paybill info
+    wa_body = tgt["preview_body_wa"]
+    assert "Dear" in wa_body
+    assert tgt["meter_acc_no"] in wa_body
+
