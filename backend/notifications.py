@@ -118,6 +118,97 @@ WA_API_URL = (
 )
 
 
+def _slug_to_env_suffix(slug: str) -> str:
+    """Convert tenant slug to env var suffix: 'demo-tenant' -> 'DEMO_TENANT'.
+    Returns '' for falsy/empty input. Never raises."""
+    if not slug or not isinstance(slug, str):
+        return ""
+    try:
+        return slug.strip().upper().replace("-", "_")
+    except Exception:
+        return ""
+
+
+def smsgate_credentials_for_tenant(slug: str = None) -> dict:
+    """Resolve SMSGate credentials for a tenant, with global fallback.
+
+    Per-tenant env vars (only when BOTH user+pass are set):
+      SMSGATE_<SLUG_UPPER>_USERNAME
+      SMSGATE_<SLUG_UPPER>_PASSWORD
+      SMSGATE_<SLUG_UPPER>_DEVICE_ID   (optional; falls back to global)
+
+    SMSGATE_SIM_NUMBER is always global (physical hardware per tenant — D5).
+    SMSGATE_API_BASE is always global (D5).
+
+    Returns {username, password, device_id, sim_number, source}.
+    source = "tenant" | "global". Never raises.
+    """
+    globals_ = {
+        "username": SMSGATE_USERNAME,
+        "password": SMSGATE_PASSWORD,
+        "device_id": SMSGATE_DEVICE_ID,
+        "sim_number": SMSGATE_SIM_NUMBER,
+        "source": "global",
+    }
+    if not slug:
+        return globals_
+    try:
+        suffix = _slug_to_env_suffix(slug)
+        if not suffix:
+            return globals_
+        t_user = os.environ.get(f"SMSGATE_{suffix}_USERNAME", "").strip()
+        t_pass = os.environ.get(f"SMSGATE_{suffix}_PASSWORD", "").strip()
+        t_dev  = os.environ.get(f"SMSGATE_{suffix}_DEVICE_ID", "").strip()
+        if t_user and t_pass:
+            return {
+                "username": t_user,
+                "password": t_pass,
+                "device_id": t_dev or globals_["device_id"],
+                "sim_number": globals_["sim_number"],
+                "source": "tenant",
+            }
+    except Exception:
+        pass
+    return globals_
+
+
+def wa_credentials_for_tenant(slug: str = None) -> dict:
+    """Resolve WhatsApp credentials for a tenant, with global fallback.
+
+    Per-tenant env vars (only when BOTH token+phone_id are set):
+      WA_<SLUG_UPPER>_ACCESS_TOKEN
+      WA_<SLUG_UPPER>_PHONE_NUMBER_ID
+
+    WA_ENABLED, WA_TEMPLATE_NAME, WA_TEMPLATE_LANG stay global (D3/D5).
+    Per-tenant overrides for these live in Tenant DB columns (Phase 2).
+
+    Returns {access_token, phone_number_id, source}.
+    source = "tenant" | "global". Never raises.
+    """
+    globals_ = {
+        "access_token": WA_ACCESS_TOKEN,
+        "phone_number_id": WA_PHONE_NUMBER_ID,
+        "source": "global",
+    }
+    if not slug:
+        return globals_
+    try:
+        suffix = _slug_to_env_suffix(slug)
+        if not suffix:
+            return globals_
+        t_token = os.environ.get(f"WA_{suffix}_ACCESS_TOKEN", "").strip()
+        t_phone = os.environ.get(f"WA_{suffix}_PHONE_NUMBER_ID", "").strip()
+        if t_token and t_phone:
+            return {
+                "access_token": t_token,
+                "phone_number_id": t_phone,
+                "source": "tenant",
+            }
+    except Exception:
+        pass
+    return globals_
+
+
 def get_available_channels() -> list:
     channels = []
     if SMSGATE_USERNAME and SMSGATE_PASSWORD:
