@@ -6059,6 +6059,15 @@ def admin_dispense_reading_post():
         existing.consumption_m3 = consumption
         existing.recorded_by = _dispense_recorded_by()
         existing.is_closed = is_closed_final
+        # Phase 5b: user-provided write promotes out of auto_closed.
+        # Both op="close" (open row -> closed) and op="correction" (closed
+        # row -> updated) mean the day now carries real user-supplied
+        # closing data — no longer a "No Activity" placeholder. If it was
+        # auto_closed, clear the flag; status correctly becomes "Cleared"
+        # / "Due" / "Review" instead of "No Reading".
+        _was_auto = bool(getattr(existing, "auto_closed", False))
+        if _was_auto:
+            existing.auto_closed = False
         db.session.commit()
         if op == "close":
             _audit("dispense_reading_closed",
@@ -6071,6 +6080,7 @@ def admin_dispense_reading_post():
                    target_type="tenant", target_id=tenant_id,
                    detail=(f"date={requested.isoformat()} "
                            f"old_closing={old_closing:g} new_closing={closing:g} "
+                           f"was_auto={_was_auto} "
                            f"reason={reason[:100]}"))
             action = "corrected"
         rid = existing.id
