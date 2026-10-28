@@ -604,6 +604,38 @@ def _tenant_slug():
     return t.slug if t is not None else None
 
 
+def _current_tenant_billing_rate() -> float:
+    """Return the current tenant's billing rate (KES/m³).
+
+    Falls back to 150.0 when the tenant has no override (NULL / missing).
+    Never raises. Always returns a valid non-negative float.
+    """
+    t = getattr(g, "tenant", None)
+    if t is None:
+        try:
+            t = Tenant.query.filter_by(slug=_DEFAULT_TENANT_SLUG).first()
+        except Exception:
+            t = None
+    rate = getattr(t, "billing_rate_kes", None) if t else None
+    if rate is None:
+        return 150.0
+    try:
+        _f = float(rate)
+        return _f if _f >= 0 else 150.0
+    except (ValueError, TypeError):
+        return 150.0
+
+
+def _format_rate_for_display(rate):
+    """Format a rate for HTML template substitution. Returns str; '150' fallback."""
+    if rate is None:
+        return "150"
+    try:
+        return f"{float(rate):g}"
+    except (ValueError, TypeError):
+        return "150"
+
+
 def _brand_context():
     """Brand fields for PDF snapshots and template substitution.
     Uses the current request's tenant, or falls back to Simon Fresh Water
@@ -654,6 +686,11 @@ def _brand_context():
         # Tenant slug — used by admin pages to stamp <body data-tenant-slug>,
         # which the tenant watchdog reads to know which tenant to check.
         "tenant_slug":      (t.slug if t and t.slug else ""),
+        # Phase 8: per-tenant billing rate for template substitution
+        "billing_rate_kes": (
+            _format_rate_for_display(getattr(t, "billing_rate_kes", None))
+            if t else "150"
+        ),
     }
 
 
@@ -1398,11 +1435,31 @@ def _ensure_all_columns():
             t_alters.append("ADD COLUMN smsgate_device_id VARCHAR(60) NULL")
         if "smsgate_sim_number" not in existing:
             t_alters.append("ADD COLUMN smsgate_sim_number INTEGER NULL")
+        # Phase 8: per-tenant billing rate
+        if "billing_rate_kes" not in existing:
+            t_alters.append("ADD COLUMN billing_rate_kes FLOAT NULL")
         for alt in t_alters:
             db.session.execute(text(f"ALTER TABLE tenants {alt}"))
         if t_alters:
             db.session.commit()
             app.logger.info(f"[Migration] Applied {len(t_alters)} column(s) to tenants")
+        # Phase 8: backfill billing_rate_kes=150.0 on all NULL rows (idempotent).
+        try:
+            _bfr = db.session.execute(text(
+                "UPDATE tenants SET billing_rate_kes = 150.0 "
+                "WHERE billing_rate_kes IS NULL"
+            ))
+            db.session.commit()
+            if getattr(_bfr, "rowcount", 0) and _bfr.rowcount > 0:
+                app.logger.info(
+                    f"[Migration] Backfilled billing_rate_kes=150.0 on {_bfr.rowcount} tenant(s)"
+                )
+        except Exception as e:
+            try:
+                app.logger.warning(f"[Migration] billing_rate_kes backfill skipped: {e}")
+                db.session.rollback()
+            except Exception:
+                pass
 
     if "admin_users" in tables:
         existing = {c["name"] for c in insp.get_columns("admin_users")}
@@ -2155,6 +2212,10 @@ def _tenant_to_dict(t):
             else (("\u2026" if getattr(t, "smsgate_device_id", None) else None))
         ),
         "smsgate_sim_number": getattr(t, "smsgate_sim_number", None),
+        "billing_rate_kes": (
+            float(t.billing_rate_kes)
+            if getattr(t, "billing_rate_kes", None) is not None else None
+        ),
         "is_active": bool(t.is_active),
         "enabled_profiles": _tenant_profiles_dict(t.id),
         "created_at": t.created_at.isoformat() if t.created_at else None,
@@ -2740,6 +2801,18 @@ def admin_tenants_create():
     if mpesa_env not in ("sandbox", "production"):
         mpesa_env = "sandbox"
 
+    # Phase 8: parse optional billing_rate_kes (default 150.0)
+    _brk_raw = data.get("billing_rate_kes")
+    if _brk_raw in (None, ""):
+        billing_rate_kes = 150.0
+    else:
+        try:
+            billing_rate_kes = float(_brk_raw)
+        except (ValueError, TypeError):
+            return jsonify({"error": "billing_rate_kes must be a number."}), 400
+        if billing_rate_kes < 0:
+            return jsonify({"error": "billing_rate_kes must be >= 0."}), 400
+
     t = Tenant(
         slug=slug,
         org_name=org_name,
@@ -2767,6 +2840,7 @@ def admin_tenants_create():
             and 0 <= int(data.get("smsgate_sim_number")) <= 3
             else None
         ),
+        billing_rate_kes=billing_rate_kes,
         is_active=False,
     )
     db.session.add(t)
@@ -2798,7 +2872,8 @@ def admin_tenants_update(tenant_id):
                "mpesa_shortcode", "mpesa_env",
                "logo_key", "theme_primary",
                "wa_template_lang", "wa_enabled",
-               "smsgate_device_id", "smsgate_sim_number")
+               "smsgate_device_id", "smsgate_sim_number",
+               "billing_rate_kes")
     updated = []
     for f in allowed:
         if f not in data:
@@ -2831,6 +2906,19 @@ def admin_tenants_update(tenant_id):
             if v not in ("sandbox", "production"):
                 v = "sandbox"
             setattr(t, f, v)
+            updated.append(f)
+            continue
+        if f == "billing_rate_kes":
+            if v == "" or v is None:
+                setattr(t, f, None)
+            else:
+                try:
+                    _rate = float(v)
+                except (ValueError, TypeError):
+                    return jsonify({"error": "billing_rate_kes must be a number."}), 400
+                if _rate < 0:
+                    return jsonify({"error": "billing_rate_kes must be >= 0."}), 400
+                setattr(t, f, _rate)
             updated.append(f)
             continue
         if f == "wa_enabled":
@@ -4601,7 +4689,8 @@ def submit_reading():
         return jsonify({"error": err}), 400
 
     consumption = compute_consumption(reading_m3, prev_m3, initial)
-    amount = compute_amount(reading_m3, prev_m3, initial)
+    amount = compute_amount(reading_m3, prev_m3, initial,
+                            rate_per_m3=_current_tenant_billing_rate())
 
     new_reading = MeterReading(
         consumer_id=consumer.id, reading_m3=reading_m3,
@@ -8183,7 +8272,8 @@ def admin_recompute_amounts():
         prev_m3 = None
         for r in readings:
             scanned += 1
-            new_amt = compute_amount(r.reading_m3, prev_m3, initial)
+            new_amt = compute_amount(r.reading_m3, prev_m3, initial,
+                                     rate_per_m3=_current_tenant_billing_rate())
             # C5e2 Fix 2: never modify a bill that has any money applied.
             # Silent recompute of a paid bill would make it appear unpaid
             # and create false debt (amount_kes increases) or wipe credit
@@ -9680,6 +9770,25 @@ with app.app_context():
     db.create_all()
     _ensure_all_columns()
     _seed_default_tenant()
+    # Fix: the migration's billing_rate_kes backfill runs BEFORE seed on a
+    # fresh DB — it sees zero tenants and does nothing. Then seed creates
+    # the default tenant with NULL rate. This post-seed backfill covers the
+    # fresh-DB case (idempotent; only touches NULL rows; never overwrites
+    # admin-set values).
+    try:
+        db.session.execute(text(
+            "UPDATE tenants SET billing_rate_kes = 150.0 "
+            "WHERE billing_rate_kes IS NULL"
+        ))
+        db.session.commit()
+    except Exception as e:
+        try:
+            app.logger.warning(
+                f"[Boot] billing_rate_kes fresh-DB backfill skipped: {e}"
+            )
+            db.session.rollback()
+        except Exception:
+            pass
     try:
         start_scheduler(app, Consumer, MeterReading)
     except Exception as e:

@@ -31,10 +31,17 @@ def compute_consumption(current_m3: float,
 
 def compute_amount(current_m3: float,
                    previous_m3: float | None = None,
-                   initial_m3: float = 0.0) -> float:
-    """Bill amount = consumption × KES 90. Server-side only."""
+                   initial_m3: float = 0.0,
+                   rate_per_m3: float | None = None) -> float:
+    """Bill amount = consumption × rate. Server-side only.
+
+    rate_per_m3 — per-tenant rate in KES/m³.
+      None → falls back to RATE_PER_M3 (legacy 150.0 default).
+      Callers with tenant context should pass _current_tenant_billing_rate().
+    """
     consumption = compute_consumption(current_m3, previous_m3, initial_m3)
-    return round(consumption * RATE_PER_M3, 2)
+    _rate = RATE_PER_M3 if rate_per_m3 is None else float(rate_per_m3)
+    return round(consumption * _rate, 2)
 
 
 def get_consumer_status(readings: list,

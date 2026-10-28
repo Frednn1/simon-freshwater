@@ -157,6 +157,10 @@
             <input type="number" id="tfSmsgateSimNumber" min="0" max="3" step="1" placeholder="e.g. 0">
           </div>
           <div class="form-row">
+            <label for="tfBillingRate">Billing Rate (KES per M³) &mdash; blank = inherit 150 default</label>
+            <input type="number" id="tfBillingRate" step="0.01" min="0" placeholder="e.g. 150">
+          </div>
+          <div class="form-row">
             <label for="tfThemePrimary">Theme Primary Colour</label>
             <input type="text" id="tfThemePrimary" placeholder="#0d47a1">
           </div>
@@ -449,6 +453,9 @@
       const _simInp = document.getElementById('tfSmsgateSimNumber');
       if (_simInp) _simInp.value = t.smsgate_sim_number != null ? String(t.smsgate_sim_number) : '';
       document.getElementById('tfThemePrimary').value = t.theme_primary || '';
+      // Phase 8: billing rate populate
+      const _brkInp = document.getElementById('tfBillingRate');
+      if (_brkInp) _brkInp.value = (t.billing_rate_kes != null ? t.billing_rate_kes : '');
       document.getElementById('tenantModal').classList.remove('hidden');
     }
 
@@ -483,6 +490,12 @@
         wa_template_lang: (document.getElementById('tfWaTemplateLang') || {}).value || '',
         // Send boolean explicitly — false when unchecked
         wa_enabled: !!(document.getElementById('tfWaEnabled') || {}).checked,
+        billing_rate_kes: (() => {
+          const v = (document.getElementById('tfBillingRate') || {}).value;
+          if (v === '' || v == null) return null;
+          const n = parseFloat(v);
+          return Number.isFinite(n) && n >= 0 ? n : null;
+        })(),
         smsgate_device_id: (document.getElementById('tfSmsgateDeviceId') || {}).value || '',
         smsgate_sim_number: (() => {
           const v = (document.getElementById('tfSmsgateSimNumber') || {}).value;

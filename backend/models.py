@@ -286,6 +286,11 @@ class Tenant(db.Model):
     # Username/password remain env-only — never stored in DB.
     smsgate_device_id = db.Column(db.String(60), nullable=True)
     smsgate_sim_number = db.Column(db.Integer, nullable=True)
+    # Phase 8: per-tenant water billing rate (KES per M³).
+    # NULL = fall back to legacy 150.0 default (pre-upgrade behaviour).
+    # Existing tenants are backfilled to 150.0 on migration so the value
+    # is explicit and visible in the Dev portal.
+    billing_rate_kes = db.Column(db.Float, nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
