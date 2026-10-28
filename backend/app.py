@@ -1460,6 +1460,11 @@ def _ensure_all_columns():
                 dmr_alters.append("ADD COLUMN is_closed INTEGER NOT NULL DEFAULT 0")
             else:
                 dmr_alters.append("ADD COLUMN is_closed BOOLEAN NOT NULL DEFAULT FALSE")
+        if "auto_closed" not in existing_cols:
+            if dialect == "sqlite":
+                dmr_alters.append("ADD COLUMN auto_closed INTEGER NOT NULL DEFAULT 0")
+            else:
+                dmr_alters.append("ADD COLUMN auto_closed BOOLEAN NOT NULL DEFAULT FALSE")
         for alt in dmr_alters:
             db.session.execute(text(f"ALTER TABLE dispense_meter_readings {alt}"))
         if dmr_alters:
@@ -5381,6 +5386,117 @@ def _dispense_opening_derivation(tenant_id, requested):
             "reason": None, "open_gap_date": None}
 
 
+_AUTO_CLOSE_LOOKBACK_DAYS = 30
+
+
+def _auto_close_no_activity_days(tenant_id, up_to_date_exclusive):
+    """Auto-close no-activity days. Self-healing; safe to call repeatedly.
+
+    Semantics:
+      - Processes days strictly BEFORE up_to_date_exclusive (typically today)
+      - Starts from the most recent is_closed=True row (the chain anchor)
+      - For each day D in (anchor_date+1 .. yesterday):
+        * If D has any non-voided sales -> STOP (user must close D manually)
+        * If D has an open reading row -> close it (closing=opening, consumption=0)
+        * If D has no reading row -> create one (opening=closing=prev_closing, cons=0)
+        * If D is already closed -> chain continues from its closing value
+      - Bounded by _AUTO_CLOSE_LOOKBACK_DAYS (30) to prevent unbounded writes
+        after long dormancy; days outside the window stay open and require manual action
+      - Never touches today
+
+    Returns:
+      {closed: int, created: int, stopped_at: iso|None, reason: str}
+      reason: "up_to_date" | "no_anchor" | "no_days" | "ok" | "error"
+    Never raises.
+    """
+    try:
+        last_closed = (DispenseMeterReading.query
+                       .filter_by(tenant_id=tenant_id, is_closed=True)
+                       .order_by(DispenseMeterReading.reading_date.desc())
+                       .first())
+        if not last_closed:
+            return {"closed": 0, "created": 0, "stopped_at": None,
+                    "reason": "no_anchor"}
+        anchor_date = last_closed.reading_date
+        yesterday = up_to_date_exclusive - timedelta(days=1)
+        if anchor_date >= yesterday:
+            return {"closed": 0, "created": 0, "stopped_at": None,
+                    "reason": "up_to_date"}
+        prev_closing = float(last_closed.closing_reading_m3)
+
+        earliest_allowed = up_to_date_exclusive - timedelta(days=_AUTO_CLOSE_LOOKBACK_DAYS)
+        start = anchor_date + timedelta(days=1)
+        if start < earliest_allowed:
+            start = earliest_allowed
+        if start > yesterday:
+            return {"closed": 0, "created": 0, "stopped_at": None,
+                    "reason": "no_days"}
+
+        closed_count = 0
+        created_count = 0
+        stopped_at = None
+        n_days = (yesterday - start).days + 1
+
+        for i in range(n_days):
+            D = start + timedelta(days=i)
+            _has_sales = (DispenseSale.query
+                          .filter(DispenseSale.tenant_id == tenant_id,
+                                  DispenseSale.sale_date == D,
+                                  DispenseSale.voided == False)  # noqa: E712
+                          .count())
+            if _has_sales > 0:
+                stopped_at = D.isoformat()
+                break
+            _row = (DispenseMeterReading.query
+                    .filter_by(tenant_id=tenant_id, reading_date=D)
+                    .first())
+            if _row is not None:
+                if _row.is_closed:
+                    prev_closing = float(_row.closing_reading_m3)
+                    continue
+                _opening = float(_row.opening_reading_m3)
+                _row.closing_reading_m3 = _opening
+                _row.consumption_m3 = 0.0
+                _row.is_closed = True
+                _row.auto_closed = True
+                _row.recorded_by = "auto:no-activity"
+                closed_count += 1
+                prev_closing = _opening
+            else:
+                new_row = DispenseMeterReading(
+                    tenant_id=tenant_id,
+                    reading_date=D,
+                    opening_reading_m3=prev_closing,
+                    closing_reading_m3=prev_closing,
+                    consumption_m3=0.0,
+                    is_closed=True,
+                    auto_closed=True,
+                    recorded_by="auto:no-activity",
+                )
+                db.session.add(new_row)
+                created_count += 1
+
+        if closed_count or created_count:
+            db.session.commit()
+            try:
+                _audit("dispense_auto_close_no_activity",
+                       target_type="tenant", target_id=tenant_id,
+                       detail=(f"closed={closed_count} created={created_count} "
+                               f"stopped_at={stopped_at or 'chain_end'}"))
+            except Exception:
+                pass
+        return {"closed": closed_count, "created": created_count,
+                "stopped_at": stopped_at, "reason": "ok"}
+    except Exception as e:
+        try:
+            app.logger.exception("[auto-close] failed")
+            db.session.rollback()
+        except Exception:
+            pass
+        return {"closed": 0, "created": 0, "stopped_at": None,
+                "reason": "error", "error": str(e)}
+
+
 def _dispense_window_stats(tenant_id, dates):
     """Bulk-compute dispensing metrics for a list of date objects.
     Returns {iso_date: stats_dict}. Three queries total regardless of window size."""
@@ -5467,6 +5583,7 @@ def _dispense_window_stats(tenant_id, dates):
             "variance_l": consumption_l - sold_l,
             "has_reading": reading is not None,
             "is_closed": (reading.is_closed if reading else False),
+            "auto_closed": (reading.auto_closed if reading else False),
         }
     return out
 

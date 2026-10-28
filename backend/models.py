@@ -323,6 +323,14 @@ class DispenseMeterReading(db.Model):
     # opening_reading_m3 (SQLite cannot ALTER COLUMN to allow NULL).
     # Frontend MUST trust is_closed, never the sentinel value.
     is_closed = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    # No Activity auto-close marker. True iff the row was auto-closed by
+    # _auto_close_no_activity_days() — consumption=0, no user action.
+    # Distinct from is_closed alone (which doesn't say who closed it):
+    #   is_closed=True,  auto_closed=False -> user closed (manual)
+    #   is_closed=True,  auto_closed=True  -> system auto-closed (no activity)
+    #   is_closed=False, auto_closed=False -> open
+    # auto_closed=True implies is_closed=True (invariant enforced in helper).
+    auto_closed = db.Column(db.Boolean, nullable=False, default=False, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow,
                            onupdate=datetime.utcnow)
