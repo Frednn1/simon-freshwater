@@ -71,13 +71,13 @@ def test_window_response_includes_auto_closed(client):
 # _dispense_status branch behavior
 # ══════════════════════════════════════════════════════════════════════
 
-def test_status_no_reading_for_auto_closed():
-    """auto_closed=True -> 'No Reading' (capital R) regardless of other stats."""
+def test_status_no_activity_for_auto_closed():
+    """auto_closed=True -> 'No Activity' regardless of other stats (Phase 6)."""
     stats = {
         "has_reading": True, "auto_closed": True,
         "variance_l": 0, "outstanding_kes": 0,
     }
-    assert app_module._dispense_status(stats) == "No Reading"
+    assert app_module._dispense_status(stats) == "No Activity"
 
 
 def test_status_cleared_for_manual_closed():
@@ -119,5 +119,5 @@ def test_existing_closed_row_shows_cleared(client):
     today_row = next((row for row in d["days"] if row["date_iso"] == today_iso), None)
     assert today_row is not None
     assert today_row["auto_closed"] is False
-    # Status label uses variance/outstanding logic — not "No Reading"
-    assert today_row["status"] != "No Reading"
+    # Status label uses variance/outstanding logic — not "No Activity"
+    assert today_row["status"] != "No Activity"

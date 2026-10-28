@@ -5623,13 +5623,15 @@ def _dispense_window_stats(tenant_id, dates):
 
 def _dispense_status(stats):
     """Status per approved rule:
-      - No reading: no reading row exists
-      - Review:     variance < 0  (meter consumption < sold — data anomaly)
-      - Due:        variance > 0  (water unaccounted) OR (variance == 0 AND outstanding > 0 — money owed)
-      - Cleared:    variance == 0 AND outstanding <= 0
+      - No Activity: day was auto-closed by the no-activity engine (0 sales,
+                    0 consumption, opening==closing). Distinct from user-close.
+      - No reading:  no reading row exists (bootstrap / unfilled gap)
+      - Review:      variance < 0  (meter consumption < sold — data anomaly)
+      - Due:         variance > 0  (water unaccounted) OR (variance == 0 AND outstanding > 0 — money owed)
+      - Cleared:     variance == 0 AND outstanding <= 0
     """
     if stats.get("auto_closed"):
-        return "No Reading"
+        return "No Activity"
     if not stats.get("has_reading"):
         return "No reading"
     variance    = float(stats.get("variance_l") or 0)
