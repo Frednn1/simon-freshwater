@@ -17,10 +17,10 @@ def test_dispense_has_sale_closed_banner():
     assert "Day closed. Sales cannot be recorded" in html
 
 
-def test_dispense_has_no_activity_button():
+def test_dispense_no_activity_button_removed():
     html = _read('dispense.html')
-    assert 'id="dNoActivityBtn"' in html
-    assert 'Mark as No Activity' in html
+    assert 'id="dNoActivityBtn"' not in html
+    assert 'Mark as No Activity' not in html
 
 
 def test_dispense_has_payment_sale_date_picker():
@@ -431,7 +431,8 @@ def test_dispense_hide_fresh_empty_card():
     assert 'd.is_today === true' in html
     assert '!d.has_reading' in html
     assert '(d.sales_kes || 0) === 0' in html
-    assert '(d.paid_kes || 0) === 0' in html
+    # Phase 4: card hides for payment-only days too (paid_kes no longer gates)
+    assert '(d.paid_kes || 0) === 0' not in html
     assert '!d.yesterday_open' in html
     assert '!d.prev_day_missing' in html
     assert '!d.is_first_day' in html
@@ -707,4 +708,27 @@ def test_mobile_header_brand_div_shifted_up():
         assert 'top: -8px;' in html, f'{fn}: negative top missing'
         assert 'position: relative;' in html, \
             f'{fn}: position:relative missing on brand>div'
+
+# ══════════════════════════════════════════════════════════════════════
+# Phase 4 — No Activity button removal + banner payment-only exclusion
+# ══════════════════════════════════════════════════════════════════════
+
+def test_dispense_banner_excludes_payments():
+    html = _read('dispense.html')
+    # Banner OR condition no longer includes paid_kes
+    assert '(d.sales_kes || 0) > 0 || (d.paid_kes || 0) > 0' not in html
+    # Reworded banner message
+    assert 'You have sales or payments recorded' not in html
+    assert 'You have sales recorded today' in html
+
+
+def test_dispense_no_activity_js_fully_removed():
+    html = _read('dispense.html')
+    # All JS references gone
+    assert 'noActBtn' not in html
+    assert 'showNoAct' not in html
+    assert 'dNoActivityBtn' not in html
+    # All "no activity" user-facing strings gone
+    assert 'Cannot mark no activity' not in html
+    assert 'Mark this day as no activity' not in html
 

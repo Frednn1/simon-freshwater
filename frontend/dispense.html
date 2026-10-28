@@ -698,7 +698,6 @@
           <input type="text" id="dReasonInput" placeholder="e.g. Meter reading typo">
         </div>
         <button type="submit" id="dSubmitBtn" class="btn-primary btn-fit">Save Reading</button>
-        <button type="button" id="dNoActivityBtn" class="btn-secondary btn-fit" style="display:none;margin-top:.5rem;">Mark as No Activity</button>
         <div id="dFormMsg" class="alert hidden" style="margin-top:.5rem;"></div>
       </form>
     </div>
@@ -1082,7 +1081,6 @@
             d.is_today === true &&
             !d.has_reading &&
             (d.sales_kes || 0) === 0 &&
-            (d.paid_kes || 0) === 0 &&
             !d.yesterday_open &&
             !d.prev_day_missing &&
             !d.is_first_day
@@ -1099,7 +1097,6 @@
           // Phase A2: warning banner + no-activity button
           var warnEl = document.getElementById('dFormWarn');
           var warnTextEl = document.getElementById('dFormWarnText');
-          var noActBtn = document.getElementById('dNoActivityBtn');
           if (warnEl && warnTextEl) {
             var wMsg = '';
             var wIsHtml = false;
@@ -1115,9 +1112,9 @@
                 wMsg = 'Open reading on ' + d.open_gap_date + '. Enter opening manually.';
               }
               // else: derivation info now shown in today card, no banner
-            } else if (!d.has_reading && ((d.sales_kes || 0) > 0 || (d.paid_kes || 0) > 0)) {
+            } else if (!d.has_reading && (d.sales_kes || 0) > 0) {
               // Step 1: gentle reminder (not a warning) — eventful day, no close yet
-              wMsg = 'You have sales or payments recorded today. Remember to enter the closing reading at the end of the day to lock today\u2019s activity.';
+              wMsg = 'You have sales recorded today. Remember to enter the closing reading at the end of the day to lock today\u2019s activity.';
             }
             if (wMsg) {
               if (wIsHtml) warnTextEl.innerHTML = wMsg;
@@ -1139,46 +1136,10 @@
             reasonRow.style.display = 'none';
             submitBtn.disabled = true;
             submitBtn.textContent = 'Close Yesterday First';
-            if (noActBtn) noActBtn.style.display = 'none';
             return;
           }
-          if (noActBtn) {
-            var showNoAct = (!d.has_reading && !d.is_first_day && !d.prev_day_missing
-                             && (d.sales_kes || 0) === 0 && (d.paid_kes || 0) === 0);
-            noActBtn.style.display = showNoAct ? 'inline-flex' : 'none';
-            noActBtn.onclick = null;
-            if (showNoAct) {
-              noActBtn.onclick = async function () {
-                if (!confirm('Mark this day as no activity? This records a zero-consumption closed reading.')) return;
-                try {
-                  var rr = await fetch('/api/admin/dispense/today', {credentials: 'same-origin'});
-                  var dd = await rr.json();
-                  if (!dd.ok || dd.suggested_opening_m3 == null) {
-                    alert('\u274c Cannot mark no activity \u2014 opening reading not available. Record opening first, then close.');
-                    return;
-                  }
-                  var r2 = await fetch('/api/admin/dispense/reading', {
-                    method: 'POST', credentials: 'same-origin',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({closing_reading_m3: dd.suggested_opening_m3})
-                  });
-                  var j2 = await r2.json();
-                  if (r2.ok && j2.ok) {
-                    alert('\u2705 No-activity day recorded (0 L consumption).');
-                    location.reload();
-                  } else {
-                    alert('\u274c ' + (j2.error || 'Failed.'));
-                  }
-                } catch (err) {
-                  alert('\u274c ' + (err.message || 'Network error.'));
-                }
-              };
-            }
-          }
-
           // A3b: past-day read-only handling
           if (!d.is_today) {
-            if (noActBtn) noActBtn.style.display = 'none';
             if (warnEl) warnEl.classList.add('hidden');
             if (d.is_closed) {
               // Day is closed — read-only by default, but admin can re-sync
