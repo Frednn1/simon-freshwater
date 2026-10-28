@@ -5318,14 +5318,23 @@ def _dispense_cascade_forward(tenant_id, from_date):
 
             # Tolerance check — avoid float jitter updates
             if abs(old_opening - prev_closing) > 0.001:
-                row.opening_reading_m3 = prev_closing
-                if row.is_closed:
-                    new_cons = round(float(row.closing_reading_m3) - prev_closing, 4)
-                    row.consumption_m3 = new_cons
-                else:
-                    # Open row — sentinel closing = opening, consumption = 0
+                # Phase 5a: auto-closed days keep the opening==closing invariant.
+                # An auto_closed row is a "No Activity" placeholder where closing
+                # is a sentinel (= opening). Cascade must update BOTH together,
+                # or consumption would become non-zero (semantic contradiction).
+                if getattr(row, "auto_closed", False):
+                    row.opening_reading_m3 = prev_closing
                     row.closing_reading_m3 = prev_closing
                     row.consumption_m3 = 0.0
+                else:
+                    row.opening_reading_m3 = prev_closing
+                    if row.is_closed:
+                        new_cons = round(float(row.closing_reading_m3) - prev_closing, 4)
+                        row.consumption_m3 = new_cons
+                    else:
+                        # Open row — sentinel closing = opening, consumption = 0
+                        row.closing_reading_m3 = prev_closing
+                        row.consumption_m3 = 0.0
                 affected.append({
                     "date": row.reading_date.isoformat(),
                     "old_opening": old_opening,
@@ -5333,6 +5342,7 @@ def _dispense_cascade_forward(tenant_id, from_date):
                     "old_consumption_l": int(round(old_cons * 1000)),
                     "new_consumption_l": int(round(float(row.consumption_m3 or 0) * 1000)),
                     "was_closed": bool(row.is_closed),
+                    "was_auto_closed": bool(getattr(row, "auto_closed", False)),
                 })
 
             if row.is_closed:
