@@ -5595,6 +5595,8 @@ def _dispense_status(stats):
       - Due:        variance > 0  (water unaccounted) OR (variance == 0 AND outstanding > 0 — money owed)
       - Cleared:    variance == 0 AND outstanding <= 0
     """
+    if stats.get("auto_closed"):
+        return "No Reading"
     if not stats.get("has_reading"):
         return "No reading"
     variance    = float(stats.get("variance_l") or 0)
@@ -5820,6 +5822,7 @@ def admin_dispense_today():
         "variance_l": tstats["variance_l"],
         "has_reading": tstats["has_reading"],
         "is_closed": tstats.get("is_closed", False),
+        "auto_closed": tstats.get("auto_closed", False),
         "is_first_day": is_first_day,
         "prev_day_missing": prev_day_missing,
         "yesterday_open": yesterday_open,
@@ -6811,6 +6814,7 @@ def admin_dispense_window():
             "variance_l": st["variance_l"],
             "has_reading": st["has_reading"],
             "is_closed": st.get("is_closed", False),
+            "auto_closed": st.get("auto_closed", False),
             "status": _dispense_status(st),
         })
 
