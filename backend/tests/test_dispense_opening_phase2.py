@@ -63,6 +63,19 @@ def _seed(tenant_id, days_ago, opening, closing, is_closed):
         db.session.commit()
 
 
+def _seed_sale(tenant_id=1, days_ago=0, size=20, qty=1, price=50.0):
+    """Phase 2b: seed a sale record — prevents auto-close on that day."""
+    with app_module.app.app_context():
+        d = app_module._nairobi_today() - timedelta(days=days_ago)
+        db.session.add(DispenseSale(
+            tenant_id=tenant_id, sale_date=d,
+            container_size_L=size, quantity=qty,
+            price_per_unit_kes=price, total_kes=price * qty,
+            recorded_by="test"))
+        db.session.commit()
+        return d
+
+
 def test_suggested_opening_from_closed_across_empty_gap(client):
     """Day1 closed, Day2 empty -> /today?date=today suggests Day1 closing."""
     _enable(); _ensure_rate(); _wipe()
@@ -76,7 +89,10 @@ def test_suggested_opening_from_closed_across_empty_gap(client):
     assert d["manual_opening_required"] is False
     assert d["suggested_opening_m3"] == 250.0
     # Source should be the most recent closed row
-    expected_src = (app_module._nairobi_today() - timedelta(days=8)).isoformat()
+    # Phase 2b: auto-close fills empty intermediate days. After auto-close
+    # the most recent closed row is yesterday (auto_closed=True) whose
+    # closing matches the day-8 chain (250.0). Source ISO shifts to yesterday.
+    expected_src = (app_module._nairobi_today() - timedelta(days=1)).isoformat()
     assert d["suggested_opening_source_iso"] == expected_src
     assert d["derivation_reason"] is None
 
@@ -87,6 +103,9 @@ def test_suggested_opening_none_when_open_gap(client):
     _admin_login(client, "p2b")
     _seed(1, days_ago=10, opening=100.0, closing=200.0, is_closed=True)
     _seed(1, days_ago=5, opening=200.0, closing=200.0, is_closed=False)
+    # Phase 2b: auto-close fills no-sale days. Seed a sale on day-5 so
+    # auto-close stops there and the open gap persists.
+    _seed_sale(1, days_ago=5)
     r = client.get("/api/admin/dispense/today")
     d = r.get_json()
     assert d["manual_opening_required"] is True

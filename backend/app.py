@@ -5765,6 +5765,11 @@ def admin_dispense_today():
     if requested < today - timedelta(days=30):
         return jsonify({"error": "Past-day view limited to 30 days."}), 400
 
+    # Phase 2b: auto-close no-activity days. Fires ONLY on today-view —
+    # past-day view must not trigger mutation (user is investigating).
+    if requested == today:
+        _auto_close_no_activity_days(tenant_id, today)
+
     yesterday = requested - timedelta(days=1)
     stats_map = _dispense_window_stats(tenant_id, [requested, yesterday])
     tstats = stats_map[requested.isoformat()]
@@ -6793,6 +6798,8 @@ def admin_dispense_window():
     if n > 30: n = 30
 
     today = _nairobi_today()
+    # Phase 2b: auto-close no-activity days for accurate 7-day display.
+    _auto_close_no_activity_days(tenant_id, today)
     dates = [today - timedelta(days=i) for i in range(n)]
     stats_map = _dispense_window_stats(tenant_id, dates)
 
