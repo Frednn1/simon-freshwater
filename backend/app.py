@@ -5623,14 +5623,24 @@ def _dispense_window_stats(tenant_id, dates):
 
 def _dispense_status(stats):
     """Status per approved rule:
-      - No Activity: day was auto-closed by the no-activity engine (0 sales,
-                    0 consumption, opening==closing). Distinct from user-close.
+      - No Activity: no-activity day. Two cases:
+                     (a) auto_closed=True  (system auto-closed)
+                     (b) semantically zero-activity: is_closed AND 0 sales AND
+                         0 consumption. Covers user-closed days that were
+                         effectively no-activity but the flag was cleared
+                         via a correction (Phase 5b promotion).
       - No reading:  no reading row exists (bootstrap / unfilled gap)
       - Review:      variance < 0  (meter consumption < sold — data anomaly)
       - Due:         variance > 0  (water unaccounted) OR (variance == 0 AND outstanding > 0 — money owed)
-      - Cleared:     variance == 0 AND outstanding <= 0
+      - Cleared:     variance == 0 AND outstanding <= 0 (with sales or consumption)
     """
+    # (a) Explicit auto_closed flag — authoritative from Phase 6
     if stats.get("auto_closed"):
+        return "No Activity"
+    # (b) Semantic no-activity: closed day with zero sales AND zero consumption
+    if (stats.get("is_closed")
+            and float(stats.get("sales_kes") or 0) == 0
+            and float(stats.get("consumption_l") or 0) == 0):
         return "No Activity"
     if not stats.get("has_reading"):
         return "No reading"
