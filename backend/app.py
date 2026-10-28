@@ -5257,6 +5257,29 @@ def _dispense_is_closed(tenant_id, target_date):
     return bool(r and r.is_closed)
 
 
+def _reopen_if_auto_closed(tenant_id, target_date):
+    """Phase 3: in-memory reopen if the day is auto_closed.
+
+    Returns True if reopened, False otherwise.
+    Does NOT commit — the caller's transaction governs. Safe to invoke
+    inside a write loop: if the caller rolls back, this reverses too.
+
+    Only auto_closed days reopen. User-closed days stay closed (caller
+    must not reach this path for user-closed days — validation blocks them).
+    """
+    r = DispenseMeterReading.query.filter_by(
+        tenant_id=tenant_id, reading_date=target_date
+    ).first()
+    if not r or not r.auto_closed:
+        return False
+    r.is_closed = False
+    r.auto_closed = False
+    r.closing_reading_m3 = r.opening_reading_m3
+    r.consumption_m3 = 0.0
+    r.recorded_by = "auto:reopened"
+    return True
+
+
 def _dispense_cascade_forward(tenant_id, from_date):
     """After a write to `from_date` (create/close/correct), propagate the
     opening reading through all downstream CLOSED rows so the chain rule
@@ -6686,7 +6709,12 @@ def admin_dispense_sales_bulk_import():
 
         # Step 1 (this batch): day-close lock applies per-row.
         # Bulk import must not bypass the single-sale lock.
-        if _dispense_is_closed(tenant_id, sale_date):
+        # Phase 3: user-closed days remain blocked; auto-closed days are
+        # eligible — they reopen in the write loop before the sale is added.
+        _day_row = DispenseMeterReading.query.filter_by(
+            tenant_id=tenant_id, reading_date=sale_date
+        ).first()
+        if _day_row is not None and _day_row.is_closed and not _day_row.auto_closed:
             errors.append({
                 "line": lineno,
                 "error": f"date {sale_date.isoformat()} is closed \u2014 cannot import sales"
@@ -6738,12 +6766,19 @@ def admin_dispense_sales_bulk_import():
         })
 
     admin_username = _dispense_recorded_by()
+    reopened_dates = []
     try:
         created_ids = []
         for p in parsed:
+            _target_dt = datetime.strptime(p["date_iso"], "%Y-%m-%d").date()
+            # Phase 3: reopen an auto-closed day before writing its sale.
+            # In-memory only; rolls back with the transaction on any failure.
+            if _reopen_if_auto_closed(tenant_id, _target_dt):
+                if p["date_iso"] not in reopened_dates:
+                    reopened_dates.append(p["date_iso"])
             row = DispenseSale(
                 tenant_id=tenant_id,
-                sale_date=datetime.strptime(p["date_iso"], "%Y-%m-%d").date(),
+                sale_date=_target_dt,
                 container_size_L=p["size_l"],
                 quantity=p["quantity"],
                 price_per_unit_kes=p["price_per_unit_kes"],
@@ -6764,6 +6799,13 @@ def admin_dispense_sales_bulk_import():
            target_type="tenant", target_id=tenant_id,
            detail=(f"count={len(parsed)} total_kes={total_kes:.2f} "
                    f"liters={total_l}"))
+
+    # Phase 3: audit any auto-closed days that were reopened by this import
+    if reopened_dates:
+        _audit("dispense_auto_closed_reopened",
+               target_type="tenant", target_id=tenant_id,
+               detail=(f"dates={','.join(reopened_dates)} "
+                       f"count={len(reopened_dates)}"))
 
     stats = _dispense_window_stats(tenant_id, [today])
     st = stats[today.isoformat()]
