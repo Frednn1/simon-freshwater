@@ -1283,7 +1283,7 @@ _audit_lock = Lock()
 
 
 def _audit(action, target_type=None, target_id=None, target_label=None,
-           detail=None, _admin_id=None, _admin_username=None):
+           detail=None, _admin_id=None, _admin_username=None, _tenant_id=None):
     """Write one audit row. NEVER raises — any failure is logged and swallowed.
     Call at the END of a handler, after its own db.session.commit(), so that
     our commit does not flush someone else's pending work.
@@ -1303,7 +1303,7 @@ def _audit(action, target_type=None, target_id=None, target_label=None,
             v = str(v).replace("\x00", "")
             return v[:n]
 
-        _tid = _audit_tenant_id()
+        _tid = _tenant_id if _tenant_id is not None else _audit_tenant_id()
         row = AdminAuditLog(
             tenant_id=_tid,
             admin_id=aid,
@@ -5049,20 +5049,27 @@ def admin_login_route():
         _url_slug = _sanitize_slug(request.args.get("__tenant") or "") or "—"
         _reason = (result.get("error") or "")[:60]
         _true_tenant = "—"
+        _true_tenant_id = -1   # Step 1 (audit): -1 = invisible to all tenants
         try:
             _u = AdminUser.query.filter_by(username=_attempted).first()
             if _u and _u.tenant_id:
                 _t = Tenant.query.get(_u.tenant_id)
                 if _t:
                     _true_tenant = _t.slug
+                    _true_tenant_id = _u.tenant_id
         except Exception:
             pass
+        # Step 1 (audit): attribute to the attempted user's TRUE tenant, or -1
+        # if the username doesn't exist. Never to the URL tenant — prevents a
+        # cross-tenant info leak where demo's trail would show failures against
+        # other tenants' usernames.
         _audit("login_failed",
                detail=(f"attempted_username={_attempted[:40]} "
                        f"resolved_tenant={_resolved_slug} "
                        f"url_tenant={_url_slug} "
                        f"admin_tenant={_true_tenant} "
-                       f"reason={_reason}"))
+                       f"reason={_reason}"),
+               _tenant_id=_true_tenant_id)
         return jsonify({"ok": False, "error": result["error"]}), 401
 
     # ── Tenant enforcement ──
@@ -5107,10 +5114,20 @@ def admin_login_route():
         pass
 
     if _requested_slug and _admin_slug != _requested_slug:
+        # Step 1 (audit): attribute to the admin's TRUE tenant, not the URL
+        # tenant. Safe re-query — result["admin_id"] is guaranteed valid here.
+        _mm_tenant_id = -1
+        try:
+            _mm_admin = AdminUser.query.get(result["admin_id"])
+            if _mm_admin and _mm_admin.tenant_id:
+                _mm_tenant_id = _mm_admin.tenant_id
+        except Exception:
+            pass
         _audit("login_failed_tenant_mismatch",
                detail=(f"attempted_username={_safe_username_str(data.get('username'))[:40]} "
                        f"requested_tenant={_requested_slug} "
-                       f"admin_tenant={_admin_slug}"))
+                       f"admin_tenant={_admin_slug}"),
+               _tenant_id=_mm_tenant_id)
         return jsonify({"ok": False, "error": "Invalid credentials."}), 401
 
     # ── 2FA branch ──

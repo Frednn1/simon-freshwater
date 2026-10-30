@@ -332,3 +332,120 @@ def test_switch_api_both_profile_employee_to_billing_200(client):
     assert r.get_json().get("ok") is True
     assert r.get_json().get("active_profile") == "billing"
 
+# ══════════════════════════════════════════════════════════════════════
+# Step 1 — Audit trail tenant persistence
+# ══════════════════════════════════════════════════════════════════════
+
+def test_login_failed_unknown_username_invisible(client):
+    """Failed login with a nonexistent username must land at tenant_id=-1
+    (invisible to all tenants) — never in the URL tenant's trail."""
+    from models import AdminAuditLog
+    _make_tenant(2, "demo-tenant-2")
+    fake = f"nonexistent_{_u8()}"
+    r = client.post("/api/admin/login?__tenant=demo-tenant-2",
+                    json={"username": fake, "password": "wrongpw"})
+    assert r.status_code == 401
+    with app_module.app.app_context():
+        row = (AdminAuditLog.query
+               .filter_by(action="login_failed")
+               .filter(AdminAuditLog.detail.contains(fake))
+               .order_by(AdminAuditLog.id.desc())
+               .first())
+        assert row is not None, "audit row should exist"
+        assert row.tenant_id == -1, (
+            f"expected tenant_id=-1 (invisible), got {row.tenant_id} — "
+            f"cross-tenant leak"
+        )
+
+
+def test_login_failed_other_tenant_user_isolated(client):
+    """Attempt with tenant-2 user at tenant-1 URL must log to tenant-2's
+    trail, not tenant-1's (demo admin's trail shows only demo users)."""
+    from models import AdminAuditLog
+    _make_tenant(2, "demo-tenant-2")
+    t2_user = f"t2_u_{_u8()}"
+    make_admin(t2_user, role="employee", tenant_id=2, profiles='["billing"]')
+    r = client.post("/api/admin/login?__tenant=simon-freshwater",
+                    json={"username": t2_user, "password": "wrongpw"})
+    assert r.status_code == 401
+    with app_module.app.app_context():
+        row = (AdminAuditLog.query
+               .filter_by(action="login_failed")
+               .filter(AdminAuditLog.detail.contains(t2_user))
+               .order_by(AdminAuditLog.id.desc())
+               .first())
+        assert row is not None
+        assert row.tenant_id == 2, (
+            f"expected tenant_id=2 (user's true tenant), got {row.tenant_id} — "
+            f"cross-tenant leak"
+        )
+
+
+def test_login_failed_mismatch_isolated(client):
+    """Mismatch (correct password, wrong URL tenant) logs to admin's true tenant."""
+    from models import AdminAuditLog
+    _make_tenant(2, "demo-tenant-2")
+    t2_user = f"t2_mm_{_u8()}"
+    make_admin(t2_user, role="employee", tenant_id=2, profiles='["billing"]')
+    r = client.post("/api/admin/login?__tenant=simon-freshwater",
+                    json={"username": t2_user, "password": DEFAULT_PASS})
+    assert r.status_code == 401, "mismatch should be rejected"
+    with app_module.app.app_context():
+        row = (AdminAuditLog.query
+               .filter_by(action="login_failed_tenant_mismatch")
+               .filter(AdminAuditLog.detail.contains(t2_user))
+               .order_by(AdminAuditLog.id.desc())
+               .first())
+        assert row is not None
+        assert row.tenant_id == 2, (
+            f"expected tenant_id=2, got {row.tenant_id}"
+        )
+
+
+def test_audit_read_is_tenant_scoped(client):
+    """Tenant-1 admin's /api/admin/audit must NOT show tenant-2 rows."""
+    from models import AdminAuditLog, db as _db
+    _make_tenant(2, "demo-tenant-2")
+    with app_module.app.app_context():
+        _db.session.add(AdminAuditLog(
+            tenant_id=2,
+            admin_username="t2_marker",
+            action="step1_marker_t2",
+            detail="tenant-2-only-marker",
+        ))
+        _db.session.commit()
+    _admin_login(client, "aread")
+    r = client.get("/api/admin/audit?days=7")
+    assert r.status_code == 200
+    rows = r.get_json().get("audit", [])
+    assert not any(row.get("action") == "step1_marker_t2" for row in rows), (
+        "SECURITY: tenant-2 audit row leaked into tenant-1's list"
+    )
+
+
+def test_audit_purge_is_tenant_scoped(client):
+    """Tenant-1 admin's purge must NOT delete tenant-2's rows."""
+    from models import AdminAuditLog, db as _db
+    from datetime import datetime as _dt, timedelta as _td
+    _make_tenant(2, "demo-tenant-2")
+    with app_module.app.app_context():
+        _db.session.add(AdminAuditLog(
+            tenant_id=2,
+            admin_username="t2_purge",
+            action="step1_purge_t2",
+            detail="tenant-2-old-row",
+            created_at=_dt.utcnow() - _td(days=365),
+        ))
+        _db.session.commit()
+    _admin_login(client, "apurge")
+    r = client.post("/api/admin/audit/purge")
+    assert r.status_code == 200
+    with app_module.app.app_context():
+        row = (AdminAuditLog.query
+               .filter_by(action="step1_purge_t2")
+               .first())
+        assert row is not None, (
+            "SECURITY: tenant-1's purge deleted tenant-2's row"
+        )
+        assert row.tenant_id == 2
+
