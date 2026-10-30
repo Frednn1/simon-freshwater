@@ -873,6 +873,23 @@ _rate_db_lock = Lock()
 
 
 def _client_ip():
+    """Resolve the client IP for rate limiting + audit.
+
+    Priority:
+      1. CF-Connecting-IP — Cloudflare strips any client-supplied value
+         and sets the true client IP. This is the safest signal in a
+         Cloudflare → Render chain.
+      2. X-Forwarded-For first entry — fallback for direct Render access
+         or non-CF fronting (preserves pre-hardening behaviour).
+      3. remote_addr — last resort for local/dev.
+
+    Residual risk (documented): an attacker who knows Render's origin IP
+    and hits it directly (bypassing Cloudflare) can still set
+    CF-Connecting-IP. Full mitigation = CF IP whitelist (deferred).
+    """
+    cf = (request.headers.get("CF-Connecting-IP") or "").strip()
+    if cf:
+        return cf
     xff = request.headers.get("X-Forwarded-For", "")
     if xff:
         return xff.split(",")[0].strip()
@@ -9121,12 +9138,20 @@ def admin_audit_list():
         days = 7
     days = max(1, min(days, 7))
 
+    # Optional filter: hide login failures from the audit view.
+    _excl_raw = (request.args.get("exclude_login_failed", "0") or "").strip().lower()
+    exclude_login_failed = _excl_raw in ("1", "true", "yes", "on")
+
     cutoff = datetime.utcnow() - timedelta(days=days)
-    rows = (_tenant_query(AdminAuditLog)
-            .filter(AdminAuditLog.created_at >= cutoff)
-            .order_by(AdminAuditLog.created_at.desc())
-            .limit(500)
-            .all())
+    q = (_tenant_query(AdminAuditLog)
+         .filter(AdminAuditLog.created_at >= cutoff))
+    if exclude_login_failed:
+        q = q.filter(AdminAuditLog.action.notin_(
+            ("login_failed", "login_failed_tenant_mismatch")
+        ))
+    rows = (q.order_by(AdminAuditLog.created_at.desc())
+             .limit(500)
+             .all())
 
     out = []
     for r in rows:

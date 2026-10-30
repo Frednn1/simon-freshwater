@@ -98,6 +98,10 @@
           <option value="3">3 days</option>
           <option value="7" selected>7 days</option>
         </select>
+        <label for="auditExcludeLogin" style="display:inline-flex;align-items:center;gap:.35rem;font-size:.85rem;">
+          <input type="checkbox" id="auditExcludeLogin">
+          Hide login attempts
+        </label>
         <button id="auditRefreshBtn" class="btn-secondary" type="button">↻ Refresh</button>
       </div>
       <div id="auditList" class="audit-list">
@@ -243,9 +247,11 @@
     async function loadAudit() {
       const list = document.getElementById('auditList');
       const days = document.getElementById('auditDays').value;
+      const _exclEl = document.getElementById('auditExcludeLogin');
+      const exclQ = (_exclEl && _exclEl.checked) ? '&exclude_login_failed=1' : '';
       list.innerHTML = '<p class="form-hint-small">Loading…</p>';
       try {
-        const r = await fetch('/api/admin/audit?days=' + days,
+        const r = await fetch('/api/admin/audit?days=' + days + exclQ,
                               { credentials: 'same-origin' });
         if (r.status === 401) {
           location.href = (window.adminLoginUrl && window.adminLoginUrl('/admin/settings')) || '/admin/login?next=/admin/settings';
@@ -289,6 +295,8 @@
     document.getElementById('auditRefreshBtn')
       .addEventListener('click', loadAudit);
     document.getElementById('auditDays')
+      .addEventListener('change', loadAudit);
+    document.getElementById('auditExcludeLogin')
       .addEventListener('change', loadAudit);
     loadAudit();
 
