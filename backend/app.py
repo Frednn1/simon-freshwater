@@ -888,16 +888,20 @@ def _client_ip():
     CF-Connecting-IP. Full mitigation = CF IP whitelist (deferred).
     """
     cf = (request.headers.get("CF-Connecting-IP") or "").strip()
-    # DIAG_PEER (temporary, remove after investigation): log observed
-    # values ONLY on /api/health to avoid log spam.
-    if request.path == "/api/health":
+    # =====DIAGPEER===== temporary investigation, remove after
+    # Fires on paths that actually invoke _client_ip() via rate limit
+    # or audit. Health check does not — hence broader path filter.
+    if request.path in ("/api/admin/login", "/api/admin/whoami", "/api/search", "/api/health"):
         try:
-            app.logger.warning(
-                f"[DIAG_PEER] peer={request.remote_addr!r} "
+            _diag_line = (
+                f"=====DIAGPEER===== "
+                f"path={request.path} "
+                f"peer={request.remote_addr!r} "
                 f"cf={cf[:45]!r} "
-                f"xff={(request.headers.get('X-Forwarded-For') or '')[:80]!r} "
-                f"host={(request.headers.get('Host') or '')[:60]!r}"
+                f"xff={(request.headers.get('X-Forwarded-For') or '')[:80]!r}"
             )
+            app.logger.warning(_diag_line)
+            print(_diag_line, flush=True)
         except Exception:
             pass
     if cf:
