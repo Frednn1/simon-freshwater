@@ -872,43 +872,85 @@ _rate_lock = Lock()
 _rate_db_lock = Lock()
 
 
+# Cloudflare's published IP ranges (https://www.cloudflare.com/ips/)
+_CF_IP_RANGES = (
+    # IPv4
+    "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22",
+    "103.31.4.0/22", "141.101.64.0/18", "108.162.192.0/18",
+    "190.93.240.0/20", "188.114.96.0/20", "197.234.240.0/22",
+    "198.41.128.0/17", "162.158.0.0/15", "104.16.0.0/13",
+    "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
+    # IPv6
+    "2400:cb00::/32", "2606:4700::/32", "2803:f800::/32",
+    "2405:b500::/32", "2405:8100::/32", "2a06:98c0::/29",
+    "2c0f:f248::/32",
+)
+
+
+def _is_private_ip(ip_str):
+    """True if IP is private/loopback/link-local/reserved, or unparseable."""
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        return (ip.is_private or ip.is_loopback or ip.is_link_local
+                or ip.is_reserved or ip.is_multicast)
+    except ValueError:
+        return True  # unparseable → treat as private (never trusted)
+
+
+def _is_cloudflare_ip(ip_str):
+    """True if IP is inside any published Cloudflare range."""
+    try:
+        ip = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return False
+    for cidr in _CF_IP_RANGES:
+        try:
+            if ip in ipaddress.ip_network(cidr, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
 def _client_ip():
     """Resolve the client IP for rate limiting + audit.
 
-    Priority:
-      1. CF-Connecting-IP — Cloudflare strips any client-supplied value
-         and sets the true client IP. This is the safest signal in a
-         Cloudflare → Render chain.
-      2. X-Forwarded-For first entry — fallback for direct Render access
-         or non-CF fronting (preserves pre-hardening behaviour).
-      3. remote_addr — last resort for local/dev.
+    Trust hierarchy (validated against Render/Cloudflare chain):
+      1. If X-Forwarded-For has public hops, use the RIGHTMOST public
+         hop — that is the closest observation made by a trusted proxy.
+      2. If the rightmost public hop is a Cloudflare IP, the request
+         legitimately transited CF → use CF-Connecting-IP.
+      3. Otherwise (direct-to-origin bypass), the rightmost public hop
+         IS the attacker's real IP → rate-limited on their own bucket.
 
-    Residual risk (documented): an attacker who knows Render's origin IP
-    and hits it directly (bypassing Cloudflare) can still set
-    CF-Connecting-IP. Full mitigation = CF IP whitelist (deferred).
+    peer=request.remote_addr is Render's internal localhost proxy — never
+    trusted directly. X-Connecting-IP spoofing through CF's edge is stripped
+    by Cloudflare before the request reaches us.
     """
     cf = (request.headers.get("CF-Connecting-IP") or "").strip()
-    # =====DIAGPEER===== temporary investigation, remove after
-    # Fires on paths that actually invoke _client_ip() via rate limit
-    # or audit. Health check does not — hence broader path filter.
-    if request.path in ("/api/admin/login", "/api/admin/whoami", "/api/search", "/api/health"):
-        try:
-            _diag_line = (
-                f"=====DIAGPEER===== "
-                f"path={request.path} "
-                f"peer={request.remote_addr!r} "
-                f"cf={cf[:45]!r} "
-                f"xff={(request.headers.get('X-Forwarded-For') or '')[:80]!r}"
-            )
-            app.logger.warning(_diag_line)
-            print(_diag_line, flush=True)
-        except Exception:
-            pass
+    xff = (request.headers.get("X-Forwarded-For") or "").strip()
+
+    # Chain-trust resolution:
+    #   Render terminates at 127.0.0.1 internally, so request.remote_addr
+    #   is useless for trust decisions. We instead inspect X-Forwarded-For:
+    #   the RIGHTMOST public hop is the closest observation made by a
+    #   trusted proxy (Render appends the socket peer after every hop, so
+    #   attackers cannot forge the rightmost position).
+    #
+    #   - Rightmost public hop is a Cloudflare IP  → legit CF path →
+    #     trust CF-Connecting-IP (CF strips client spoofs on its edge).
+    #   - Rightmost public hop is NOT CF  → direct-to-origin bypass →
+    #     use the rightmost public hop (the attacker's real IP).
+    if xff:
+        parts = [p.strip() for p in xff.split(",") if p.strip()]
+        public = [p for p in parts if not _is_private_ip(p)]
+        if public:
+            rightmost = public[-1]
+            if _is_cloudflare_ip(rightmost) and cf:
+                return cf
+            return rightmost
     if cf:
         return cf
-    xff = request.headers.get("X-Forwarded-For", "")
-    if xff:
-        return xff.split(",")[0].strip()
     return request.remote_addr or "unknown"
 
 
