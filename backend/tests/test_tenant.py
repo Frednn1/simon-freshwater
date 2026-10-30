@@ -336,9 +336,10 @@ def test_switch_api_both_profile_employee_to_billing_200(client):
 # Step 1 — Audit trail tenant persistence
 # ══════════════════════════════════════════════════════════════════════
 
-def test_login_failed_unknown_username_invisible(client):
-    """Failed login with a nonexistent username must land at tenant_id=-1
-    (invisible to all tenants) — never in the URL tenant's trail."""
+def test_login_failed_unknown_username_attributed_to_url_tenant(client):
+    """Failed login with a nonexistent username lands at the URL tenant
+    (2 = demo-tenant-2). Matches policy: endpoint owner sees all attempts
+    against their endpoint, regardless of where the username belongs."""
     from models import AdminAuditLog
     _make_tenant(2, "demo-tenant-2")
     fake = f"nonexistent_{_u8()}"
@@ -352,15 +353,16 @@ def test_login_failed_unknown_username_invisible(client):
                .order_by(AdminAuditLog.id.desc())
                .first())
         assert row is not None, "audit row should exist"
-        assert row.tenant_id == -1, (
-            f"expected tenant_id=-1 (invisible), got {row.tenant_id} — "
-            f"cross-tenant leak"
+        assert row.tenant_id == 2, (
+            f"expected tenant_id=2 (URL tenant), got {row.tenant_id}"
         )
 
 
-def test_login_failed_other_tenant_user_isolated(client):
-    """Attempt with tenant-2 user at tenant-1 URL must log to tenant-2's
-    trail, not tenant-1's (demo admin's trail shows only demo users)."""
+def test_login_failed_other_tenant_user_attributed_to_url_tenant(client):
+    """Attempt with tenant-2 user at tenant-1 URL logs to tenant-1's trail.
+    The endpoint owner (SFW) sees the attempt. Cross-tenant username is
+    intentionally visible per policy — the URL owner needs to know who
+    tried to log in against their endpoint."""
     from models import AdminAuditLog
     _make_tenant(2, "demo-tenant-2")
     t2_user = f"t2_u_{_u8()}"
@@ -375,14 +377,17 @@ def test_login_failed_other_tenant_user_isolated(client):
                .order_by(AdminAuditLog.id.desc())
                .first())
         assert row is not None
-        assert row.tenant_id == 2, (
-            f"expected tenant_id=2 (user's true tenant), got {row.tenant_id} — "
-            f"cross-tenant leak"
+        assert row.tenant_id == 1, (
+            f"expected tenant_id=1 (URL tenant = simon-freshwater), "
+            f"got {row.tenant_id}"
         )
+        # Forensic context preserved
+        assert "admin_tenant=demo-tenant-2" in (row.detail or "")
 
 
-def test_login_failed_mismatch_isolated(client):
-    """Mismatch (correct password, wrong URL tenant) logs to admin's true tenant."""
+def test_login_failed_mismatch_attributed_to_url_tenant(client):
+    """Mismatch (correct password, wrong URL tenant) logs to URL tenant.
+    Detail preserves both requested_tenant and admin_tenant for forensics."""
     from models import AdminAuditLog
     _make_tenant(2, "demo-tenant-2")
     t2_user = f"t2_mm_{_u8()}"
@@ -397,9 +402,11 @@ def test_login_failed_mismatch_isolated(client):
                .order_by(AdminAuditLog.id.desc())
                .first())
         assert row is not None
-        assert row.tenant_id == 2, (
-            f"expected tenant_id=2, got {row.tenant_id}"
+        assert row.tenant_id == 1, (
+            f"expected tenant_id=1 (URL tenant), got {row.tenant_id}"
         )
+        assert "requested_tenant=simon-freshwater" in (row.detail or "")
+        assert "admin_tenant=demo-tenant-2" in (row.detail or "")
 
 
 def test_audit_read_is_tenant_scoped(client):
