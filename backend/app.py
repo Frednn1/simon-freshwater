@@ -888,6 +888,18 @@ def _client_ip():
     CF-Connecting-IP. Full mitigation = CF IP whitelist (deferred).
     """
     cf = (request.headers.get("CF-Connecting-IP") or "").strip()
+    # DIAG_PEER (temporary, remove after investigation): log observed
+    # values ONLY on /api/health to avoid log spam.
+    if request.path == "/api/health":
+        try:
+            app.logger.warning(
+                f"[DIAG_PEER] peer={request.remote_addr!r} "
+                f"cf={cf[:45]!r} "
+                f"xff={(request.headers.get('X-Forwarded-For') or '')[:80]!r} "
+                f"host={(request.headers.get('Host') or '')[:60]!r}"
+            )
+        except Exception:
+            pass
     if cf:
         return cf
     xff = request.headers.get("X-Forwarded-For", "")
